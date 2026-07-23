@@ -49,5 +49,6 @@ def build_app(db_path: str, clock, reader=None):
     export = ExportService()
     orch = Orchestrator(cycle_repo, ingested_repo, run_repo, finding_repo, audit, uow, hasher,
                         pipeline, verification, analysis, reporting, export, clock)
-    return {"dal": dal, "uow": uow, "orch": orch, "finding_repo": finding_repo, "run_repo": run_repo,
-            "ingested_repo": ingested_repo, "config_repo": config_repo, "audit": audit, "config": active}
+    return {"dal": dal, "uow": uow, "orch": orch, "cycle_repo": cycle_repo, "finding_repo": finding_repo,
+            "run_repo": run_repo, "ingested_repo": ingested_repo, "config_repo": config_repo,
+            "audit": audit, "config": active}

@@ -4,26 +4,15 @@ import sqlite3, json
 from contextlib import contextmanager
 from typing import Any, Dict, List, Optional
 from finsight.domain.review_cycle import ReviewCycle, CycleState
+from finsight.infrastructure.migrations.runner import run_migrations
 
 class Dal:
     def __init__(self, path: str):
         self.conn = sqlite3.connect(path)
         self.conn.execute("PRAGMA journal_mode=WAL")
-        self._schema()
-    def _schema(self):
-        c = self.conn
-        c.execute("CREATE TABLE IF NOT EXISTS cycles(cycle_id TEXT PRIMARY KEY, month TEXT, year TEXT, state TEXT)")
-        c.execute("CREATE TABLE IF NOT EXISTS findings(id TEXT PRIMARY KEY, cycle_id TEXT, rule_id TEXT, "
-                  "severity TEXT, period TEXT, account TEXT, finding_type TEXT, evidence TEXT, source_refs TEXT, state TEXT)")
-        c.execute("CREATE TABLE IF NOT EXISTS rule_runs(run_id TEXT PRIMARY KEY, cycle_id TEXT, ruleset_version TEXT, "
-                  "config_version TEXT, input_fingerprint TEXT, finding_count INTEGER)")
-        c.execute("CREATE TABLE IF NOT EXISTS audit(seq INTEGER PRIMARY KEY AUTOINCREMENT, cycle_id TEXT, "
-                  "action TEXT, actor TEXT, ts TEXT, detail TEXT)")
-        c.execute("CREATE TABLE IF NOT EXISTS ingested_files(cycle_id TEXT, doc_type TEXT, name TEXT, "
-                  "fingerprint TEXT, size INTEGER, ts TEXT, actor TEXT, period TEXT, PRIMARY KEY(cycle_id, doc_type))")
-        c.execute("CREATE TABLE IF NOT EXISTS config(version TEXT PRIMARY KEY, materiality_pct INTEGER, "
-                  "bands TEXT, period TEXT, created_ts TEXT)")
-        c.commit()
+        # Versioned schema (ADR-004). The baseline migration reproduces the original schema exactly
+        # and is idempotent, so a new DB initializes and a legacy pre-migration DB is adopted safely.
+        run_migrations(self.conn)
 
 class SqliteUnitOfWork:
     # ADR-004: the DAL owns transactions. All-or-nothing per cycle transition (NFR-005/057).
@@ -49,6 +38,10 @@ class ReviewCycleRepoSqlite:
         if not row:
             return None
         return ReviewCycle(row[0], row[1], row[2], CycleState(row[3]))
+    def list_all(self) -> List[ReviewCycle]:  # read-only; newest-first for the desktop UI
+        rows = self.dal.conn.execute("SELECT cycle_id,month,year,state FROM cycles "
+                                     "ORDER BY year DESC, month DESC, cycle_id").fetchall()
+        return [ReviewCycle(r[0], r[1], r[2], CycleState(r[3])) for r in rows]
 
 class IngestedFileRepoSqlite:
     def __init__(self, dal): self.dal = dal
@@ -75,6 +68,16 @@ class FindingRepoSqlite:
         for r in rows:
             out.append({"id": r[0], "rule_id": r[1], "severity": r[2], "account": r[3],
                         "finding_type": r[4], "evidence": json.loads(r[5]), "source_refs": json.loads(r[6])})
+        return out
+    def list_views(self, cycle_id) -> List[Dict[str, Any]]:  # read-only; adds period + state for the UI
+        rows = self.dal.conn.execute(
+            "SELECT id,rule_id,severity,period,account,finding_type,evidence,source_refs,state "
+            "FROM findings WHERE cycle_id=? ORDER BY account", (cycle_id,)).fetchall()
+        out = []
+        for r in rows:
+            out.append({"id": r[0], "rule_id": r[1], "severity": r[2], "period": r[3], "account": r[4],
+                        "finding_type": r[5], "evidence": json.loads(r[6]), "source_refs": json.loads(r[7]),
+                        "state": r[8]})
         return out
 
 class RuleRunRepoSqlite:
