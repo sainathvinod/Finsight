@@ -21,3 +21,49 @@ class AiScopeError(AiError):
 class MemoryProvenanceError(AiError):
     """A review-memory entry lacks required provenance (content, or a deterministic source for a
     system-derived entry). Model-authored durable memory is not permitted."""
+
+
+# --- Phase 4C error model (raised by the AI execution pipeline; stages noted per error) ---
+class AiAuthorizationError(AiError):
+    """AI use is not permitted in the current mode (authorization stage). Note: provider
+    *unavailability* is NOT an error — it degrades to NullProvider — so this covers mode/read-only
+    violations only."""
+
+
+class GroundingUnavailableError(AiError):
+    """No deterministic grounding exists for the requested review (grounding-retrieval stage)."""
+
+
+class MaskingError(AiError):
+    """Masking could not be completed. Fail-closed: the provider must not be called (masking stage)."""
+
+
+class PromptBuildError(AiError):
+    """The prompt could not be assembled (PromptBuilder stage)."""
+
+
+class PromptBudgetError(AiError):
+    """Grounding does not fit the minimum viable context budget (PromptBuilder stage)."""
+
+
+class ProviderError(AiError):
+    """Base for AI provider transport/execution failures (provider stage). Infrastructure adapters
+    wrap raw transport exceptions into this hierarchy so the application never sees urllib/HTTP."""
+
+
+class ProviderUnavailableError(ProviderError):
+    """The AI provider is not reachable/available (provider stage)."""
+
+
+class ProviderTimeoutError(ProviderError):
+    """The AI provider did not respond within the configured timeout (provider stage)."""
+
+
+class ResponseFormatError(AiError):
+    """The provider response was malformed or violated the required output schema
+    (response-validation stage)."""
+
+
+class CitationError(AiError):
+    """The response cited references that do not resolve to deterministic grounding
+    (citation-verification stage)."""

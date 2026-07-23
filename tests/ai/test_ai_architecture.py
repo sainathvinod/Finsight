@@ -4,6 +4,7 @@ from tests.ai.support import make, seed_review
 
 _APP_AI = os.path.join("src", "finsight", "application", "ai")
 _DOMAIN_AI = os.path.join("src", "finsight", "domain", "ai")
+_PROVIDERS = os.path.join("src", "finsight", "infrastructure", "ai", "providers")
 # Forbidden modules/names — matched only on actual import statements (not comments/docstrings, which
 # legitimately document what is forbidden).
 _FORBIDDEN = [
@@ -34,6 +35,11 @@ class TestAiArchitecture(unittest.TestCase):
 
     def test_domain_ai_has_no_forbidden_imports(self):
         self.assertEqual(_scan(_DOMAIN_AI), [])
+
+    def test_providers_have_no_forbidden_imports_yet(self):
+        # Phase 4C.1: only NullProvider exists. No urllib/HTTP transport, no PySide6, no sqlite3,
+        # no deterministic-engine imports. (OllamaProvider introduces urllib in a later sub-phase.)
+        self.assertEqual(_scan(_PROVIDERS), [])
 
     def test_ai_operations_do_not_mutate_deterministic_state(self):
         tmp, container, ai = make()
