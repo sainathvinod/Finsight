@@ -18,6 +18,7 @@ class MainWindow(QMainWindow):
     def __init__(self, controller, parent=None):
         super().__init__(parent)
         self._c = controller
+        self._current_key = "reviews"
         self.setWindowTitle("FinSight")
         self.resize(1180, 720)
         self.setMinimumSize(940, 600)
@@ -104,6 +105,7 @@ class MainWindow(QMainWindow):
     # --- navigation ---
     def navigate(self, key: str) -> None:
         index = [k for k, _ in _NAV].index(key)
+        self._current_key = key
         self._stack.setCurrentIndex(index)
         for k, item in self._nav_items.items():
             item.setChecked(k == key)
@@ -112,6 +114,14 @@ class MainWindow(QMainWindow):
         if hasattr(current, "refresh"):
             current.refresh()
         self._nav_items[key].setFocus()
+
+    # --- public seams (stable API for tests and integrators) ---
+    def current_view_key(self) -> str:
+        return self._current_key
+
+    def view(self, key: str):
+        return {"reviews": self._reviews, "workspace": self._workspace,
+                "findings": self._findings, "audit": self._audit}[key]
 
     def _on_new_review(self) -> None:
         self._c.begin_new_review()

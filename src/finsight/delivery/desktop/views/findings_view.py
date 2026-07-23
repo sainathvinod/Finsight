@@ -44,6 +44,11 @@ class FindingsView(QWidget):
         self._stack.addWidget(self._empty)
         self.refresh()
 
+    def selected_finding(self):
+        """Public seam: the FindingView for the current selection, or None."""
+        idx = self._table.currentIndex()
+        return self._model.finding_at(idx.row()) if idx.isValid() else None
+
     def refresh(self) -> None:
         cid = self._c.active_review_id
         rows = self._c.findings(cid) if cid else []

@@ -57,6 +57,13 @@ class WorkflowView(QWidget):
         # Initialize to the active review's current step (set during window construction), or Setup.
         self._on_active_changed()
 
+    # --- public seams (stable API for tests) ---
+    def panel(self, step: int):
+        return self._panels[step]
+
+    def current_step(self) -> int:
+        return self._displayed
+
     def _state(self):
         cid = self._c.active_review_id
         return self._c.workflow_state(cid) if cid else None

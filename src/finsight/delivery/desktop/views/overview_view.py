@@ -2,20 +2,8 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QStackedWidget, QLabel
 from finsight.delivery.desktop.components import SectionHeader, WorkflowRail, EmptyState
+from finsight.delivery.desktop.views.workflow_meta import STEPS as WORKFLOW_STEPS, gates
 from finsight.delivery.desktop.theme import tokens as t
-
-# Canonical nine-step review workflow (preserved from the current product sequence).
-WORKFLOW_STEPS = [
-    "Review Setup", "Data Upload", "Upload Validation", "Processing", "Verification",
-    "Analysis", "Findings", "Leadership Summary", "Export",
-]
-
-# Presentation-only mapping from the persisted CycleState to the workflow step the review has
-# reached. This is display logic, not business logic — it changes no state and computes nothing.
-_STATE_TO_STEP = {
-    "Created": 0, "Intake": 1, "Validated": 2, "Processed": 3, "Verified": 4,
-    "Analyzed": 6, "Summarized": 7, "Exported": 8,
-}
 
 
 class OverviewView(QWidget):
@@ -97,7 +85,8 @@ class OverviewView(QWidget):
             self._stack.setCurrentWidget(self._empty)
             return
         self._header.set_subtitle(f"{status.month} {status.year}  ·  State: {status.state}")
-        self._rail.set_current(_STATE_TO_STEP.get(status.state, 0))
+        _done, _enabled, current = gates(status.state)
+        self._rail.set_current(current if current >= 0 else len(WORKFLOW_STEPS) - 1)
         self._status_lbl.setText(f"Findings: {status.finding_count}")
 
         summary = self._c.summary(cid)
