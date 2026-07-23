@@ -16,10 +16,13 @@ from finsight.application.orchestrator import Orchestrator
 from finsight.domain.rules import RulesEngine
 from finsight.diagnostics import get_logger
 
-if TYPE_CHECKING:  # type-only imports for the AppServices annotations (kept lazy at runtime)
+if TYPE_CHECKING:  # type-only imports for the service-container annotations (kept lazy at runtime)
     from finsight.application.read_models.queries import (
         ReviewQueryService, FindingsQueryService, AuditQueryService, SummaryQueryService)
     from finsight.application.workflow import ReviewWorkflowService
+    from finsight.application.ai import (
+        ConversationService, ReviewMemoryService, PreferencesService, GroundingQueryService)
+    from finsight.infrastructure.ai.repositories import AiInteractionJournalSqlite
 
 _log = get_logger("composition")
 
@@ -99,15 +102,62 @@ def build_app(db_path: str, clock, reader=None) -> Container:
 
 
 @dataclass(frozen=True)
+class AiServices:
+    """Typed AI Platform services (Phase 4B). Composed explicitly; the deterministic engine does not
+    depend on these. No hidden service locator. Repositories remain infrastructure-only and are not
+    exposed here (only services + the read-only grounding query + append/read interaction journal)."""
+    conversations: "ConversationService"
+    memory: "ReviewMemoryService"
+    preferences: "PreferencesService"
+    grounding: "GroundingQueryService"
+    interaction_journal: "AiInteractionJournalSqlite"
+
+
+@dataclass(frozen=True)
 class AppServices:
-    """Application services handed to the desktop UI. Read-only query services plus the
-    step-oriented review workflow command service. No repositories or storage objects are
-    exposed; the UI depends only on these composed services and there is no global service locator."""
+    """Application services handed to the desktop UI. Read-only query services, the step-oriented
+    review workflow command service, and the AI Platform façade. No repositories or storage objects
+    are exposed; the UI depends only on these composed services and there is no global service locator."""
     reviews: "ReviewQueryService"
     findings: "FindingsQueryService"
     audit: "AuditQueryService"
     summary: "SummaryQueryService"
     workflow: "ReviewWorkflowService"
+    ai: "AiServices"
+
+
+def build_ai_services(container: Container, new_id=None) -> AiServices:
+    """Compose the AI Platform services from the shared DAL/UnitOfWork/clock and the deterministic
+    read-model query services (grounding). Repositories stay inside this composition; only services
+    are returned. Adding AI persistence does not alter the deterministic engine's composition."""
+    import uuid
+    from finsight.infrastructure.ai.repositories import (
+        ConversationRepoSqlite, MessageRepoSqlite, ReviewMemoryRepoSqlite,
+        UserPreferencesRepoSqlite, AiInteractionJournalSqlite)
+    from finsight.application.ai import (
+        ConversationService, ReviewMemoryService, PreferencesService, GroundingQueryService)
+    from finsight.application.read_models.queries import (
+        ReviewQueryService, FindingsQueryService, AuditQueryService, SummaryQueryService,
+        RuleRunQueryService, ProvenanceQueryService)
+
+    nid = new_id or (lambda: uuid.uuid4().hex)
+    dal, uow, clock = container.dal, container.uow, container.clock
+    journal = AiInteractionJournalSqlite(dal)
+    prefs = PreferencesService(UserPreferencesRepoSqlite(dal), journal, uow, clock, nid)
+    conversations = ConversationService(ConversationRepoSqlite(dal), MessageRepoSqlite(dal),
+                                        journal, prefs, uow, clock, nid)
+    memory = ReviewMemoryService(ReviewMemoryRepoSqlite(dal), journal, uow, clock, nid)
+    reporting = ReportingService()
+    grounding = GroundingQueryService(
+        reviews=ReviewQueryService(container.cycle_repo, container.finding_repo),
+        findings=FindingsQueryService(container.finding_repo),
+        summary=SummaryQueryService(container.cycle_repo, container.finding_repo, container.run_repo, reporting),
+        audit=AuditQueryService(container.audit),
+        rule_runs=RuleRunQueryService(container.run_repo),
+        provenance=ProvenanceQueryService(container.ingested_repo),
+    )
+    return AiServices(conversations=conversations, memory=memory, preferences=prefs,
+                      grounding=grounding, interaction_journal=journal)
 
 
 def build_query_services(db_path: str, clock=None) -> "AppServices":
@@ -126,4 +176,5 @@ def build_query_services(db_path: str, clock=None) -> "AppServices":
         audit=AuditQueryService(container.audit),
         summary=SummaryQueryService(container.cycle_repo, container.finding_repo, container.run_repo, reporting),
         workflow=ReviewWorkflowService(container.orch.engine),
+        ai=build_ai_services(container),
     )

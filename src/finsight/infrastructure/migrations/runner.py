@@ -8,6 +8,7 @@ import datetime
 from typing import Callable, List, Optional, Sequence, Tuple
 
 from finsight.infrastructure.migrations import m0001_baseline
+from finsight.infrastructure.migrations import m0002_ai_platform
 
 Migration = Tuple[int, str, Callable[[sqlite3.Connection], None]]
 
@@ -19,6 +20,7 @@ class MigrationError(RuntimeError):
 # Ordered registry. Append new migrations; never renumber, rewrite, or remove an applied migration.
 MIGRATIONS: List[Migration] = [
     (m0001_baseline.VERSION, m0001_baseline.NAME, m0001_baseline.up),
+    (m0002_ai_platform.VERSION, m0002_ai_platform.NAME, m0002_ai_platform.up),
 ]
 
 _META_DDL = (

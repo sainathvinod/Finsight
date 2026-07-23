@@ -49,18 +49,19 @@ class TestMigrations(unittest.TestCase):
     def test_new_database_initializes_to_head(self):
         conn = sqlite3.connect(self.path)
         applied = run_migrations(conn, clock=_FixedClock())
-        self.assertEqual(applied, [1])
-        self.assertEqual(current_version(conn), 1)
+        self.assertEqual(applied, [1, 2])                          # baseline + ai_platform
+        self.assertEqual(current_version(conn), 2)
         self.assertTrue(BASELINE_TABLES.issubset(self._tables(conn)))
         self.assertIn("schema_migrations", self._tables(conn))
+        self.assertIn("ai_conversations", self._tables(conn))      # 0002 applied
 
     def test_legacy_database_upgrades_without_data_loss(self):
         _make_legacy_db(self.path)
         conn = sqlite3.connect(self.path)
         self.assertNotIn("schema_migrations", self._tables(conn))   # genuinely pre-migration
         applied = run_migrations(conn, clock=_FixedClock())
-        self.assertEqual(applied, [1])                              # baseline adopted, recorded once
-        self.assertEqual(current_version(conn), 1)
+        self.assertEqual(applied, [1, 2])                          # baseline adopted, then ai_platform
+        self.assertEqual(current_version(conn), 2)
         # data preserved exactly, including Decimal-as-text
         self.assertEqual(conn.execute("SELECT cycle_id,state FROM cycles").fetchone(), ("2026-05", "Exported"))
         evidence = conn.execute("SELECT evidence FROM findings WHERE id='F-leg-6100'").fetchone()[0]
@@ -68,9 +69,9 @@ class TestMigrations(unittest.TestCase):
 
     def test_applied_once_and_not_reapplied(self):
         conn = sqlite3.connect(self.path)
-        self.assertEqual(run_migrations(conn), [1])
+        self.assertEqual(run_migrations(conn), [1, 2])
         self.assertEqual(run_migrations(conn), [])                 # idempotent
-        self.assertEqual(applied_versions(conn), [1])
+        self.assertEqual(applied_versions(conn), [1, 2])
         self.assertEqual(conn.execute("SELECT COUNT(*) FROM schema_migrations WHERE version=1").fetchone()[0], 1)
 
     def test_repeated_startup_does_not_reapply(self):
@@ -80,7 +81,7 @@ class TestMigrations(unittest.TestCase):
             run_migrations(conn)
             conn.close()
         conn = sqlite3.connect(self.path)
-        self.assertEqual(applied_versions(conn), [1])
+        self.assertEqual(applied_versions(conn), [1, 2])
 
     def test_ordering_and_uniqueness_enforced(self):
         conn = sqlite3.connect(self.path)
@@ -91,15 +92,17 @@ class TestMigrations(unittest.TestCase):
 
     def test_failed_migration_rolls_back_and_records_nothing(self):
         conn = sqlite3.connect(self.path)
-        run_migrations(conn)  # baseline -> v1
+        run_migrations(conn)  # real migrations -> v1, v2
 
         def bad_up(c):
             c.execute("CREATE TABLE will_rollback(x)")
             raise RuntimeError("boom")
 
         with self.assertRaises(MigrationError):
-            run_migrations(conn, migrations=[(1, "baseline", lambda c: None), (2, "bad", bad_up)])
-        self.assertEqual(current_version(conn), 1)                 # v2 not recorded
+            run_migrations(conn, migrations=[(1, "baseline", lambda c: None),
+                                             (2, "ai_platform", lambda c: None),
+                                             (3, "bad", bad_up)])
+        self.assertEqual(current_version(conn), 2)                 # v3 not recorded
         self.assertNotIn("will_rollback", self._tables(conn))      # its DDL rolled back
 
     def test_never_resets_existing_database(self):

@@ -49,3 +49,20 @@ class SummaryView:
     status_label: str
     finding_count: int
     lines: List[str]
+
+
+@dataclass(frozen=True)
+class RuleRunView:
+    run_id: str
+    ruleset_version: str
+    config_version: str
+    input_fingerprint: str
+    finding_count: int
+
+
+@dataclass(frozen=True)
+class ProvenanceItemView:
+    doc_type: str
+    name: str
+    fingerprint: str
+    period: str

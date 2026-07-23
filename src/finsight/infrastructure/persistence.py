@@ -10,6 +10,7 @@ class Dal:
     def __init__(self, path: str):
         self.conn = sqlite3.connect(path)
         self.conn.execute("PRAGMA journal_mode=WAL")
+        self.conn.execute("PRAGMA foreign_keys=ON")   # enforce FK/ON DELETE CASCADE (AI tables)
         # Versioned schema (ADR-004). The baseline migration reproduces the original schema exactly
         # and is idempotent, so a new DB initializes and a legacy pre-migration DB is adopted safely.
         run_migrations(self.conn)

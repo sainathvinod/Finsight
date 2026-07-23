@@ -3,12 +3,16 @@
 # writes, hold NO command ports, and import NO storage library (SQL stays in infrastructure).
 from finsight.application.read_models.views import (
     ReviewListItem, ReviewStatusView, FindingView, AuditEventView, SummaryView,
+    RuleRunView, ProvenanceItemView,
 )
 from finsight.application.read_models.queries import (
     ReviewQueryService, FindingsQueryService, AuditQueryService, SummaryQueryService,
+    RuleRunQueryService, ProvenanceQueryService,
 )
 
 __all__ = [
     "ReviewListItem", "ReviewStatusView", "FindingView", "AuditEventView", "SummaryView",
+    "RuleRunView", "ProvenanceItemView",
     "ReviewQueryService", "FindingsQueryService", "AuditQueryService", "SummaryQueryService",
+    "RuleRunQueryService", "ProvenanceQueryService",
 ]

@@ -6,6 +6,7 @@ from typing import List, Optional
 
 from finsight.application.read_models.views import (
     ReviewListItem, ReviewStatusView, FindingView, AuditEventView, SummaryView,
+    RuleRunView, ProvenanceItemView,
 )
 
 
@@ -62,6 +63,31 @@ class AuditQueryService:
     def timeline(self, cycle_id: str) -> List[AuditEventView]:
         return [AuditEventView(e["action"], e["actor"], e["ts"], e["detail"])
                 for e in self._audit.events(cycle_id)]
+
+
+class RuleRunQueryService:
+    """The persisted rule-run metadata for a review (versions + input fingerprint). Read-only."""
+
+    def __init__(self, run_repo):
+        self._runs = run_repo
+
+    def for_cycle(self, cycle_id: str) -> Optional[RuleRunView]:
+        r = self._runs.get_by_cycle(cycle_id)
+        if not r:
+            return None
+        return RuleRunView(r["run_id"], r["ruleset_version"], r["config_version"],
+                           r["input_fingerprint"], int(r["finding_count"]))
+
+
+class ProvenanceQueryService:
+    """The ingested-file provenance for a review (doc type, name, fingerprint, period). Read-only."""
+
+    def __init__(self, ingested_repo):
+        self._ingested = ingested_repo
+
+    def for_cycle(self, cycle_id: str) -> List[ProvenanceItemView]:
+        return [ProvenanceItemView(d["doc_type"], d["name"], d["fingerprint"], d.get("period", ""))
+                for d in self._ingested.list(cycle_id)]
 
 
 class SummaryQueryService:
