@@ -41,6 +41,23 @@ class TestAiArchitecture(unittest.TestCase):
         # no deterministic-engine imports. (OllamaProvider introduces urllib in a later sub-phase.)
         self.assertEqual(_scan(_PROVIDERS), [])
 
+    def test_prompt_package_is_pure(self):
+        # Phase 4C.2: PromptBuilder is provider-independent and pure — it must not import any
+        # provider, infrastructure, UI, DB, or HTTP module.
+        base = os.path.join("src", "finsight", "application", "ai", "prompt")
+        bad = []
+        for dp, _dirs, files in os.walk(base):
+            for fn in files:
+                if not fn.endswith(".py"):
+                    continue
+                for line in open(os.path.join(dp, fn), encoding="utf-8"):
+                    s = line.strip()
+                    if s.startswith("import ") or s.startswith("from "):
+                        for tok in ("infrastructure", "provider", "PySide6", "sqlite3", "urllib"):
+                            if tok in s:
+                                bad.append((fn, tok))
+        self.assertEqual(bad, [])
+
     def test_ai_operations_do_not_mutate_deterministic_state(self):
         tmp, container, ai = make()
         seed_review(container, tmp, "2026-07")

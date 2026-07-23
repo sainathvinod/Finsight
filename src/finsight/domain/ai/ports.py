@@ -8,7 +8,6 @@ from finsight.domain.ai.contracts import (
     Conversation, ConversationMessage, ReviewMemoryEntry, UserPreference, AiInteractionEntry,
     GroundedReview, GroundedFinding, GroundedSummary, GroundedRuleRun, GroundedProvenanceItem,
     GroundedAuditEvent, AiGroundingContext,
-    PromptRequest, ProviderConfiguration, RawProviderResponse,
 )
 
 
@@ -62,11 +61,5 @@ class AiGroundingQueryPort(Protocol):
     def audit_events(self, cycle_id: str) -> List[GroundedAuditEvent]: ...
     def context(self, cycle_id: str) -> AiGroundingContext: ...
 
-
-class AiProviderPort(Protocol):
-    """A pluggable AI text generator (Phase 4C). Implementations live in infrastructure/ai/providers.
-    The application layer depends only on this Protocol and never constructs a provider — composition
-    selects one (Ollama when reachable, else NullProvider). Providers must not persist prompts or
-    responses, and must never author findings, severity, approvals, or financial actions."""
-    def available(self) -> bool: ...
-    def generate(self, request: PromptRequest, config: ProviderConfiguration) -> RawProviderResponse: ...
+# NOTE: AiProviderPort is an execution-seam port and lives in finsight.application.ai.ports
+# (moved in Phase 4C.2), because it references the application-layer PromptRequest/RawProviderResponse.

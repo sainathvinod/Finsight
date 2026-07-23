@@ -208,31 +208,5 @@ class ProviderConfiguration:
     def null(cls) -> "ProviderConfiguration":
         return cls("null", "none", "", 0.0, None, None)
 
-
-# --- prompt request / raw response (provider-independent execution seam) ---
-DEFAULT_PROMPT_VERSION = "v1"
-DEFAULT_SCHEMA_VERSION = "v1"
-
-
-@dataclass(frozen=True)
-class PromptRequest:
-    """Provider-independent execution request. The PromptBuilder (Phase 4C.2) owns HOW each section
-    is composed from masked grounding/history; provider adapters serialize this into their own wire
-    format. Sections are already-composed, provider-neutral text."""
-    system_prompt: str
-    context_block: str
-    conversation_block: str
-    question: str
-    output_schema: str
-    prompt_version: str = DEFAULT_PROMPT_VERSION
-    schema_version: str = DEFAULT_SCHEMA_VERSION
-
-
-@dataclass(frozen=True)
-class RawProviderResponse:
-    """Raw, transient provider output. NEVER persisted (ADR-009). Carries the raw text plus
-    non-sensitive execution metadata (provider, model, timing/finish reason)."""
-    text: str
-    provider: str
-    model: str
-    metadata: Dict[str, object] = field(default_factory=dict)
+# NOTE: PromptRequest and RawProviderResponse are execution-seam orchestration contracts and live in
+# finsight.application.ai.contracts (moved in Phase 4C.2), not here.

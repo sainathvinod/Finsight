@@ -1,7 +1,8 @@
 import json
 import unittest
 from finsight.infrastructure.ai.providers.null import NullProvider
-from finsight.domain.ai.contracts import PromptRequest, ProviderConfiguration, RawProviderResponse
+from finsight.application.ai.contracts import PromptRequest, RawProviderResponse
+from finsight.domain.ai.contracts import ProviderConfiguration
 
 
 def _req():

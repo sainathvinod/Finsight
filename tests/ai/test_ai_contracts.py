@@ -1,8 +1,9 @@
 import unittest
 from finsight.domain.ai.contracts import (
-    ProviderConfiguration, PromptRequest, RawProviderResponse, MaskingConfiguration, MaskCategory,
+    ProviderConfiguration, MaskingConfiguration, MaskCategory,
     DEFAULT_OLLAMA_BASE_URL, DEFAULT_OLLAMA_MODEL,
 )
+from finsight.application.ai.contracts import PromptRequest, RawProviderResponse
 
 
 class TestProviderConfiguration(unittest.TestCase):
