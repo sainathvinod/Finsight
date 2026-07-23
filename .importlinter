@@ -1,0 +1,19 @@
+[importlinter]
+root_package = finsight
+
+[[contracts]]
+name = Layered dependency direction
+type = layers
+layers = finsight.delivery | finsight.application | finsight.domain
+
+[[contracts]]
+name = C-DOMAIN-INDEP domain imports nothing outward
+type = forbidden
+source_modules = finsight.domain
+forbidden_modules = finsight.application, finsight.infrastructure, finsight.delivery
+
+[[contracts]]
+name = C-DAL-ONLY-STORAGE
+type = forbidden
+source_modules = finsight.domain, finsight.application, finsight.delivery
+forbidden_modules = sqlite3

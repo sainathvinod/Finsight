@@ -1,0 +1,23 @@
+{
+  "_comment": "Single source of truth for FinSight build/release dependency governance. Values verified against PyPI/python.org/sqlite.org on the 'as_of' date. Product code (src/finsight) contains NO version-management or self-update logic; this file is consumed only by build/validate_deps.py and CI.",
+  "as_of": "2026-07-17",
+  "python": {
+    "required_min": "3.10",
+    "recommended": "3.12",
+    "latest_stable": "3.14.6",
+    "note": "3.9 is end-of-life (security support ended 2025-10) and is below the floor required by the pinned pytest 9.x / coverage 7.15.x. Recommended build interpreter is 3.12 (supported to 2028-10). CI matrix should test 3.11/3.12/3.13 on Windows + macOS (NFR-029)."
+  },
+  "sqlite": {
+    "required_min": "3.35.0",
+    "latest_stable": "3.53.3",
+    "source": "stdlib-bundled (not pip-managed; travels with the Python build)",
+    "note": "3.35 floor covers ON CONFLICT upsert (3.24) and WAL used by the DAL, with margin. Report only; never fail the product on the bundled patch level."
+  },
+  "packages": {
+    "openpyxl":      {"required_min": "3.1.0", "pinned": "3.1.5",  "latest_stable": "3.1.5",  "required": true, "scope": "runtime"},
+    "pytest":        {"required_min": "8.0.0", "pinned": "9.1.1",  "latest_stable": "9.1.1",  "required": true, "scope": "dev"},
+    "import-linter": {"required_min": "2.0",   "pinned": "2.13",   "latest_stable": "2.13",   "required": true, "scope": "dev"},
+    "ruff":          {"required_min": "0.14.0","pinned": "0.15.22","latest_stable": "0.15.22","required": true, "scope": "dev"},
+    "coverage":      {"required_min": "7.6.0", "pinned": "7.15.2", "latest_stable": "7.15.2", "required": true, "scope": "dev"}
+  }
+}

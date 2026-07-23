@@ -1,0 +1,71 @@
+# FinSight Technology-Stack Profile
+# Layer: tech-stack profile (leaf). Referenced by skills and recipes. References no agents.
+# Grounded strictly in the repository: pyproject.toml, requirements*.txt, .importlinter,
+# build/versions.json, src/finsight-V1/, and specs/ (ADR-001/003/004, DEC-003/016).
+# Unknown or deferred values are marked explicitly rather than guessed.
+
+name: finsight
+
+status_note: >
+  Release 1 is a Python core + text-mode delivery shell. The AI layer and any GUI/web
+  binding are specified-only or deferred. Fields marked "unresolved" or "deferred" must
+  not be assumed present.
+
+backend:
+  language: python
+  language_floor: ">=3.10"           # pyproject.toml requires-python
+  recommended_interpreter: "3.12"    # pyproject.toml comment
+  runtime_dependencies:
+    - openpyxl==3.1.5                 # requirements.txt (only runtime dep)
+  architecture: domain -> application -> infrastructure -> delivery  # ADR-002, .importlinter
+  package_root: finsight             # .importlinter root_package
+  source_tree: src/finsight-V1/
+  build_tool: unresolved             # no packaging/build backend declared beyond [project]
+
+frontend:
+  status: none_release_1
+  framework: none                    # no React/Vue/Electron/Tauri/PyQt/Streamlit present
+  current_shell: text-mode wizard    # delivery/wizard.py ("shell-neutral, no GUI toolkit")
+  gui_binding: deferred              # ADR-001 / ADC-01 (desktop shell binding deferred)
+
+api:
+  status: none                       # DEC-003, 06 §5 — no API scope in approved release
+
+data:
+  primary_store: sqlite              # ADR-004 (confined to infrastructure by .importlinter)
+  file_formats:                      # source ingest formats referenced in specs/prototype
+    - xlsx
+    - csv
+    - pdf
+  migration_tool: unresolved
+  money_type: decimal_exact          # ADR-003, domain/money.py (no floats)
+
+ai:
+  status: specified_only_release_2   # E-09; no AI code in src/ today
+  persona: "Fin (Ask Fin)"           # DEC-032 — single, grounded, reactive explainer
+  provider_abstraction: required     # XP-03, FR-104, NFR-046 ("providers are configuration, not code")
+  concrete_provider: unresolved      # ADC-03 — provider/model binding deferred
+  local_provider_option: deferred    # DEC-016 — local/on-device model is a future option
+  ollama: not_selected               # not named in specs; documentable only as future local option
+  determinism_boundary: >
+    AI explains only; never computes or creates financial values, findings, or severity.
+
+quality:
+  lint: ruff==0.15.22
+  format: ruff==0.15.22
+  type_check: none_configured        # no mypy/pyright config present
+  unit_test: pytest==9.1.1
+  golden_test: pytest -m golden       # tests/golden/
+  determinism_test: pytest -m determinism  # tests/determinism/
+  fitness_test: import-linter==2.13   # lint-imports, .importlinter contracts + tests/fitness/
+  coverage_tool: coverage==7.15.2
+  coverage_threshold: none_defined    # no numeric threshold in repo — do not invent one
+  ci: .github/workflows/dependency-validation.yml   # dependency validation only
+
+pattern_mappings:
+  backend: .claude/patterns/backend/
+  financial_domain: .claude/patterns/financial-domain/
+  audit: .claude/patterns/audit/
+  data_verification: .claude/patterns/data-verification/
+  ui: .claude/patterns/ui/
+  ai_provider: .claude/patterns/ai-provider/   # design-only until AI layer is built

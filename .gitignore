@@ -1,0 +1,62 @@
+# OS cruft
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor/temp
+*.tmp
+~$*
+*.swp
+
+# Never commit real or sensitive data files
+*.xlsx
+*.xls
+*.pdf
+!docs/**/*.md
+
+# Python bytecode / caches
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Virtual environments (never committed; provisioned per-developer)
+.venv/
+venv/
+env/
+.python-version
+
+# Local databases / runtime state (never commit a user database)
+*.db
+*.sqlite
+*.sqlite3
+*.db-wal
+*.db-shm
+
+# Secrets / local configuration
+.env
+.env.*
+*.secret
+
+# Local AI provider data (Ollama models are never bundled or committed)
+.ollama/
+ollama_data/
+
+# Packaging output artifacts (distribution artifacts are not source of truth)
+dist/
+*.app/
+*.dmg
+*.pkg
+# NOTE: build/ is intentionally NOT ignored — it holds source (versions.json, validate_deps.py).
+# Packaging must emit to packaging/dist or dist/, never overwrite build/.
+
+# Logs / test output
+*.log
+logs/
+test-output/

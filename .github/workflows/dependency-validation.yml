@@ -1,0 +1,47 @@
+# FinSight CI — dependency-validation stage (build/release only).
+# Contract: FAILS the build only when an installed dependency is missing or below its
+# required minimum (build/versions.json). Outdated-but-above-minimum is reported, not failed.
+# This stage carries NO self-update behaviour and touches no product feature.
+name: dependency-validation
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "0 6 * * 1"   # weekly drift report (Mondays 06:00 UTC) — WARN-only, never auto-upgrades
+
+jobs:
+  validate:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]   # macOS + Windows are the NFR-029 release targets
+        python: ["3.10", "3.11", "3.12"]                     # floor .. recommended
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install pinned toolchain
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+
+      # HARD gate: fails only when a required dep is missing or below required_min.
+      - name: Validate required minimums (blocking)
+        run: python build/validate_deps.py
+
+      # SOFT report: surfaces outdated-but-acceptable drift; never fails the build.
+      - name: Report outdated dependencies (non-blocking)
+        continue-on-error: true
+        run: python -m pip list --outdated
+
+      # Confirms the exact pins resolve identically (lockfile drift detection).
+      - name: Verify installed versions match pins
+        run: |
+          python -m pip install --dry-run -r requirements-dev.txt
+          python -m pip check

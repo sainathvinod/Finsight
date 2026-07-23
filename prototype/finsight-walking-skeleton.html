@@ -1,0 +1,1014 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>FinSight — Walking Skeleton Prototype</title>
+<style>
+  /* FinSight tokens (08-ui-design-system.md) — light-first, color-independent meaning, brand-swappable. Enterprise-dense. */
+  :root{
+    --n0:#FFFFFF;--n25:#FBFCFE;--n50:#F4F6F9;--n100:#EAEEF3;--n200:#DCE2EA;--n300:#C2CAD6;--n400:#98A2B3;--n500:#6B7686;--n600:#4B5568;--n700:#343D4D;--n800:#222A36;--n900:#131922;
+    --p50:#EBF2FC;--p100:#D2E2F7;--p200:#A9C6EE;--p500:#215FA8;--p600:#184C8A;--p700:#123B6E;--p800:#0E2E54;
+    --teal50:#E6F3F3;--teal500:#0F7B82;--teal600:#0B646A;
+    --ok:#1E7A46;--ok50:#E7F4EC;--warn:#A5670C;--warn50:#FBF1DC;--dng:#B42318;--dng50:#FBEAE8;--info:#1570CD;--info50:#E7F1FC;
+    --sc:#B42318;--sh:#C15211;--sm:#2A6DB0;--sl:#5B6675;
+    --canvas:var(--n50);--raised:var(--n0);--sunken:var(--n100);--border:var(--n200);--bstrong:var(--n300);
+    --tp:var(--n800);--ts:var(--n600);--tm:var(--n500);--act:var(--p600);--acth:var(--p700);--focus:var(--p500);--link:var(--p600);
+    --r-sm:4px;--r-md:6px;--r-lg:8px;--fs:15px;
+    --font:-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    --sh1:0 1px 2px rgba(19,25,34,.06);--sh2:0 6px 22px rgba(19,25,34,.14);
+  }
+  :root[data-theme="dark"]{
+    --canvas:#0F141B;--raised:#1A222D;--sunken:#151C25;--border:#2A3644;--bstrong:#3A4A5C;
+    --tp:#EAEEF3;--ts:#C2CAD6;--tm:#98A2B3;--act:#4E86D6;--acth:#6E9CDD;--focus:#6E9CDD;--link:#8FB6F0;
+    --n0:#1A222D;--n25:#0F141B;--n50:#151C25;--n100:#202A36;
+    --ok50:#12251a;--warn50:#2a2110;--dng50:#2a1512;--info50:#12212f;--p50:#152436;
+    --sh1:0 1px 2px rgba(0,0,0,.4);--sh2:0 6px 22px rgba(0,0,0,.55);
+  }
+  :root[data-textsize="large"]{--fs:16.5px;} :root[data-textsize="larger"]{--fs:18px;}
+  *{box-sizing:border-box;} html,body{margin:0;padding:0;}
+  body{font-family:var(--font);font-size:var(--fs);color:var(--tp);background:var(--canvas);line-height:1.4;-webkit-font-smoothing:antialiased;}
+  .tnum{font-variant-numeric:tabular-nums;} h1,h2,h3,h4{margin:0 0 8px;font-weight:600;color:var(--tp);}
+  h1{font-size:1.5rem;} h2{font-size:1.2rem;} h3{font-size:1.02rem;} h4{font-size:.92rem;}
+  p{margin:0 0 8px;color:var(--ts);} a{color:var(--link);}
+  :focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:3px;}
+  .muted{color:var(--tm);} .sec{color:var(--ts);}
+  .ov{font-size:.7rem;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--tm);}
+  .skip{position:absolute;left:-999px;top:0;background:var(--act);color:#fff;padding:8px 12px;z-index:100;} .skip:focus{left:8px;top:8px;}
+  .proto-banner{background:var(--info50);color:var(--info);text-align:center;font-size:.74rem;padding:4px;font-weight:600;}
+
+  .shell{display:grid;grid-template-columns:210px 1fr;grid-template-rows:auto 1fr;min-height:100vh;grid-template-areas:"side top" "side main";}
+  .side{grid-area:side;background:var(--raised);border-right:1px solid var(--border);padding:12px 10px;display:flex;flex-direction:column;gap:2px;}
+  .brand{display:flex;align-items:center;gap:8px;font-weight:700;font-size:1.02rem;padding:6px 8px 14px;}
+  .brand .lg{width:26px;height:26px;border-radius:6px;background:var(--act);color:#fff;display:grid;place-items:center;font-size:.8rem;font-weight:700;}
+  .nav{display:flex;align-items:center;gap:9px;width:100%;text-align:left;background:none;border:none;border-radius:var(--r-md);padding:8px 9px;font:inherit;color:var(--ts);cursor:pointer;}
+  .nav:hover{background:var(--sunken);} .nav[aria-current="page"]{background:var(--p50);color:var(--act);font-weight:600;}
+  .nav .i{width:16px;text-align:center;} .nav .cnt{margin-left:auto;font-size:.72rem;background:var(--sunken);border-radius:999px;padding:0 7px;color:var(--ts);}
+  .navsp{flex:1;} .side .hint{font-size:.68rem;color:var(--tm);padding:2px 8px;}
+  .top{grid-area:top;background:var(--raised);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;padding:0 16px;height:52px;}
+  .top .rname{font-weight:600;} .top .right{margin-left:auto;display:flex;align-items:center;gap:8px;}
+  .selwrap{display:flex;align-items:center;gap:6px;font-size:.8rem;color:var(--ts);}
+  .sel{font:inherit;font-size:.82rem;padding:6px 8px;border:1px solid var(--bstrong);border-radius:var(--r-md);background:var(--raised);color:var(--tp);}
+  main{grid-area:main;overflow:auto;}
+  .page{max-width:1240px;margin:0 auto;padding:18px 20px 60px;}
+  @media(max-width:900px){.shell{grid-template-columns:1fr;grid-template-areas:"top" "main";}.side{display:none;}}
+
+  .pagehead{display:flex;align-items:flex-end;gap:14px;border-bottom:1px solid var(--border);padding-bottom:12px;margin-bottom:16px;flex-wrap:wrap;}
+  .pagehead .crumb{font-size:.72rem;color:var(--tm);margin-bottom:2px;}
+  .pagehead .actions{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;}
+  .lensbanner{font-size:.76rem;color:var(--ts);background:var(--sunken);border:1px solid var(--border);border-radius:var(--r-md);padding:6px 10px;margin-bottom:14px;}
+
+  .btn{font:inherit;font-weight:600;border-radius:var(--r-md);padding:8px 13px;min-height:36px;cursor:pointer;border:1px solid transparent;display:inline-flex;align-items:center;gap:7px;font-size:.86rem;}
+  .btn:disabled{opacity:.5;cursor:not-allowed;}
+  .btn-p{background:var(--act);color:#fff;} .btn-p:hover:not(:disabled){background:var(--acth);}
+  .btn-s{background:var(--raised);color:var(--tp);border-color:var(--bstrong);} .btn-s:hover{background:var(--sunken);}
+  .btn-g{background:none;color:var(--act);border:none;} .btn-d{background:var(--dng);color:#fff;}
+  .btn-sm{min-height:28px;padding:4px 9px;font-size:.78rem;} .btnrow{display:flex;gap:9px;flex-wrap:wrap;align-items:center;}
+  .btn-fin{background:linear-gradient(0deg,var(--teal600),var(--teal500));color:#fff;} .btn-fin:hover{filter:brightness(1.06);}
+
+  .panel{background:var(--raised);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--sh1);margin-bottom:14px;}
+  .panel > .ph{display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid var(--border);}
+  .panel > .ph h3{margin:0;font-size:.98rem;} .panel > .pb{padding:14px;}
+  .grid{display:grid;gap:14px;} .g2{grid-template-columns:1fr 1fr;} .g3{grid-template-columns:1fr 1fr 1fr;} .g4{grid-template-columns:repeat(4,1fr);}
+  @media(max-width:1000px){.g2,.g3,.g4{grid-template-columns:1fr;}}
+
+  /* KPI strip */
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px;}
+  @media(max-width:1000px){.kpis{grid-template-columns:1fr 1fr;}}
+  .kpi{background:var(--raised);border:1px solid var(--border);border-left:3px solid var(--bstrong);border-radius:var(--r-md);padding:10px 12px;}
+  .kpi.k-ok{border-left-color:var(--ok);} .kpi.k-warn{border-left-color:var(--warn);} .kpi.k-dng{border-left-color:var(--dng);} .kpi.k-info{border-left-color:var(--info);}
+  .kpi .kl{font-size:.72rem;color:var(--tm);text-transform:uppercase;letter-spacing:.03em;}
+  .kpi .kv{font-size:1.32rem;font-weight:600;font-variant-numeric:tabular-nums;margin:2px 0;}
+  .kpi .kd{font-size:.76rem;color:var(--ts);}
+  .up{color:var(--dng);font-weight:600;} .down{color:var(--ok);font-weight:600;} /* expense up = unfavorable */
+
+  table{width:100%;border-collapse:collapse;font-size:.84rem;} .tw{overflow-x:auto;border:1px solid var(--border);border-radius:var(--r-md);}
+  th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--border);} th{background:var(--sunken);font-weight:600;font-size:.74rem;color:var(--ts);position:sticky;top:0;}
+  tr:last-child td{border-bottom:none;} td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;} tbody tr:hover{background:var(--sunken);}
+  tr.click{cursor:pointer;}
+  .fav{color:var(--ok);font-weight:600;} .unf{color:var(--dng);font-weight:600;}
+
+  .chip{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:999px;font-size:.74rem;font-weight:600;border:1px solid var(--bstrong);background:var(--sunken);color:var(--ts);}
+  .chip.ok{background:var(--ok50);color:var(--ok);border-color:transparent;} .chip.warn{background:var(--warn50);color:var(--warn);border-color:transparent;}
+  .chip.dng{background:var(--dng50);color:var(--dng);border-color:transparent;} .chip.info{background:var(--info50);color:var(--info);border-color:transparent;}
+  .sev{display:inline-flex;align-items:center;gap:6px;font-weight:600;font-size:.78rem;}
+  .sev-c{color:var(--sc);} .sev-h{color:var(--sh);} .sev-m{color:var(--sm);} .sev-l{color:var(--sl);}
+  .sq{display:inline-block;} .sq-oct{width:12px;height:12px;background:var(--sc);clip-path:polygon(30% 0,70% 0,100% 30%,100% 70%,70% 100%,30% 100%,0 70%,0 30%);}
+  .sq-tri{width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-bottom:12px solid var(--sh);}
+  .sq-dia{width:10px;height:10px;background:var(--sm);transform:rotate(45deg);} .sq-dot{width:10px;height:10px;border-radius:50%;background:var(--sl);}
+
+  .alert{display:flex;gap:10px;align-items:flex-start;padding:11px 13px;border-radius:var(--r-md);border:1px solid var(--border);margin-bottom:10px;background:var(--sunken);}
+  .alert .ai{font-weight:700;} .alert.ok{background:var(--ok50);border-color:transparent;} .alert.ok .ai{color:var(--ok);}
+  .alert.warn{background:var(--warn50);border-color:transparent;} .alert.warn .ai{color:var(--warn);}
+  .alert.dng{background:var(--dng50);border-color:transparent;} .alert.dng .ai{color:var(--dng);}
+  .alert.info{background:var(--info50);border-color:transparent;} .alert.info .ai{color:var(--info);} .alert b{color:var(--tp);}
+
+  /* stepper */
+  .stepband{background:var(--raised);border-bottom:1px solid var(--border);padding:12px 20px 0;} .stepband .w{max-width:1240px;margin:0 auto;}
+  .stepnow{font-size:.74rem;font-weight:600;letter-spacing:.03em;text-transform:uppercase;color:var(--act);margin-bottom:6px;}
+  .stepper{display:flex;list-style:none;margin:0;padding:0 0 12px;overflow-x:auto;} .stepper li{display:flex;align-items:center;gap:6px;flex:1;min-width:66px;}
+  .stepper .nd{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:.74rem;font-weight:600;border:2px solid var(--bstrong);color:var(--tm);background:var(--raised);flex:none;}
+  .stepper .lb{font-size:.68rem;color:var(--tm);white-space:nowrap;} .stepper .cn{height:2px;background:var(--border);flex:1;min-width:6px;}
+  .stepper li.done .nd{background:var(--ok);border-color:var(--ok);color:#fff;} .stepper li.done .lb{color:var(--ts);}
+  .stepper li.cur .nd{background:var(--act);border-color:var(--act);color:#fff;} .stepper li.cur .lb{color:var(--act);font-weight:700;}
+  .stepper li.gate .nd::after{content:"🔒";font-size:.55rem;} .back{background:none;border:none;color:var(--link);font:inherit;cursor:pointer;padding:0;margin-bottom:12px;}
+
+  /* tabs */
+  .tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:14px;overflow-x:auto;}
+  .tab{background:none;border:none;border-bottom:2px solid transparent;padding:9px 12px;font:inherit;font-size:.84rem;color:var(--ts);cursor:pointer;white-space:nowrap;}
+  .tab:hover{color:var(--tp);} .tab[aria-selected="true"]{color:var(--act);border-bottom-color:var(--act);font-weight:600;}
+
+  /* filter bar */
+  .filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;background:var(--sunken);border:1px solid var(--border);border-radius:var(--r-md);padding:8px 10px;margin-bottom:12px;}
+  .filters label{font-size:.72rem;color:var(--tm);display:flex;flex-direction:column;gap:3px;}
+  .filters .sel,.filters input{font-size:.8rem;padding:5px 7px;}
+
+  /* charts */
+  .chart{margin:0;} .chart .ct{font-weight:600;font-size:.9rem;margin-bottom:2px;} .chart .cs{font-size:.74rem;color:var(--tm);margin-bottom:8px;}
+  .legend{display:flex;gap:12px;flex-wrap:wrap;font-size:.74rem;margin-top:8px;} .legend span{display:inline-flex;align-items:center;gap:5px;}
+  .lgsw{width:11px;height:11px;border-radius:2px;display:inline-block;}
+  svg text{font-family:var(--font);}
+  details.dt{margin-top:8px;font-size:.78rem;} details.dt summary{cursor:pointer;color:var(--link);}
+
+  /* review row / slots */
+  .revrow{display:flex;align-items:center;gap:14px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--r-md);margin-bottom:8px;background:var(--raised);}
+  .revrow .rt{font-weight:600;min-width:130px;} .revrow .rs{flex:1;}
+  .slot{display:flex;align-items:center;gap:12px;padding:10px 12px;border:1.5px dashed var(--bstrong);border-radius:var(--r-md);margin-bottom:8px;background:var(--sunken);}
+  .slot.ok{border-style:solid;border-color:var(--ok);background:var(--ok50);} .slot.err{border-style:solid;border-color:var(--dng);background:var(--dng50);}
+  .slot.warn{border-style:solid;border-color:var(--warn);background:var(--warn50);} .slot .st{font-weight:600;min-width:150px;} .slot .sd{flex:1;color:var(--ts);font-size:.8rem;}
+  .demoflag{font-size:.66rem;color:var(--warn);border:1px dashed var(--warn);border-radius:4px;padding:1px 5px;font-weight:700;}
+
+  /* overlays */
+  .scrim{position:fixed;inset:0;background:rgba(19,25,34,.42);display:none;z-index:50;} .scrim.open{display:block;}
+  .drawer{position:fixed;top:0;right:0;height:100%;width:min(560px,94vw);background:var(--raised);box-shadow:var(--sh2);transform:translateX(100%);transition:transform .2s ease-out;z-index:60;display:flex;flex-direction:column;}
+  .drawer.open{transform:translateX(0);}
+  .fin{position:fixed;top:0;right:0;height:100%;width:min(420px,94vw);background:var(--raised);box-shadow:var(--sh2);transform:translateX(100%);transition:transform .2s ease-out;z-index:65;display:flex;flex-direction:column;border-left:3px solid var(--teal500);}
+  .fin.open{transform:translateX(0);}
+  .modal{position:fixed;inset:0;display:none;place-items:center;z-index:70;padding:16px;} .modal.open{display:grid;}
+  .modal .box{background:var(--raised);border-radius:var(--r-lg);box-shadow:var(--sh2);max-width:560px;width:100%;padding:18px;max-height:90vh;overflow:auto;}
+  .dhead{padding:12px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;} .dbody{padding:14px;overflow:auto;}
+  .close{margin-left:auto;background:none;border:none;font-size:1.25rem;cursor:pointer;color:var(--tm);}
+  @media(prefers-reduced-motion:reduce){.drawer,.fin{transition:none;}}
+
+  .kv{display:grid;grid-template-columns:auto 1fr;gap:5px 14px;font-size:.85rem;} .kv dt{color:var(--tm);} .kv dd{margin:0;font-variant-numeric:tabular-nums;}
+  .field{margin-bottom:12px;} .field label{display:block;font-weight:600;font-size:.82rem;margin-bottom:5px;}
+  .field select,.field input{font:inherit;padding:8px 10px;border:1px solid var(--bstrong);border-radius:var(--r-md);background:var(--raised);color:var(--tp);width:240px;max-width:100%;}
+  input.cell{width:100%;font:inherit;font-size:.82rem;padding:4px 6px;border:1px solid var(--bstrong);border-radius:4px;background:var(--raised);color:var(--tp);} input.cell.num{text-align:right;font-variant-numeric:tabular-nums;}
+  td.edited{background:var(--warn50);} .editbadge{font-size:.64rem;color:var(--warn);font-weight:700;border:1px solid var(--warn);border-radius:3px;padding:0 4px;margin-left:5px;}
+  .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--n800);color:#fff;padding:10px 16px;border-radius:var(--r-md);box-shadow:var(--sh2);z-index:90;font-size:.85rem;opacity:0;transition:opacity .2s;} .toast.show{opacity:1;}
+  .rag{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:var(--r-md);} .rag.warn{background:var(--warn50);} .rag.ok{background:var(--ok50);} .rag.dng{background:var(--dng50);} .ragi{font-size:1.5rem;}
+  .aislot{border:1px solid var(--border);border-left:3px solid var(--n300);background:var(--sunken);border-radius:var(--r-md);padding:11px;font-size:.8rem;color:var(--tm);}
+  .stage{display:flex;align-items:center;gap:9px;padding:6px 0;color:var(--ts);} .stage .dot{width:15px;height:15px;border-radius:50%;border:2px solid var(--bstrong);display:grid;place-items:center;font-size:.55rem;}
+  .stage.done .dot{background:var(--ok);border-color:var(--ok);color:#fff;} .stage.active .dot{border-color:var(--act);border-top-color:transparent;animation:spin .8s linear infinite;} .stage.done,.stage.active{color:var(--tp);font-weight:500;}
+  @keyframes spin{to{transform:rotate(360deg);}} @media(prefers-reduced-motion:reduce){.stage.active .dot{animation:none;}}
+  .cov{height:14px;background:var(--sunken);border-radius:7px;overflow:hidden;border:1px solid var(--border);} .cov > i{display:block;height:100%;background:var(--ok);}
+  .pill{background:var(--sunken);border:1px solid var(--border);border-radius:999px;padding:1px 8px;font-size:.74rem;font-weight:600;color:var(--ts);}
+  .factbox{background:var(--sunken);border:1px solid var(--border);border-radius:var(--r-md);padding:10px;margin:8px 0;font-size:.85rem;}
+  .finq{display:block;width:100%;text-align:left;background:var(--sunken);border:1px solid var(--border);border-radius:var(--r-md);padding:7px 10px;margin-bottom:6px;font:inherit;font-size:.8rem;color:var(--tp);cursor:pointer;} .finq:hover{border-color:var(--act);}
+  .finmsg{margin-bottom:12px;} .finmsg .who{font-size:.72rem;color:var(--tm);font-weight:600;text-transform:uppercase;margin-bottom:3px;}
+</style>
+</head>
+<body>
+<a href="#main" class="skip">Skip to content</a>
+<div class="proto-banner">PROTOTYPE — clearly-synthetic demonstration data, in-memory only. Not production. Thresholds shown as “Configured Value”. Fin explains; it never creates financial values, findings, or actions.</div>
+<div class="shell">
+  <nav class="side" aria-label="Primary">
+    <div class="brand" style="cursor:pointer;" title="Welcome / home" onclick="go('welcome')"><span class="lg">FS</span> FinSight</div>
+    <button class="nav" data-nav="welcome"><span class="i">⌂</span> Welcome</button>
+    <button class="nav" data-nav="dashboard"><span class="i">▦</span> Dashboard</button>
+    <button class="nav" data-nav="review"><span class="i">▤</span> Financial Review</button>
+    <button class="nav" data-nav="findings"><span class="i">⚑</span> Findings <span class="cnt" id="navFind">0</span></button>
+    <button class="nav" data-nav="decisions"><span class="i">◈</span> Decisions <span class="cnt" id="navDec">0</span></button>
+    <button class="nav" data-nav="compare"><span class="i">⇄</span> Compare</button>
+    <button class="nav" data-nav="whatsnew"><span class="i">✦</span> What's New</button>
+    <button class="nav" data-nav="audit"><span class="i">◷</span> Audit</button>
+    <button class="nav" data-nav="settings"><span class="i">⚙</span> Settings</button>
+    <button class="nav" data-nav="help"><span class="i">?</span> Help</button>
+    <div class="navsp"></div>
+    <button class="btn btn-fin btn-sm" id="finBtnSide" style="margin:6px 4px;">✦ Ask Fin</button>
+    <div class="hint">Monthly Review in a Box</div>
+  </nav>
+  <header class="top">
+    <span class="rname" id="topReview">FinSight</span>
+    <div class="right">
+      <span class="selwrap">Period <select class="sel" id="periodSel"><option>July 2026</option><option>June 2026</option><option>May 2026</option></select></span>
+      <span class="selwrap">Lens <select class="sel" id="lensSel"><option value="Operator">Operator</option><option value="Leader" selected>Leader</option><option value="Auditor">Auditor</option></select></span>
+      <button class="btn btn-fin btn-sm" id="finBtnTop">✦ Ask Fin</button>
+      <button class="btn btn-s btn-sm" id="textBtn" title="Text size" aria-label="Cycle text size">A±</button>
+      <button class="btn btn-s btn-sm" id="themeBtn" title="Toggle light/dark" aria-label="Toggle theme">◐</button>
+    </div>
+  </header>
+  <main id="main" tabindex="-1"></main>
+</div>
+
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="drawerTitle">
+  <div class="dhead"><strong id="drawerTitle">Details</strong><button class="close" id="drawerClose" aria-label="Close">×</button></div>
+  <div class="dbody" id="drawerBody"></div>
+</aside>
+<aside class="fin" id="finPanel" role="dialog" aria-modal="false" aria-labelledby="finTitle">
+  <div class="dhead"><span style="width:22px;height:22px;border-radius:5px;background:var(--teal500);color:#fff;display:grid;place-items:center;font-size:.7rem;">✦</span><strong id="finTitle">Ask Fin</strong><button class="close" id="finClose" aria-label="Close">×</button></div>
+  <div class="dbody" id="finBody"></div>
+</aside>
+<div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><div class="box"><div id="modalBody"></div></div></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+"use strict";
+/* ================= SYNTHETIC ENTERPRISE DATASET (clearly fictional demonstration) ================= */
+const DEPTS = {120:"Information Technology",210:"Corporate Services",330:"Operations",440:"Claims Operations"};
+const ACC = [
+  {code:"6100",name:"Professional Services",dept:120,budget:150000,etc:0,prior:171000},
+  {code:"6220",name:"Software Licenses",dept:120,budget:20000,etc:1200,prior:19500},
+  {code:"6300",name:"Cloud Infrastructure",dept:120,budget:40000,etc:10000,prior:31000},
+  {code:"6410",name:"Telecom",dept:120,budget:4000,etc:900,prior:3050},
+  {code:"6500",name:"Management Consulting",dept:210,budget:60000,etc:5000,prior:58000},
+  {code:"6600",name:"Facilities",dept:330,budget:45000,etc:3000,prior:44000},
+  {code:"7100",name:"Contract Labor",dept:440,budget:90000,etc:8000,prior:96500},
+  {code:"6700",name:"Marketing Services",dept:210,budget:30000,etc:4000,prior:28000},
+];
+const TXN = [
+  {id:"T-01",dept:120,cc:"CC-IT01",account:"6100",vendor:"Northstar Technology Services",period:"2026-07",inv:"INV-31993",date:"2026-07-08",type:"Invoice",desc:"Managed services — July",amount:184500,conf:"high"},
+  {id:"T-02",dept:120,cc:"CC-IT01",account:"6100",vendor:"Northstar Technology Services",period:"2026-07",inv:"INV-31994",date:"2026-07-09",type:"Invoice",desc:"Change requests",amount:12750,conf:"high"},
+  {id:"T-03",dept:120,cc:"CC-IT01",account:"6100",vendor:"BluePeak Consulting",period:"2026-07",inv:"INV-BP771",date:"2026-07-12",type:"Invoice",desc:"Advisory hours",amount:4200,conf:"high"},
+  {id:"T-04",dept:120,cc:"CC-IT01",account:"6100",vendor:"Northstar Technology Services",period:"2026-07",inv:"CR-3120",date:"2026-07-15",type:"Credit",desc:"Service credit / reversal",amount:-4200,conf:"high",note:"Credit / reversal — unmatched to tracker"},
+  {id:"T-05",dept:120,cc:"CC-IT02",account:"6220",vendor:"Meridian Software",period:"2026-07",inv:"AT-88120",date:"2026-07-03",type:"Invoice",desc:"Annual licenses",amount:9400,conf:"high"},
+  {id:"T-06",dept:120,cc:"CC-IT02",account:"6220",vendor:"Meridian Software",period:"2026-07",inv:"AT-88120",date:"2026-07-03",type:"Invoice",desc:"Annual licenses",amount:9400,conf:"low",note:"Possible duplicate — low extraction confidence"},
+  {id:"T-07",dept:120,cc:"CC-IT03",account:"6300",vendor:"Atlas Cloud Systems",period:"2026-07",inv:"CS-4471",date:"2026-07-05",type:"Invoice",desc:"Compute — July",amount:21000,conf:"high"},
+  {id:"T-08",dept:120,cc:"CC-IT03",account:"6300",vendor:"Atlas Cloud Systems",period:"2026-07",inv:"CS-4472",date:"2026-07-22",type:"Invoice",desc:"Storage",amount:6600,conf:"high"},
+  {id:"T-09",dept:120,cc:"CC-IT04",account:"6410",vendor:"Verity Telecom",period:"2026-07",inv:"VZ-2207",date:"2026-06-30",type:"Invoice",desc:"Circuits — July",amount:3120,conf:"high",note:"Posted 2026-06-30 — after cutoff (Configured Value)"},
+  {id:"T-10",dept:210,cc:"CC-CS01",account:"6500",vendor:"BluePeak Consulting",period:"2026-07",inv:"INV-BP812",date:"2026-07-06",type:"Invoice",desc:"Transformation program",amount:52000,conf:"high"},
+  {id:"T-11",dept:210,cc:"CC-CS01",account:"6500",vendor:"BluePeak Consulting",period:"2026-07",inv:"INV-BP830",date:"2026-07-20",type:"Invoice",desc:"Additional scope",amount:22800,conf:"high"},
+  {id:"T-12",dept:330,cc:"CC-OP01",account:"6600",vendor:"Summit Facilities Mgmt",period:"2026-07",inv:"SF-5561",date:"2026-07-02",type:"Invoice",desc:"Facilities — July",amount:41200,conf:"high"},
+  {id:"T-13",dept:440,cc:"CC-CL01",account:"7100",vendor:"Ironclad Contract Labor",period:"2026-07",inv:"IC-9001",date:"2026-07-10",type:"Invoice",desc:"Contract adjusters",amount:61200,conf:"high"},
+  {id:"T-14",dept:440,cc:"CC-CL01",account:"7100",vendor:"Ironclad Contract Labor",period:"2026-07",inv:"IC-9002",date:"2026-07-24",type:"Invoice",desc:"Overflow staffing",amount:57200,conf:"high"},
+  {id:"T-15",dept:210,cc:"CC-CS02",account:"6700",vendor:"Brightwave Marketing",period:"2026-07",inv:"BW-3300",date:"2026-07-14",type:"Invoice",desc:"Campaign production",amount:22600,conf:"high"},
+];
+const VPRIOR = {"Northstar Technology Services":178000,"BluePeak Consulting":62000,"Meridian Software":19500,"Atlas Cloud Systems":31000,"Verity Telecom":3050,"Summit Facilities Mgmt":44000,"Ironclad Contract Labor":96500,"Brightwave Marketing":28000};
+const TREND = [{m:"Feb 26",v:448000},{m:"Mar 26",v:462000},{m:"Apr 26",v:455000},{m:"May 26",v:471000},{m:"Jun 26",v:451050},{m:"Jul 26",v:503770}];
+const RULE = {"6100":"R-BUD-02","7100":"R-BUD-02","6500":"R-BUD-02","6300":"R-BUD-02","6220":"R-GED-02","6410":"R-GED-04"};
+
+let FINDINGS = [
+  {id:"F-1",group:"Budget",sev:"critical",acct:"6100",vendor:"Northstar Technology Services",title:"Account over budget beyond materiality",status:"New",decision:true,
+   rule:"R-BUD-02 — Over/Under-Budget Flagging & Severity",threshold:"Materiality = Configured Value",
+   plain:"Professional Services spending is $47,250 above budget. Most of the increase is associated with the synthetic vendor Northstar Technology Services.",
+   why:"The variance exceeded the approved materiality setting (Configured Value), so FinSight marked this item as Critical.",
+   matters:"A material overspend on the largest IT account may require a budget re-forecast or a conversation with the vendor before the next cycle.",
+   history:[{ts:"(synthetic) 2026-08-03 09:12",actor:"System",action:"Created",note:"Detected on verified data"}]},
+  {id:"F-2",group:"Budget",sev:"high",acct:"7100",vendor:"Ironclad Contract Labor",title:"Account over budget",status:"Acknowledged",decision:true,
+   rule:"R-BUD-02 — Over/Under-Budget Flagging & Severity",threshold:"Materiality = Configured Value",
+   plain:"Contract Labor is $28,400 above budget (+31.6%), driven by overflow staffing from Ironclad Contract Labor.",
+   why:"The overspend exceeded the materiality setting (Configured Value); severity is High per the configured bands.",
+   matters:"Sustained contract-labor overspend affects the Claims Operations budget and may indicate a staffing-plan gap.",
+   history:[{ts:"(synthetic) 2026-08-03 09:12",actor:"System",action:"Created"},{ts:"(synthetic) 2026-08-03 14:20",actor:"Operator",action:"Acknowledged",note:"Reviewing with Claims Ops"}]},
+  {id:"F-3",group:"GED",sev:"high",acct:"6220",vendor:"Meridian Software",title:"Candidate duplicate GED entry",status:"In Review",decision:false,
+   rule:"R-GED-02 — Duplicate Entry Detection",threshold:"Match keys = Configured Value",
+   plain:"Two identical Software Licenses charges of $9,400 from Meridian Software share the same invoice number (AT-88120) in July.",
+   why:"They match on the configured duplicate keys (account + vendor + amount + invoice number), so FinSight flagged a candidate duplicate. The second line is also low-confidence.",
+   matters:"If it is a true duplicate, paying both would overstate spend by $9,400. A human should confirm or dismiss.",
+   history:[{ts:"(synthetic) 2026-08-03 09:12",actor:"System",action:"Created"},{ts:"(synthetic) 2026-08-03 15:02",actor:"Operator",action:"In Review",note:"Requested vendor statement"}]},
+  {id:"F-4",group:"Reconciliation",sev:"medium",acct:"6100",vendor:"Northstar Technology Services",title:"Unmatched GED line (no tracker entry)",status:"New",decision:false,
+   rule:"R-REC-02 — GED-to-Tracker Matching",threshold:"Match tolerance = Configured Value",
+   plain:"A −$4,200 service credit from Northstar has no matching entry in the budget tracker.",
+   why:"No tracker line matched within the configured tolerance, so the item is reported as unmatched.",
+   matters:"Unmatched credits can distort net spend if not reconciled; carry forward until resolved.",
+   history:[{ts:"(synthetic) 2026-08-03 09:12",actor:"System",action:"Created"}]},
+  {id:"F-5",group:"Budget",sev:"medium",acct:"6500",vendor:"BluePeak Consulting",title:"Account over budget",status:"New",decision:true,
+   rule:"R-BUD-02 — Over/Under-Budget Flagging & Severity",threshold:"Materiality = Configured Value",
+   plain:"Management Consulting is $14,800 above budget (+24.7%) due to additional scope from BluePeak Consulting.",
+   why:"The variance exceeded the materiality setting (Configured Value); severity is Medium per the configured bands.",
+   matters:"Additional consulting scope should be confirmed as approved before period close.",
+   history:[{ts:"(synthetic) 2026-08-03 09:12",actor:"System",action:"Created"}]},
+  {id:"F-6",group:"GED",sev:"low",acct:"6410",vendor:"Verity Telecom",title:"Delayed posting after monthly cutoff",status:"Dismissed",decision:false,
+   rule:"R-GED-04 — Delayed Posting Detection",threshold:"Cutoff calendar = Configured Value",
+   plain:"A $3,120 Verity Telecom charge was posted 2026-06-30 against the July period, after the configured cutoff.",
+   why:"The posting date falls after the configured monthly cutoff (Configured Value), so it was flagged as delayed.",
+   matters:"Usually a timing difference; low impact unless recurring.",
+   history:[{ts:"(synthetic) 2026-08-03 09:12",actor:"System",action:"Created"},{ts:"(synthetic) 2026-08-03 16:40",actor:"Operator",action:"Dismissed",note:"Timing difference — expected"}]},
+  {id:"F-7",group:"Budget",sev:"low",acct:"6300",vendor:"Atlas Cloud Systems",title:"Account materially under budget (favorable)",status:"Resolved",decision:false,
+   rule:"R-BUD-02 — Over/Under-Budget Flagging & Severity",threshold:"Under-budget band = Configured Value",
+   plain:"Cloud Infrastructure is $12,400 under budget (−31.0%) — a favorable variance from Atlas Cloud Systems.",
+   why:"The favorable variance crossed the configured under-budget band (Configured Value) and was surfaced for awareness.",
+   matters:"Favorable, but confirm it reflects real savings and not deferred/late invoices.",
+   history:[{ts:"(synthetic) 2026-08-03 09:12",actor:"System",action:"Created"},{ts:"(synthetic) 2026-08-03 17:05",actor:"Leader",action:"Resolved",note:"Reviewed — planned savings"}]},
+];
+
+/* ---- computed getters (single source of truth) ---- */
+function accActual(code){ return TXN.filter(t=>t.account===code).reduce((s,t)=>s+t.amount,0); }
+function accounts(){ return ACC.map(a=>{ const actual=accActual(a.code); const varAmt=actual-a.budget; return {...a,deptName:DEPTS[a.dept],actual,eac:actual+a.etc,varAmt,varPct:a.budget?varAmt/a.budget:0,fav:varAmt<=0}; }); }
+function totals(){ const A=accounts(); const budget=A.reduce((s,a)=>s+a.budget,0), actual=A.reduce((s,a)=>s+a.actual,0), etc=A.reduce((s,a)=>s+a.etc,0); const eac=actual+etc; const priorActual=ACC.reduce((s,a)=>s+a.prior,0); return {budget,actual,etc,eac,varAmt:actual-budget,varPct:(actual-budget)/budget,priorActual,mom:actual-priorActual,momPct:(actual-priorActual)/priorActual}; }
+function vendors(){ const m={}; TXN.forEach(t=>{ const v=m[t.vendor]||(m[t.vendor]={name:t.vendor,spend:0,accounts:new Set(),count:0}); v.spend+=t.amount; v.accounts.add(t.account); v.count++; }); return Object.values(m).map(v=>{ const prior=VPRIOR[v.name]||0; const accs=[...v.accounts]; return {name:v.name,spend:v.spend,accounts:accs,count:v.count,prior,change:v.spend-prior,changePct:prior?(v.spend-prior)/prior:0,findings:FINDINGS.filter(f=>f.vendor===v.name).map(f=>f.id)}; }).sort((a,b)=>b.spend-a.spend); }
+function vendorByName(n){ return vendors().find(v=>v.name===n); }
+function acctByCode(c){ return accounts().find(a=>a.code===c); }
+function acctVendors(code){ const m={}; TXN.filter(t=>t.account===code).forEach(t=>{ m[t.vendor]=(m[t.vendor]||0)+t.amount; }); return Object.entries(m).map(([name,spend])=>({name,spend})).sort((a,b)=>b.spend-a.spend); }
+function depts(){ const A=accounts(); const m={}; A.forEach(a=>{ const d=m[a.dept]||(m[a.dept]={dept:a.dept,name:DEPTS[a.dept],budget:0,actual:0,etc:0,accounts:0}); d.budget+=a.budget; d.actual+=a.actual; d.etc+=a.etc; d.accounts++; }); return Object.values(m).map(d=>({...d,eac:d.actual+d.etc,varAmt:d.actual-d.budget,varPct:d.budget?(d.actual-d.budget)/d.budget:0})); }
+function openFindings(){ return FINDINGS.filter(f=>!["Resolved","Dismissed"].includes(f.status)); }
+function sevCounts(list){ list=list||FINDINGS; return {critical:list.filter(f=>f.sev==="critical").length,high:list.filter(f=>f.sev==="high").length,medium:list.filter(f=>f.sev==="medium").length,low:list.filter(f=>f.sev==="low").length}; }
+function decisionsList(){ const fromF=FINDINGS.filter(f=>f.decision && !["Resolved","Dismissed"].includes(f.status)); return fromF; }
+function coverage(){ const lowConf=TXN.filter(t=>t.conf==="low").length; const rejected = state.reviewDocError?1:0; return {totalRows:TXN.length,accepted:TXN.length-lowConf,edited:Object.keys(state.savedEdits).length,lowConf,rejected,duplicates:1,missingReq:0,periodMismatch:1,quarantined:0,
+   sources:[["GED Report","valid"],["Budget Tracker","valid"],["Invoices","deferred"],["Resource Sheet","missing-opt"],["Contracts / SOWs","missing-opt"],["Rate Cards","deferred"]]}; }
+function verifiedPct(){ const c=coverage(); return Math.round(((c.accepted+c.edited)/c.totalRows)*100); }
+function ragState(){ const t=totals(); const crit=sevCounts(openFindings()).critical; if(crit>0||t.varPct>0.12) return {k:"warn",label:"Needs Attention",icon:"⚠"}; return {k:"ok",label:"On Track",icon:"✓"}; }
+/*__DATA__*/
+/* ================= STATE + HELPERS ================= */
+const STEP_LABELS = ["Create","Upload","Validate","Verify","Analyze","Review","Summary","Complete"];
+const state = {
+  view:"welcome", currentReviewId:null, selectedReviewId:null, theme:"light", textSize:"default",
+  period:"July 2026", lens:"Leader",
+  editMode:false, edits:{}, savedEdits:{}, reviewTab:"overview", finContext:"Dashboard",
+  reviewDocError:false,
+  filters:{vendor:"",account:"",dept:"",sev:"",status:"",min:"",max:"",dq:""},
+  reviews:[
+    {id:"jul",month:"July",year:"2026",status:"completed",step:8,docs:demoDocs(),verified:true},
+    {id:"jun",month:"June",year:"2026",status:"completed",step:8,docs:demoDocs(),verified:true},
+    {id:"may",month:"May",year:"2026",status:"completed",step:8,docs:demoDocs(),verified:true},
+    {id:"apr",month:"April",year:"2026",status:"in-progress",step:4,docs:demoDocs(),verified:false},
+  ],
+};
+function demoDocs(){ return {ged:{name:"ged_dept_ytd_2026-07.xlsx",ok:true},budget:{name:"BudgetTracker_2026-07.xlsx",ok:true}}; }
+function curr(){ return state.reviews.find(r=>r.id===state.currentReviewId)||null; }
+function uid(){ state.__n=(state.__n||0)+1; return "rev"+state.__n; }
+
+const $ = s=>document.querySelector(s);
+function money(n){ const s=Math.abs(n).toLocaleString("en-US",{minimumFractionDigits:0,maximumFractionDigits:0}); return (n<0?"−$":"$")+s; }
+function money2(n){ const s=Math.abs(n).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}); return (n<0?"−$":"$")+s; }
+function pct(x){ return (x>=0?"+":"−")+Math.abs(x*100).toFixed(1)+"%"; }
+function esc(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function varCell(v){ return `<span class="${v>0?'unf':'fav'}">${v>0?'▲':'▼'} ${money(Math.abs(v))}</span>`; }
+function sevBadge(sev){ const sh={critical:"sq-oct",high:"sq-tri",medium:"sq-dia",low:"sq-dot"}[sev]; const lb={critical:"Critical",high:"High",medium:"Medium",low:"Low"}[sev]; const c={critical:"c",high:"h",medium:"m",low:"l"}[sev]; return `<span class="sev sev-${c}"><span class="sq ${sh}"></span>${lb}</span>`; }
+function statusChip(st){ const map={New:"info",Acknowledged:"info","Assigned":"info","In Review":"warn","Resolved":"ok","Dismissed":"",Reopened:"warn"}; return `<span class="chip ${map[st]||''}"><span>•</span> ${esc(st)}</span>`; }
+function toast(m){ const t=$("#toast"); t.textContent=m; t.classList.add("show"); clearTimeout(t.__t); t.__t=setTimeout(()=>t.classList.remove("show"),1900); }
+
+function closeAll(){ $("#scrim").classList.remove("open"); $("#drawer").classList.remove("open"); $("#modal").classList.remove("open"); $("#finPanel").classList.remove("open"); }
+function drawer(title,html){ $("#drawerTitle").textContent=title; $("#drawerBody").innerHTML=html; $("#scrim").classList.add("open"); $("#drawer").classList.add("open"); }
+function modal(html){ $("#modalBody").innerHTML=html; $("#scrim").classList.add("open"); $("#modal").classList.add("open"); }
+$("#drawerClose").addEventListener("click",closeAll);
+$("#finClose").addEventListener("click",()=>{ $("#finPanel").classList.remove("open"); if(!$("#drawer").classList.contains("open")&&!$("#modal").classList.contains("open")) $("#scrim").classList.remove("open"); });
+$("#scrim").addEventListener("click",closeAll);
+document.addEventListener("keydown",e=>{ if(e.key==="Escape") closeAll(); });
+
+function go(view){ state.view=view; render(); const m=$("#main"); m.scrollTop=0; m.focus(); }
+function openReview(id,view){ state.currentReviewId=id; state.view=view; render(); $("#main").focus(); }
+function resume(id){ const r=state.reviews.find(x=>x.id===id); state.currentReviewId=id; const map={1:"create",2:"upload",3:"validate",4:"verify",5:"analyze",6:"review",7:"summary",8:"complete"}; state.view=map[r.step]||"upload"; render(); $("#main").focus(); }
+
+function stepper(step){ let items=""; for(let i=1;i<=8;i++){ const cls=i<step?"done":(i===step?"cur":""); const gate=i===4?" gate":""; items+=`<li class="${cls}${gate}" ${i===step?'aria-current="step"':''}><span class="nd">${i<step?"✓":i}</span><span class="lb">${STEP_LABELS[i-1]}</span></li>`; if(i<8) items+=`<li class="cn" aria-hidden="true"></li>`; } return `<div class="stepband"><div class="w"><div class="stepnow">Step ${step} of 8 — ${STEP_LABELS[step-1]}</div><ol class="stepper" aria-label="Review progress">${items}</ol></div></div>`; }
+function rframe(step,body){ return stepper(step)+`<div class="page">${body}</div>`; }
+function back(view,label){ return `<button class="back" onclick="go('${view}')">‹ ${label}</button>`; }
+function pagehead(crumb,title,actions){ return `<div class="pagehead"><div><div class="crumb">${crumb}</div><h1>${title}</h1></div>${actions?`<div class="actions">${actions}</div>`:""}</div>`; }
+function finBtn(ctx){ return `<button class="btn btn-fin btn-sm" onclick="askFin('${esc(ctx)}')">✦ Ask Fin</button>`; }
+function lensBanner(){ const map={Operator:"upload, verification, corrections, matching, evidence and workflow completion",Leader:"financial status, trends, material issues, decisions required and the leadership summary",Auditor:"source lineage, rules, configuration, edits/overrides, audit history and reproducibility"}; return `<div class="lensbanner"><b>${state.lens} lens</b> — emphasizing ${map[state.lens]}. <span class="muted">(prototype lens switch only — no authentication or permissions)</span></div>`; }
+/*__HELPERS__*/
+/* ================= CHARTS (native SVG/CSS, no dependencies) ================= */
+function chartPanel(title,sub,inner,tableHtml){
+  return `<div class="panel"><div class="ph"><h3>${title}</h3></div><div class="pb"><div class="chart"><div class="cs">${sub||""}</div>${inner}
+    ${tableHtml?`<details class="dt"><summary>Show data table (accessible alternative)</summary>${tableHtml}</details>`:""}</div></div></div>`;
+}
+function barBudgetActual(A){
+  const max=Math.max(...A.map(a=>Math.max(a.budget,a.actual)))||1;
+  const rows=A.map(a=>`<div style="margin-bottom:9px;">
+    <div style="display:flex;justify-content:space-between;font-size:.76rem;margin-bottom:2px;"><span><b>${a.code}</b> ${esc(a.name)}</span><span class="tnum ${a.varAmt>0?'unf':'fav'}">${a.varAmt>0?'over ':'under '}${money(Math.abs(a.varAmt))} (${pct(a.varPct)})</span></div>
+    <div style="display:flex;align-items:center;gap:6px;"><span style="width:44px;font-size:.66rem;color:var(--tm);">Budget</span><div style="flex:1;background:var(--sunken);border-radius:3px;"><div style="width:${a.budget/max*100}%;height:10px;background:var(--n400);border-radius:3px;"></div></div><span class="tnum" style="width:70px;text-align:right;font-size:.7rem;">${money(a.budget)}</span></div>
+    <div style="display:flex;align-items:center;gap:6px;"><span style="width:44px;font-size:.66rem;color:var(--tm);">Actual</span><div style="flex:1;background:var(--sunken);border-radius:3px;"><div style="width:${a.actual/max*100}%;height:10px;background:${a.varAmt>0?'var(--dng)':'var(--ok)'};border-radius:3px;"></div></div><span class="tnum" style="width:70px;text-align:right;font-size:.7rem;">${money(a.actual)}</span></div>
+  </div>`).join("");
+  const legend=`<div class="legend"><span><span class="lgsw" style="background:var(--n400)"></span>Budget</span><span><span class="lgsw" style="background:var(--dng)"></span>Actual (over)</span><span><span class="lgsw" style="background:var(--ok)"></span>Actual (under)</span></div>`;
+  const table=`<div class="tw"><table><thead><tr><th>Account</th><th class="num">Budget</th><th class="num">Actual</th><th class="num">Variance</th></tr></thead><tbody>${A.map(a=>`<tr><td>${a.code} ${esc(a.name)}</td><td class="num tnum">${money(a.budget)}</td><td class="num tnum">${money(a.actual)}</td><td class="num tnum ${a.varAmt>0?'unf':'fav'}">${money(a.varAmt)}</td></tr>`).join("")}</tbody></table></div>`;
+  return {inner:rows+legend,table};
+}
+function barVendors(V){
+  const max=Math.max(...V.map(v=>v.spend))||1;
+  const inner=V.map(v=>`<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:.76rem;">
+    <span style="width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(v.name)}</span>
+    <div style="flex:1;background:var(--sunken);border-radius:3px;"><div style="width:${v.spend/max*100}%;height:13px;background:var(--act);border-radius:3px;"></div></div>
+    <span class="tnum" style="width:78px;text-align:right;">${money(v.spend)}</span>
+    <span class="tnum ${v.change>0?'unf':'fav'}" style="width:74px;text-align:right;font-size:.7rem;">${v.change>0?'▲':'▼'}${money(Math.abs(v.change))}</span></div>`).join("");
+  const table=`<div class="tw"><table><thead><tr><th>Vendor</th><th class="num">Spend</th><th class="num">Prior</th><th class="num">Change</th></tr></thead><tbody>${V.map(v=>`<tr><td>${esc(v.name)}</td><td class="num tnum">${money(v.spend)}</td><td class="num tnum">${money(v.prior)}</td><td class="num tnum ${v.change>0?'unf':'fav'}">${money(v.change)}</td></tr>`).join("")}</tbody></table></div>`;
+  return {inner,table};
+}
+function lineTrend(pts){
+  const W=560,H=170,pad=36,max=Math.max(...pts.map(p=>p.v)),min=Math.min(...pts.map(p=>p.v));
+  const x=i=>pad+i*((W-pad*2)/(pts.length-1)), y=v=>H-26-((v-min)/((max-min)||1))*(H-58);
+  const poly=pts.map((p,i)=>`${x(i)},${y(p.v)}`).join(" ");
+  const dots=pts.map((p,i)=>`<circle cx="${x(i)}" cy="${y(p.v)}" r="3" fill="var(--act)"></circle><text x="${x(i)}" y="${H-8}" font-size="9" text-anchor="middle" fill="var(--tm)">${p.m}</text><text x="${x(i)}" y="${y(p.v)-7}" font-size="8.5" text-anchor="middle" fill="var(--ts)">${(p.v/1000).toFixed(0)}k</text>`).join("");
+  const inner=`<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Monthly total spend trend"><polyline points="${poly}" fill="none" stroke="var(--act)" stroke-width="2"></polyline>${dots}</svg>`;
+  const table=`<div class="tw"><table><thead><tr><th>Month</th><th class="num">Total spend</th></tr></thead><tbody>${pts.map(p=>`<tr><td>${p.m}</td><td class="num tnum">${money(p.v)}</td></tr>`).join("")}</tbody></table></div>`;
+  return {inner,table};
+}
+function diverging(A){
+  const s=A.slice().sort((a,b)=>b.varAmt-a.varAmt); const max=Math.max(...s.map(a=>Math.abs(a.varAmt)))||1;
+  const inner=s.map(a=>{ const w=Math.abs(a.varAmt)/max*100, over=a.varAmt>0; return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;font-size:.74rem;">
+    <span style="width:160px;">${a.code} ${esc(a.name)}</span>
+    <div style="flex:1;display:flex;align-items:center;"><div style="width:50%;display:flex;justify-content:flex-end;">${over?'':`<div style="width:${w}%;height:12px;background:var(--ok);border-radius:2px;"></div>`}</div><div style="width:1px;height:16px;background:var(--bstrong);"></div><div style="width:50%;">${over?`<div style="width:${w}%;height:12px;background:var(--dng);border-radius:2px;"></div>`:''}</div></div>
+    <span class="tnum ${over?'unf':'fav'}" style="width:120px;text-align:right;">${over?'▲ over ':'▼ under '}${money(Math.abs(a.varAmt))}</span></div>`; }).join("");
+  const legend=`<div class="legend"><span><span class="lgsw" style="background:var(--ok)"></span>▼ Favorable (under budget)</span><span><span class="lgsw" style="background:var(--dng)"></span>▲ Unfavorable (over budget)</span></div>`;
+  return {inner:inner+legend,table:null};
+}
+function donut(c){
+  const total=c.critical+c.high+c.medium+c.low||1;
+  const segs=[["Critical","var(--sc)",c.critical],["High","var(--sh)",c.high],["Medium","var(--sm)",c.medium],["Low","var(--sl)",c.low]];
+  let a0=-Math.PI/2; const R=52,CX=60,CY=60;
+  const arcs=segs.map(([k,col,n])=>{ if(!n) return ""; const frac=n/total,a1=a0+frac*2*Math.PI,large=frac>0.5?1:0; const x0=CX+R*Math.cos(a0),y0=CY+R*Math.sin(a0),x1=CX+R*Math.cos(a1),y1=CY+R*Math.sin(a1); const p=`<path d="M ${x0.toFixed(1)} ${y0.toFixed(1)} A ${R} ${R} 0 ${large} 1 ${x1.toFixed(1)} ${y1.toFixed(1)}" fill="none" stroke="${col}" stroke-width="17"></path>`; a0=a1; return p; }).join("");
+  const legend=segs.map(([k,col,n])=>`<span><span class="lgsw" style="background:${col}"></span>${k} <b>${n}</b></span>`).join("");
+  const inner=`<div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap;"><svg viewBox="0 0 120 120" width="118" role="img" aria-label="Findings by severity"><circle cx="60" cy="60" r="52" fill="none" stroke="var(--sunken)" stroke-width="17"></circle>${arcs}<text x="60" y="58" text-anchor="middle" font-size="20" font-weight="700" fill="var(--tp)">${total}</text><text x="60" y="74" text-anchor="middle" font-size="9" fill="var(--tm)">findings</text></svg><div class="legend" style="flex-direction:column;gap:7px;">${legend}</div></div>`;
+  return {inner,table:null};
+}
+function coverageBlock(){
+  const c=coverage(), p=verifiedPct();
+  const src=c.sources.map(([n,st])=>{ const m={valid:["ok","✓ Valid"],"missing-opt":["","○ Missing (optional)"],deferred:["","— Deferred"],failed:["dng","✕ Failed"]}[st]; return `<div style="display:flex;justify-content:space-between;font-size:.78rem;padding:3px 0;"><span>${n}</span><span class="chip ${m[0]}">${m[1]}</span></div>`; }).join("");
+  const inner=`<div style="margin-bottom:8px;"><div style="display:flex;justify-content:space-between;font-size:.78rem;margin-bottom:4px;"><span>Verification coverage</span><b class="tnum">${p}%</b></div><div class="cov"><i style="width:${p}%;"></i></div></div>
+    <div class="kv" style="margin:10px 0;"><dt>Rows extracted</dt><dd>${c.totalRows}</dd><dt>Accepted</dt><dd>${c.accepted}</dd><dt>Edited</dt><dd>${c.edited}</dd><dt>Low-confidence</dt><dd>${c.lowConf}</dd><dt>Duplicate candidates</dt><dd>${c.duplicates}</dd><dt>Period mismatches</dt><dd>${c.periodMismatch}</dd><dt>Rejected</dt><dd>${c.rejected}</dd></div>${src}`;
+  return inner;
+}
+/*__CHARTS__*/
+/* ================= ENTRY: WELCOME + OPEN PAST REVIEW ================= */
+function selId(){ return state.selectedReviewId||state.currentReviewId||"jul"; }
+function selReview(){ return state.reviews.find(r=>r.id===selId())||{month:"July",year:"2026"}; }
+function openDashboard(id){ state.selectedReviewId=id; state.currentReviewId=id; state.view="dashboard"; render(); $("#main").focus(); }
+function recentCompact(){ if(!state.reviews.length) return "";
+  return `<div class="panel" style="max-width:640px;margin:0 auto 14px;"><div class="ph"><h3>Recent Reviews</h3><span class="pill" style="margin-left:auto;">${state.reviews.length}</span></div><div class="pb">
+    ${state.reviews.map(r=>{ const st=r.status==="completed"?`<span class="chip ok"><span>✓</span> Completed</span>`:`<span class="chip warn"><span>◐</span> In progress · Step ${r.step} of 8</span>`; const act=r.status==="completed"?`<button class="btn btn-s btn-sm" onclick="openDashboard('${r.id}')">Open Dashboard ›</button>`:`<button class="btn btn-p btn-sm" onclick="resume('${r.id}')">Resume ›</button>`; return `<div class="revrow"><span class="rt">${r.month} ${r.year}</span><span class="rs">${st}</span>${act}</div>`; }).join("")}
+    <div class="btnrow" style="margin-top:8px;"><button class="btn btn-g btn-sm" onclick="go('selectpast')">View all past reviews ›</button></div>
+  </div></div>`; }
+function viewWelcome(){
+  return `<div class="page" style="max-width:820px;">
+    <div style="text-align:center;padding:26px 0 6px;">
+      <div class="brand" style="justify-content:center;font-size:1.4rem;"><span class="lg" style="width:34px;height:34px;">FS</span> FinSight</div>
+      <h1 style="font-size:1.9rem;margin-top:12px;">Hello, welcome to FinSight</h1>
+      <p class="sec" style="max-width:580px;margin:0 auto;">FinSight guides you, step by step, through a complete monthly financial review — upload your files, verify the data, then review budget, spend and findings with full traceability. You stay in control; AI only explains.</p>
+    </div>
+    <div class="grid g2" style="max-width:640px;margin:18px auto;">
+      <div class="panel"><div class="pb" style="text-align:center;"><h3>Start a new month</h3><p class="sec" style="font-size:.86rem;">Create a review and add your GED &amp; Budget files.</p><button class="btn btn-p" onclick="go('create')">Create New Review ›</button></div></div>
+      <div class="panel"><div class="pb" style="text-align:center;"><h3>Open a past review</h3><p class="sec" style="font-size:.86rem;">Select a previously completed or in-progress review.</p><button class="btn btn-s" onclick="go('selectpast')">Open Past Review ›</button></div></div>
+    </div>
+    ${recentCompact()}
+    <p class="muted" style="text-align:center;font-size:.76rem;">No financial data is shown until you create or open a review. All data in this prototype is clearly-synthetic demonstration data.</p>
+  </div>`;
+}
+function viewSelectPast(){
+  return `<div class="page" style="max-width:920px;">${back('welcome','Welcome')}
+    ${pagehead("Open Past Review","Select a review to open","")}
+    <p class="sec">Choose a review below. Its dashboard appears only after you select it.</p>
+    ${state.reviews.map((r,i)=>{
+      const done=r.status==="completed";
+      const status=done?`<span class="chip ok"><span>✓</span> Completed</span>`:`<span class="chip warn"><span>◐</span> In progress · Step ${r.step} of 8</span>`;
+      const overall=done?`${ragState().icon} ${ragState().label}`:"—";
+      const cov=done?`${verifiedPct()}% verified · Budget, GED, Reconciliation`:"Not yet analyzed";
+      const of=done?openFindings().length:"—";
+      const date=done?`(synthetic) 2026-0${8-i}-03`:"—";
+      const action=done?`<button class="btn btn-p btn-sm" onclick="openDashboard('${r.id}')">Open Review ›</button>`:`<button class="btn btn-s btn-sm" onclick="resume('${r.id}')">Resume ›</button>`;
+      return `<div class="panel"><div class="pb" style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;">
+        <div style="min-width:118px;"><div class="ov">Period</div><b>${r.month} ${r.year}</b></div>
+        <div>${status}</div>
+        <div><div class="ov">Completed</div><span style="font-size:.82rem;">${date}</span></div>
+        <div><div class="ov">Overall status</div><span style="font-size:.86rem;">${overall}</span></div>
+        <div><div class="ov">Data coverage</div><span style="font-size:.82rem;">${cov}</span></div>
+        <div><div class="ov">Open findings</div><b>${of}</b></div>
+        <div style="margin-left:auto;">${action}</div>
+      </div></div>`;
+    }).join("")}
+  </div>`;
+}
+
+/* ================= DASHBOARD (opens only after a review is selected) ================= */
+function kpi(cls,label,val,detail){ return `<div class="kpi ${cls||''}"><div class="kl">${label}</div><div class="kv tnum">${val}</div><div class="kd">${detail||""}</div></div>`; }
+function viewDashboard(){
+  const t=totals(), rag=ragState(), sc=sevCounts(openFindings()), dec=decisionsList().length, cov=coverage();
+  const V=vendors(), A=accounts();
+  const topV=V.slice(0,5), unf=A.filter(a=>a.varAmt>0).sort((x,y)=>y.varAmt-x.varAmt);
+  const ba=barBudgetActual(A), bv=barVendors(V.slice(0,6)), ln=lineTrend(TREND), dv=diverging(A), dn=donut(sevCounts(FINDINGS));
+
+  const kpis=`<div class="kpis">
+    ${kpi("k-"+rag.k,"Overall status",rag.icon+" "+rag.label,"Deterministic RAG — never AI")}
+    ${kpi("","Total budget",money(t.budget),"8 accounts · 4 departments")}
+    ${kpi(t.varAmt>0?"k-dng":"k-ok","Total actual",money(t.actual),`<span class="${t.momPct>0?'up':'down'}">${t.momPct>0?'▲':'▼'} ${pct(t.momPct)} vs June</span>`)}
+    ${kpi("","Estimate at completion",money(t.eac),"Actual + ETC")}
+    ${kpi(t.varAmt>0?"k-dng":"k-ok","Variance",money(t.varAmt),`${pct(t.varPct)} vs budget`)}
+    ${kpi(sc.critical?"k-dng":"k-warn","Open findings",openFindings().length,`${sc.critical} Critical · ${sc.high} High · ${sc.medium} Med · ${sc.low} Low`)}
+    ${kpi("k-warn","Decisions required",dec,"Need human judgement")}
+    ${kpi("k-info","Data verified",verifiedPct()+"%",`${cov.lowConf} low-confidence · ${cov.duplicates} duplicate`)}
+  </div>`;
+
+  const statusCard=`<div class="panel"><div class="ph"><h3>Current review status</h3><span class="pill" style="margin-left:auto;">${selReview().month} ${selReview().year}</span></div><div class="pb">
+    <div class="rag ${rag.k}" style="margin-bottom:10px;"><span class="ragi">${rag.icon}</span><div><b>${rag.label}</b> — total actual ${money(t.actual)} vs budget ${money(t.budget)} (${pct(t.varPct)}). <span class="muted">Thresholds: Configured Value.</span></div></div>
+    <div class="kv"><dt>Review</dt><dd>Completed &amp; verified (Step 8 of 8)</dd><dt>Capabilities run</dt><dd>Budget, GED, Reconciliation</dd><dt>Capabilities skipped</dt><dd>Invoice Validation (deferred), Resource Analysis (no data)</dd><dt>Month-over-month</dt><dd class="${t.mom>0?'unf':'fav'}">${t.mom>0?'▲':'▼'} ${money(Math.abs(t.mom))} (${pct(t.momPct)})</dd></div>
+    <div class="btnrow" style="margin-top:12px;"><button class="btn btn-p btn-sm" onclick="openReview('${selId()}','review')">Open Financial Review ›</button><button class="btn btn-s btn-sm" onclick="openReview('${selId()}','summary')">Leadership Summary</button>${finBtn("Dashboard")}</div>
+  </div></div>`;
+
+  const topVend=`<div class="panel"><div class="ph"><h3>Top vendors by spend</h3><button class="btn btn-g btn-sm" style="margin-left:auto;" onclick="state.reviewTab='vendors';openReview('${selId()}','review')">All vendors ›</button></div><div class="pb"><div class="tw"><table><thead><tr><th>Vendor</th><th class="num">Spend</th><th class="num">vs prior</th><th class="num">Accts</th></tr></thead><tbody>
+    ${topV.map(v=>`<tr class="click" onclick="vendorDrawer('${esc(v.name)}')"><td>${esc(v.name)}</td><td class="num tnum">${money(v.spend)}</td><td class="num tnum ${v.change>0?'unf':'fav'}">${v.change>0?'▲':'▼'} ${money(Math.abs(v.change))}</td><td class="num">${v.accounts.length}</td></tr>`).join("")}
+  </tbody></table></div></div></div>`;
+
+  const topAcc=`<div class="panel"><div class="ph"><h3>Top accounts by unfavorable variance</h3><button class="btn btn-g btn-sm" style="margin-left:auto;" onclick="state.reviewTab='accounts';openReview('${selId()}','review')">All accounts ›</button></div><div class="pb"><div class="tw"><table><thead><tr><th>Account</th><th class="num">Budget</th><th class="num">Actual</th><th class="num">Variance</th></tr></thead><tbody>
+    ${unf.map(a=>`<tr class="click" onclick="acctDrawer('${a.code}')"><td>${a.code} ${esc(a.name)}</td><td class="num tnum">${money(a.budget)}</td><td class="num tnum">${money(a.actual)}</td><td class="num tnum unf">▲ ${money(a.varAmt)} (${pct(a.varPct)})</td></tr>`).join("")}
+  </tbody></table></div></div></div>`;
+
+  const decPanel=`<div class="panel"><div class="ph"><h3>Decisions required</h3><span class="pill" style="margin-left:auto;">${dec}</span></div><div class="pb">
+    ${decisionsList().slice(0,3).map(f=>`<div style="display:flex;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);"><span>${sevBadge(f.sev)}</span><div style="flex:1;font-size:.82rem;"><b>${esc(f.title)}</b> — ${esc(f.entity||f.acct)}</div><button class="btn btn-g btn-sm" onclick="go('decisions')">Review ›</button></div>`).join("")||'<p class="muted">None.</p>'}
+  </div></div>`;
+
+  const recent=`<div class="panel"><div class="ph"><h3>Recent Reviews</h3><span class="pill" style="margin-left:auto;">${state.reviews.length}</span></div><div class="pb">
+    ${state.reviews.map(r=>{ const st=r.status==="completed"?`<span class="chip ok"><span>✓</span> Completed</span>`:`<span class="chip warn"><span>◐</span> In progress · Step ${r.step} of 8 (${STEP_LABELS[r.step-1]})</span>`; const act=r.status==="completed"?`<button class="btn btn-s btn-sm" onclick="openReview('${r.id}','summary')">Open</button>`:`<button class="btn btn-p btn-sm" onclick="resume('${r.id}')">Resume ›</button>`; return `<div class="revrow"><span class="rt">${r.month} ${r.year}</span><span class="rs">${st}</span>${act}</div>`; }).join("")}
+    <div class="btnrow" style="margin-top:8px;"><button class="btn btn-p btn-sm" onclick="go('create')">+ Create New Review</button><button class="btn btn-g btn-sm" onclick="go('history')">View all reviews ›</button></div>
+  </div></div>`;
+
+  // lens-aware ordering of blocks
+  const chartsFin=`<div class="grid g2">${chartPanel("Budget vs Actual by account","Grouped bars — over budget shown in red, under in green (values labeled)",ba.inner,ba.table)}${chartPanel("Spend by vendor","Horizontal bars with change vs prior period",bv.inner,bv.table)}</div>
+    <div class="grid g2">${chartPanel("Monthly spend trend","Line chart — total actual spend, last 6 months",ln.inner,ln.table)}${chartPanel("Variance by account","Diverging bars — favorable vs unfavorable",dv.inner)}</div>
+    <div class="grid g2">${chartPanel("Findings by severity","Donut — open and closed findings",dn.inner)}<div class="panel"><div class="ph"><h3>Review &amp; data coverage</h3></div><div class="pb">${coverageBlock()}</div></div></div>`;
+
+  let order;
+  if(state.lens==="Operator") order=[statusCard,`<div class="panel"><div class="ph"><h3>Verification &amp; coverage</h3></div><div class="pb">${coverageBlock()}<div class="btnrow" style="margin-top:10px;"><button class="btn btn-p btn-sm" onclick="openReview('${selId()}','verify')">Open verification</button><button class="btn btn-s btn-sm" onclick="reconWork()">Reconciliation matching</button></div></div></div>`,decPanel,chartsFin,topVend,topAcc,recent];
+  else if(state.lens==="Auditor") order=[statusCard,`<div class="panel"><div class="ph"><h3>Lineage &amp; audit</h3></div><div class="pb"><p class="sec">Every figure traces to a source row; every edit and rule run is recorded.</p><div class="btnrow"><button class="btn btn-s btn-sm" onclick="go('audit')">Open audit trail</button><button class="btn btn-s btn-sm" onclick="openReview('${selId()}','verify')">Change history</button></div></div></div>`,topAcc,topVend,chartsFin,decPanel,recent];
+  else order=[statusCard,chartsFin,`<div class="grid g2">${topVend}${topAcc}</div>`,decPanel,recent];
+
+  return `<div class="page">
+    ${pagehead("FinSight › Monthly Review in a Box",`${selReview().month} ${selReview().year} — Financial Review Dashboard`,finBtn("Dashboard")+`<button class="btn btn-p btn-sm" onclick="openReview('${selId()}','review')">Open Financial Review</button>`)}
+    ${lensBanner()}
+    ${kpis}
+    ${order.join("")}
+    <p class="muted" style="font-size:.76rem;">All figures are clearly-synthetic demonstration data. FinSight presents deterministic figures; it never creates financial values or findings.</p>
+  </div>`;
+}
+
+function viewHistory(){
+  const rows=state.reviews.map(r=>`<tr><td>${r.month} ${r.year}</td><td>${r.status==="completed"?"Completed":"In progress · Step "+r.step+" of 8"}</td><td><button class="btn btn-g btn-sm" onclick="${r.status==='completed'?`openReview('${r.id}','summary')`:`resume('${r.id}')`}">${r.status==='completed'?'Open':'Resume'}</button></td></tr>`).join("");
+  return `<div class="page">${back('dashboard','Dashboard')}${pagehead("FinSight › Reviews","All reviews","")}<div class="tw"><table><thead><tr><th>Review</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+}
+
+/* ---- drilldown drawers ---- */
+function vendorDrawer(name){
+  const v=vendorByName(name); if(!v) return; const txns=TXN.filter(t=>t.vendor===name);
+  const accRows=v.accounts.map(code=>{ const a=acctByCode(code); const sp=txns.filter(t=>t.account===code).reduce((s,t)=>s+t.amount,0); return `<tr class="click" onclick="acctDrawer('${code}')"><td>${code} ${esc(a.name)}</td><td class="num tnum">${money(sp)}</td><td class="num tnum ${a.varAmt>0?'unf':'fav'}">${money(a.varAmt)}</td></tr>`; }).join("");
+  const txRows=txns.map(t=>`<tr class="click" onclick="sourceTxn('${t.id}')"><td>${t.date}</td><td>${t.account}</td><td>${esc(t.desc)}</td><td class="num tnum">${money2(t.amount)}</td></tr>`).join("");
+  const fnd=v.findings.map(id=>FINDINGS.find(f=>f.id===id)).filter(Boolean);
+  drawer("Vendor — "+esc(name), `
+    <p class="ov">Vendor summary (synthetic)</p>
+    <div class="kv"><dt>Total spend</dt><dd>${money(v.spend)}</dd><dt>Prior period</dt><dd>${money(v.prior)}</dd><dt>Change</dt><dd class="${v.change>0?'unf':'fav'}">${money(v.change)} (${pct(v.changePct)})</dd><dt>Transactions</dt><dd>${v.count}</dd><dt>Accounts</dt><dd>${v.accounts.join(", ")}</dd></div>
+    <h4 style="margin-top:14px;">Accounts (drill down)</h4><div class="tw"><table><thead><tr><th>Account</th><th class="num">Spend</th><th class="num">Acct variance</th></tr></thead><tbody>${accRows}</tbody></table></div>
+    <h4 style="margin-top:14px;">Transactions</h4><div class="tw"><table><thead><tr><th>Date</th><th>Acct</th><th>Description</th><th class="num">Amount</th></tr></thead><tbody>${txRows}</tbody></table></div>
+    ${fnd.length?`<h4 style="margin-top:14px;">Related findings</h4>${fnd.map(f=>`<div style="display:flex;gap:8px;align-items:center;padding:4px 0;">${sevBadge(f.sev)} <span style="font-size:.82rem;">${esc(f.title)}</span> <button class="btn btn-g btn-sm" onclick="explainFinding('${f.id}')">Explain</button></div>`).join("")}`:""}
+    <div style="margin-top:14px;">${finBtn("Vendor: "+name)}</div>`);
+}
+function acctDrawer(code){
+  const a=acctByCode(code); if(!a) return; const txns=TXN.filter(t=>t.account===code);
+  const vends=acctVendors(code).map(x=>`<tr class="click" onclick="vendorDrawer('${esc(x.name)}')"><td>${esc(x.name)}</td><td class="num tnum">${money(x.spend)}</td></tr>`).join("");
+  const txRows=txns.map(t=>`<tr class="click" onclick="sourceTxn('${t.id}')"><td>${t.date}</td><td>${esc(t.vendor)}</td><td>${esc(t.desc)}</td><td class="num tnum">${money2(t.amount)}</td></tr>`).join("");
+  const fnd=FINDINGS.filter(f=>f.acct===code);
+  drawer("Account — "+code+" "+esc(a.name), `
+    <p class="ov">Account summary (synthetic) · ${esc(a.deptName)}</p>
+    <div class="kv"><dt>Budget</dt><dd>${money(a.budget)}</dd><dt>Actual</dt><dd>${money(a.actual)}</dd><dt>ETC</dt><dd>${money(a.etc)}</dd><dt>EAC</dt><dd>${money(a.eac)}</dd><dt>Variance</dt><dd class="${a.varAmt>0?'unf':'fav'}">${money(a.varAmt)} (${pct(a.varPct)})</dd><dt>Prior actual</dt><dd>${money(a.prior)}</dd></div>
+    <h4 style="margin-top:14px;">Vendors (drill down)</h4><div class="tw"><table><thead><tr><th>Vendor</th><th class="num">Spend</th></tr></thead><tbody>${vends}</tbody></table></div>
+    <h4 style="margin-top:14px;">Transactions</h4><div class="tw"><table><thead><tr><th>Date</th><th>Vendor</th><th>Description</th><th class="num">Amount</th></tr></thead><tbody>${txRows}</tbody></table></div>
+    ${fnd.length?`<h4 style="margin-top:14px;">Related findings</h4>${fnd.map(f=>`<div style="display:flex;gap:8px;align-items:center;padding:4px 0;">${sevBadge(f.sev)} <span style="font-size:.82rem;">${esc(f.title)}</span> <button class="btn btn-g btn-sm" onclick="explainFinding('${f.id}')">Explain</button></div>`).join("")}`:""}`);
+}
+function sourceTxn(id){
+  const t=TXN.find(x=>x.id===id); const idx=TXN.indexOf(t);
+  drawer("Source record — "+id, `<p class="ov">Where did this come from?</p>
+    <div class="kv"><dt>Department</dt><dd>${t.dept} ${esc(DEPTS[t.dept])}</dd><dt>Cost centre</dt><dd>${esc(t.cc)}</dd><dt>Account</dt><dd>${t.account}</dd><dt>Vendor</dt><dd>${esc(t.vendor)}</dd><dt>Type</dt><dd>${esc(t.type)}</dd><dt>Description</dt><dd>${esc(t.desc)}</dd><dt>Invoice / ref</dt><dd>${esc(t.inv)}</dd><dt>Date</dt><dd>${t.date}</dd><dt>Period</dt><dd>${t.period}</dd><dt>Amount</dt><dd class="tnum">${money2(t.amount)}</dd><dt>Confidence</dt><dd>${t.conf}</dd></div>
+    <div class="alert info" style="margin-top:12px;"><span class="ai">ℹ</span><div><b>Source:</b> GED Report (General Expense Detail) › sheet <b>Detail</b> › row <b>${idx+2}</b>. One interaction from any figure to its origin.</div></div>
+    ${t.note?`<div class="alert warn"><span class="ai">⚠</span><div>${esc(t.note)}</div></div>`:""}`);
+}
+/*__DASH__*/
+/* ================= WIZARD: create / upload / validate / processing / verify / analyze / complete ================= */
+function viewCreate(){
+  return rframe(1, `${back('dashboard','Dashboard')}${pagehead("New review","Create Review","")}
+    <p class="sec">Name this review by month and year — this becomes your “<b>Month Year</b> Review”. Everything after happens inside it.</p>
+    <div class="panel" style="max-width:520px;"><div class="pb">
+      <div class="field"><label for="mo">Month (required)</label><select id="mo">${["January","February","March","April","May","June","July","August","September","October","November","December"].map(m=>`<option ${m==="August"?"selected":""}>${m}</option>`).join("")}</select></div>
+      <div class="field"><label for="yr">Year (required)</label><input id="yr" value="2026" inputmode="numeric"></div>
+      <div class="field"><label for="dt">Date (optional)</label><input id="dt" type="date"></div>
+      <div class="btnrow"><button class="btn btn-p" onclick="doCreate()">Create ›</button><button class="btn btn-s" onclick="go('dashboard')">Cancel</button></div>
+    </div></div>`);
+}
+function doCreate(){ const mo=$("#mo").value, yr=($("#yr").value||"2026").trim(); const ex=state.reviews.find(r=>r.month===mo&&r.year===yr);
+  if(ex){ modal(`<h3>Review already exists</h3><p>A review for <b>${mo} ${yr}</b> already exists. Open it instead of creating a duplicate?</p><div class="btnrow"><button class="btn btn-p" onclick="closeAll();${ex.status==='completed'?`openReview('${ex.id}','summary')`:`resume('${ex.id}')`}">Open ${mo} ${yr}</button><button class="btn btn-s" onclick="closeAll()">Cancel</button></div>`); return; }
+  const r={id:uid(),month:mo,year:yr,status:"in-progress",step:2,docs:{},verified:false}; state.reviews.unshift(r); state.currentReviewId=r.id; state.view="upload"; render(); toast(`${mo} ${yr} review created`); }
+
+/* shared readiness state model — used by BOTH the page and the modal */
+function readiness(){
+  const r=curr()||{docs:demoDocs()}; const d=r.docs; const has=k=>d[k]&&d[k].ok; const failed=k=>d[k]&&!d[k].ok;
+  function ds(key,req,deferred){ if(deferred) return "deferred"; if(failed(key)) return "failed"; if(has(key)) return key==="ged"?"warn":"valid"; return req?"missing-req":"missing-opt"; }
+  const docs=[
+    {key:"ged",name:"GED Report",req:true,state:ds("ged",true,false)},
+    {key:"budget",name:"Budget Tracker",req:true,state:ds("budget",true,false)},
+    {key:"invoices",name:"Invoices",req:false,state:ds("invoices",false,true)},
+    {key:"resources",name:"Resource Sheet",req:false,state:ds("resources",false,false)},
+    {key:"contracts",name:"Contracts / SOWs",req:false,state:ds("contracts",false,false)},
+    {key:"ratecards",name:"Rate Cards",req:false,state:ds("ratecards",false,true)},
+  ];
+  const caps=[
+    {cap:"Budget Analysis",ready:has("ged")&&has("budget"),missing:[!has("ged")?"GED Report":null,!has("budget")?"Budget Tracker":null].filter(Boolean)},
+    {cap:"GED Analysis",ready:has("ged"),missing:[!has("ged")?"GED Report":null].filter(Boolean)},
+    {cap:"Reconciliation",ready:has("ged")&&has("budget"),missing:[!has("ged")?"GED Report":null,!has("budget")?"Budget Tracker":null].filter(Boolean)},
+    {cap:"Invoice Validation",ready:false,missing:["Invoices","Rate Cards"],deferred:true},
+    {cap:"Resource Analysis",ready:has("resources"),missing:["Resource Sheet"]},
+  ];
+  return {docs,caps};
+}
+const DOCSTATE={valid:["ok","✓ Uploaded and valid"],warn:["warn","⚠ Uploaded with warnings"],"missing-req":["dng","✕ Missing and required"],"missing-opt":["","○ Missing but optional"],deferred:["","— Deferred / not applicable"],failed:["dng","✕ Failed validation"]};
+
+function viewUpload(){
+  const r=curr();
+  const slot=(key,title,desc,required,demo)=>{ const dObj=r.docs[key];
+    if(dObj&&dObj.ok) return `<div class="slot ok"><span class="st">✓ ${title}</span><span class="sd">${esc(dObj.name)} · provenance recorded (name, fingerprint, user, timestamp)</span><button class="btn btn-g btn-sm" onclick="removeDoc('${key}')">Remove</button></div>`;
+    if(dObj&&!dObj.ok) return `<div class="slot err"><span class="st">✕ ${title}</span><span class="sd"><b>Rejected:</b> ${esc(dObj.reason)} — replace the file and try again.</span><button class="btn btn-g btn-sm" onclick="removeDoc('${key}')">Clear</button></div>`;
+    return `<div class="slot"><span class="st">${title}${required?"":" <span class='muted'>(optional)</span>"}</span><span class="sd">${desc}</span><button class="btn btn-s btn-sm" onclick="pickDoc('${key}')">Select synthetic file</button>${demo?`<button class="btn btn-s btn-sm" onclick="pickBad('${key}')">Select corrupt file</button> <span class="demoflag">Prototype error-state demo only</span>`:""}</div>`; };
+  return rframe(2, `${pagehead("July / new review","Upload Documents","")}
+    <p class="sec">Add the files you have. <b>Upload only what you have</b> — empty slots are normal, not errors. Sources are never modified; each upload records provenance. GED = <b>General Expense Detail</b>.</p>
+    ${slot("ged","GED Report","General Expense Detail — required",true)}
+    ${slot("budget","Budget Tracker","Original Budget / Actuals — required",true)}
+    ${slot("invoices","Invoices","Invoice Review is deferred (not built in this prototype)",false,true)}
+    ${slot("resources","Resource Sheet","Resource analysis (Phase 2)",false)}
+    ${slot("contracts","Contracts / SOWs","Contract mapping (Phase 2)",false)}
+    ${slot("ratecards","Rate Cards","Invoice validation (Phase 3)",false)}
+    <div class="btnrow" style="margin-top:6px;"><button class="btn btn-p" onclick="go('validate')">Continue to Validate ›</button><button class="btn btn-s" onclick="go('dashboard')">Save &amp; exit</button></div>`);
+}
+function pickDoc(key){ const r=curr(); const names={ged:"ged_dept_ytd_"+per(r)+".xlsx",budget:"BudgetTracker_"+per(r)+".xlsx",invoices:"invoices.pdf",resources:"resources.xlsx",contracts:"contracts.pdf",ratecards:"ratecards.xlsx"}; r.docs[key]={name:names[key],ok:true}; state.reviewDocError=false; render(); toast("File uploaded — provenance recorded"); }
+function pickBad(key){ const r=curr(); r.docs[key]={name:"invoice_scan.pdf",ok:false,reason:"file is password-protected / unreadable"}; state.reviewDocError=true; render(); toast("File rejected (safe) — error-state demo"); }
+function removeDoc(key){ const r=curr(); delete r.docs[key]; render(); }
+function per(r){ const m={January:"01",February:"02",March:"03",April:"04",May:"05",June:"06",July:"07",August:"08",September:"09",October:"10",November:"11",December:"12"}[r.month]||"08"; return r.year+"-"+m; }
+
+function viewValidate(){
+  const {docs,caps}=readiness();
+  const docRows=docs.map(d=>{ const m=DOCSTATE[d.state]; return `<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);"><span style="flex:1;font-size:.86rem;">${d.name}${d.req?' <span class="muted">(required)</span>':''}</span><span class="chip ${m[0]}">${m[1]}</span></div>`; }).join("");
+  const capRows=caps.map(c=>{ if(c.ready) return `<div class="alert ok"><span class="ai">✓</span><div><b>${c.cap}</b> — Ready</div></div>`; return `<div class="alert warn"><span class="ai">⚠</span><div><b>${c.cap}</b> — Not ready<br><span class="sec">Missing: ${c.missing.join(", ")}${c.deferred?" (deferred)":""}</span></div></div>`; }).join("");
+  const anyReady=caps.some(c=>c.ready);
+  return rframe(3, `${back('upload','Upload')}${pagehead("Readiness","Validate Review","")}
+    <p class="sec">FinSight tells you exactly what it can and cannot do, and why, <b>before</b> doing anything. Every expected input is classified below; the confirmation uses the same state.</p>
+    <div class="grid g2">
+      <div class="panel"><div class="ph"><h3>Expected inputs</h3></div><div class="pb">${docRows}</div></div>
+      <div class="panel"><div class="ph"><h3>Capabilities</h3></div><div class="pb">${capRows}</div></div>
+    </div>
+    <div class="btnrow"><button class="btn btn-s" onclick="go('upload')">Upload more files</button><button class="btn btn-p" ${anyReady?"":"disabled"} onclick="continueAnyway()">Validate &amp; continue ›</button></div>
+    ${anyReady?"":`<p class="muted">Upload the required documents (GED Report + Budget Tracker) to continue.</p>`}`);
+}
+function continueAnyway(){
+  const {caps}=readiness(); const ready=caps.filter(c=>c.ready), unavail=caps.filter(c=>!c.ready);
+  modal(`<h3>Continue with only available capabilities?</h3>
+    <p class="sec">You are continuing with only:</p>${ready.map(c=>`<div class="alert ok"><span class="ai">✓</span><div>${c.cap}</div></div>`).join("")}
+    <p class="sec">Unavailable capabilities and the exact missing sources:</p>${unavail.map(c=>`<div class="alert warn"><span class="ai">⚠</span><div><b>${c.cap}</b> — Missing: ${c.missing.join(", ")}${c.deferred?" (deferred)":""}</div></div>`).join("")}
+    <div class="btnrow"><button class="btn btn-s" onclick="closeAll()">Go back</button><button class="btn btn-p" onclick="closeAll();go('processing')">Continue Review ›</button></div>`);
+}
+
+function viewProcessing(){ const stages=["Reading files","Extracting data","Building review","Preparing verification"]; setTimeout(()=>runStages("procS",stages,()=>{const r=curr();r.step=4;go('verify');}),40);
+  return rframe(4, `${pagehead("Processing","Processing your files","")}<p class="sec">Reading your files and preparing the data for your review. The interface never freezes; this runs in the background.</p><div class="panel"><div class="pb" id="procS">${stages.map(s=>`<div class="stage"><span class="dot"></span> ${s}</div>`).join("")}</div></div>`); }
+function viewAnalyze(){ const stages=["Analyzing review","Budget analysis","GED analysis","Reconciliation matching","Finding exceptions","Preparing results"]; setTimeout(()=>runStages("anaS",stages,()=>{const r=curr();r.step=6;state.reviewTab="overview";go('review');}),40);
+  return rframe(5, `${pagehead("Analysis","Analyze Review","")}<p class="sec">Running deterministic analysis on the information you verified. Results appear as soon as ready; any AI narration would arrive separately and never block.</p><div class="panel"><div class="pb" id="anaS">${stages.map(s=>`<div class="stage"><span class="dot"></span> ${s}</div>`).join("")}</div></div>`); }
+function runStages(id,stages,done){ const box=document.getElementById(id); if(!box) return; let i=0; const tick=()=>{ const rows=box.querySelectorAll(".stage"); if(i>0){rows[i-1].className="stage done";rows[i-1].querySelector(".dot").textContent="✓";} if(i<rows.length){rows[i].className="stage active";box.setAttribute("aria-busy","true");i++;setTimeout(tick,560);} else {box.removeAttribute("aria-busy");setTimeout(done,260);} }; tick(); }
+
+/* ---- editable verification ---- */
+function origVal(id,f){ const t=TXN.find(x=>x.id===id); return t[f]; }
+function setEdit(id,f,val){ state.edits[id]=state.edits[id]||{}; if(String(val)===String(origVal(id,f))) delete state.edits[id][f]; else state.edits[id][f]=val; if(!Object.keys(state.edits[id]).length) delete state.edits[id]; }
+function curField(t,f){ return (state.edits[t.id]&&state.edits[t.id][f]!==undefined)?state.edits[t.id][f]:t[f]; }
+function isSavedEdited(id,f){ return state.savedEdits[id]&&state.savedEdits[id][f]; }
+function hasUnsaved(){ return Object.keys(state.edits).length>0; }
+function lcResolved(){ return TXN.filter(t=>t.conf==="low").every(t=>state.lcAccepted&&state.lcAccepted[t.id]); }
+function validationErrors(){ const errs=[]; Object.keys(state.edits).forEach(id=>{ const e=state.edits[id]; Object.keys(e).forEach(f=>{ const v=e[f]; if((f==="vendor"||f==="account"||f==="amount"||f==="date")&&String(v).trim()===""){ errs.push(id+" · "+f+" is empty"); } if(f==="amount"&&isNaN(parseFloat(v))){ errs.push(id+" · amount is not a number"); } }); }); return errs; }
+function canConfirm(){ return !hasUnsaved()&&lcResolved()&&validationErrors().length===0; }
+
+function viewVerify(){
+  const r=curr(); const EF=["vendor","account","dept","date","period","desc","inv","amount","type"];
+  const rows=TXN.map(t=>{
+    const cell=(f,cls)=>{ const val=curField(t,f); if(state.editMode){ return `<td class="${cls||''} ${isSavedEdited(t.id,f)?'edited':''}"><input class="cell ${f==='amount'?'num':''}" value="${esc(val)}" oninput="setEdit('${t.id}','${f}',this.value)" onchange="render()" aria-label="${f} for ${t.id}"></td>`; }
+      const show = f==="amount"?money2(parseFloat(val)):esc(val); return `<td class="${cls||''} ${isSavedEdited(t.id,f)?'edited':''}">${show}${isSavedEdited(t.id,f)?'<span class="editbadge">Edited</span>':''}</td>`; };
+    const lc = t.conf==="low"; const resolved = state.lcAccepted&&state.lcAccepted[t.id];
+    const stateChip = lc ? (resolved?`<span class="chip ok"><span>✓</span> Reviewed</span>`:`<span class="chip warn"><span>⚠</span> Needs review</span>`) : `<span class="chip ok"><span>✓</span> Extracted</span>`;
+    return `<tr>${cell("date")}${cell("vendor")}${cell("account")}${cell("desc")}${cell("inv")}${cell("amount","num")}<td>${stateChip}</td>
+      <td style="white-space:nowrap;"><button class="btn btn-g btn-sm" onclick="sourceTxn('${t.id}')">Source</button>${lc&&!resolved?`<button class="btn btn-g btn-sm" onclick="acceptLC('${t.id}')">Accept</button>`:""}</td></tr>`;
+  }).join("");
+  const errs=validationErrors(); const reasons=[]; if(hasUnsaved())reasons.push("save or cancel your edits"); if(!lcResolved())reasons.push("review the low-confidence row(s)"); if(errs.length)reasons.push("fix validation errors");
+  const toolbar=`<div class="btnrow" style="margin-bottom:10px;">
+    <button class="btn ${state.editMode?'btn-p':'btn-s'} btn-sm" onclick="toggleEdit()">${state.editMode?'● Edit mode ON':'✎ Edit mode'}</button>
+    <button class="btn btn-s btn-sm" ${hasUnsaved()?'':'disabled'} onclick="saveChanges()">Save Changes</button>
+    <button class="btn btn-s btn-sm" ${hasUnsaved()?'':'disabled'} onclick="cancelChanges()">Cancel Changes</button>
+    <button class="btn btn-s btn-sm" onclick="changeHistory()">Change History (${Object.keys(state.savedEdits).length})</button>
+    ${hasUnsaved()?`<span class="chip warn"><span>●</span> Unsaved changes</span>`:``}
+    ${errs.length?`<span class="chip dng"><span>✕</span> ${errs.length} validation error(s)</span>`:``}
+  </div>`;
+  return rframe(4, `${pagehead("Step 4 — trust gate","Verify Data",finBtn("Verification"))}
+    <div class="alert info"><span class="ai">ℹ</span><div>Here is the information I found — please review and correct it before analysis. <b>Every field is editable. Nothing is analyzed until you confirm.</b> Corrections keep the original value in change history.</div></div>
+    <div class="panel"><div class="ph"><h3>Extracted General Expense Detail (GED) &amp; Budget</h3><span class="pill" style="margin-left:auto;">${TXN.length} rows · ${TXN.filter(t=>t.conf==='low').length} low-confidence</span></div><div class="pb">
+      ${toolbar}
+      <div class="tw"><table><thead><tr><th>Date</th><th>Vendor</th><th>Account</th><th>Description</th><th>Inv/Ref</th><th class="num">Amount</th><th>State</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+      <p class="muted" style="font-size:.76rem;margin-top:8px;">Prototype shows a representative set of extracted records. In the product, every detail from every uploaded report is reviewable. Editable fields include vendor, account (classification), date, period, description, invoice/reference and amount.</p>
+    </div></div>
+    <div class="panel"><div class="pb">
+      <label style="display:flex;gap:10px;align-items:flex-start;cursor:${canConfirm()?'pointer':'not-allowed'};font-weight:600;">
+        <input type="checkbox" id="vchk" ${curr().verifyChecked?"checked":""} ${canConfirm()?"":"disabled"} onchange="curr().verifyChecked=this.checked;render();" style="margin-top:3px;">
+        <span>I have reviewed this information and confirm it is correct.<br><span class="muted" style="font-weight:400;font-size:.82rem;">${canConfirm()?'Ready to confirm.':'You must first: '+reasons.join("; ")+'.'}</span></span>
+      </label>
+      <div class="btnrow" style="margin-top:12px;"><button class="btn btn-p" ${(canConfirm()&&curr().verifyChecked)?"":"disabled"} onclick="reviewComplete()">Continue Review ›</button><button class="btn btn-s" onclick="go('validate')">Back to Validate</button></div>
+    </div></div>`);
+}
+function toggleEdit(){ state.editMode=!state.editMode; render(); }
+function acceptLC(id){ state.lcAccepted=state.lcAccepted||{}; state.lcAccepted[id]=true; render(); toast("Low-confidence row accepted as-is"); }
+function cancelChanges(){ state.edits={}; render(); toast("Edits discarded"); }
+function saveChanges(){ const errs=validationErrors(); if(errs.length){ toast("Fix validation errors first"); return; }
+  const ids=Object.keys(state.edits); if(!ids.length) return;
+  modal(`<h3>Save changes?</h3><p class="sec">You are about to save ${ids.reduce((n,id)=>n+Object.keys(state.edits[id]).length,0)} corrected field(s) across ${ids.length} record(s). Original values are kept in change history.</p>
+    <div class="btnrow"><button class="btn btn-p" onclick="commitChanges()">Yes, save changes</button><button class="btn btn-s" onclick="closeAll()">Keep editing</button></div>`); }
+function commitChanges(){ const now="(synthetic) 2026-08-03 "+String(9+Object.keys(state.savedEdits).length).padStart(2,"0")+":45";
+  Object.keys(state.edits).forEach(id=>{ const t=TXN.find(x=>x.id===id); state.savedEdits[id]=state.savedEdits[id]||{}; Object.keys(state.edits[id]).forEach(f=>{ let val=state.edits[id][f]; const orig=t[f]; if(f==="amount") val=parseFloat(val); state.savedEdits[id][f]={orig,val,ts:now,actor:"Operator"}; t[f]=val; }); });
+  state.edits={}; state.editMode=false; closeAll(); render(); toast("Changes saved — originals kept in change history"); }
+function changeHistory(){ const ids=Object.keys(state.savedEdits);
+  drawer("Change history", ids.length? ids.map(id=>`<div class="factbox"><b>${id}</b>${Object.keys(state.savedEdits[id]).map(f=>{ const e=state.savedEdits[id][f]; return `<div style="font-size:.82rem;margin-top:4px;"><span class="muted">${f}:</span> <span style="text-decoration:line-through;color:var(--tm);">${esc(f==='amount'?money2(e.orig):e.orig)}</span> → <b>${esc(f==='amount'?money2(e.val):e.val)}</b><br><span class="muted" style="font-size:.72rem;">${e.actor} · ${e.ts}</span></div>`; }).join("")}</div>`).join("") : '<p class="muted">No corrections yet. Turn on Edit mode, change a cell, then Save Changes.</p>'); }
+function reviewComplete(){ modal(`<div class="rag ok" style="margin-bottom:14px;"><span class="ragi">✓</span><div><h3 style="margin:0;">Review Complete</h3><span class="sec">Analysis will now begin on the information you reviewed.</span></div></div>
+  <p class="sec">You have verified:</p><ul style="list-style:none;padding:0;margin:0 0 14px;line-height:1.8;"><li>✓ Vendors</li><li>✓ Departments &amp; accounts</li><li>✓ Amounts</li><li>✓ Dates &amp; periods</li><li>✓ Corrections saved (${Object.keys(state.savedEdits).length})</li></ul>
+  <div class="btnrow"><button class="btn btn-s" onclick="closeAll()">Go back to re-verify</button><button class="btn btn-p" onclick="closeAll();curr().step=5;go('analyze')">Begin Analysis → Step 5</button></div>`); }
+
+function viewComplete(){ const r=curr(); return rframe(8, `<div class="panel"><div class="pb" style="text-align:center;">
+    <div style="font-size:2.2rem;">✓</div><h1>Review Complete</h1>
+    <p class="sec">Your <b>${esc(r.month+" "+r.year)}</b> review is finished — recorded as a completed, reproducible cycle with a full audit trail.</p>
+    <div class="btnrow" style="justify-content:center;"><button class="btn btn-p" onclick="finishReview()">Return to Dashboard</button><button class="btn btn-s" onclick="openReview('${r.id}','summary')">Leadership Summary</button><button class="btn btn-s" onclick="go('compare')">Compare to prior</button><button class="btn btn-s" onclick="go('whatsnew')">What's New</button></div>
+  </div></div>`); }
+function finishReview(){ const r=curr(); r.status="completed"; r.step=8; state.reviews=[r,...state.reviews.filter(x=>x.id!==r.id)]; state.selectedReviewId=r.id; go('dashboard'); toast(r.month+" "+r.year+" review complete"); }
+/*__WIZARD__*/
+/* ================= FINANCIAL REVIEW WORKSPACE (Step 6) ================= */
+const REVIEW_TABS=[["overview","Executive Overview"],["budget","Budget vs Actual"],["vendors","Vendor Analysis"],["accounts","Account Analysis"],["depts","Department Analysis"],["ged","GED Detail"],["recon","Reconciliation"],["findings","Findings"],["dq","Data Quality"]];
+function setTab(t){ state.reviewTab=t; render(); }
+function scopeStrip(){ const c=coverage(); return `<div class="panel"><div class="pb" style="display:flex;gap:18px;flex-wrap:wrap;font-size:.78rem;">
+  <span><span class="muted">Period</span> <b>July 2026</b></span><span><span class="muted">Files</span> GED + Budget Tracker</span><span><span class="muted">Entities</span> 4 depts · 8 accounts · 8 vendors</span><span><span class="muted">Records</span> ${c.totalRows} extracted · ${c.edited} edited · ${c.lowConf} low-confidence</span><span><span class="muted">Capabilities</span> Budget, GED, Reconciliation <span class="muted">(Invoice/Resource skipped)</span></span><span class="chip ${c.rejected?'warn':'ok'}">${c.rejected?'Partial results':'Complete results'}</span></div></div>`; }
+function filterBar(kind){
+  const V=vendors(),A=accounts();
+  if(kind==="ged") return `<div class="filters">
+    <label>Vendor<select class="sel" onchange="state.filters.vendor=this.value;render()"><option value="">All</option>${V.map(v=>`<option ${state.filters.vendor===v.name?'selected':''}>${esc(v.name)}</option>`).join("")}</select></label>
+    <label>Account<select class="sel" onchange="state.filters.account=this.value;render()"><option value="">All</option>${A.map(a=>`<option value="${a.code}" ${state.filters.account===a.code?'selected':''}>${a.code} ${esc(a.name)}</option>`).join("")}</select></label>
+    <label>Department<select class="sel" onchange="state.filters.dept=this.value;render()"><option value="">All</option>${Object.entries(DEPTS).map(([k,n])=>`<option value="${k}" ${state.filters.dept==k?'selected':''}>${k} ${esc(n)}</option>`).join("")}</select></label>
+    <label>Min amount<input type="number" value="${state.filters.min}" oninput="state.filters.min=this.value" onchange="render()" style="width:100px;"></label>
+    <label>Max amount<input type="number" value="${state.filters.max}" oninput="state.filters.max=this.value" onchange="render()" style="width:100px;"></label>
+    <button class="btn btn-s btn-sm" onclick="state.filters={vendor:'',account:'',dept:'',sev:'',status:'',min:'',max:'',dq:''};render()">Clear</button></div>`;
+  return `<div class="filters">
+    <label>Severity<select class="sel" onchange="state.filters.sev=this.value;render()"><option value="">All</option>${["critical","high","medium","low"].map(s=>`<option value="${s}" ${state.filters.sev===s?'selected':''}>${s}</option>`).join("")}</select></label>
+    <label>Status<select class="sel" onchange="state.filters.status=this.value;render()"><option value="">All</option>${["New","Acknowledged","In Review","Resolved","Dismissed","Reopened"].map(s=>`<option ${state.filters.status===s?'selected':''}>${s}</option>`).join("")}</select></label>
+    <label>Group<select class="sel" onchange="state.filters.dq=this.value;render()"><option value="">All</option>${["Budget","GED","Reconciliation"].map(s=>`<option ${state.filters.dq===s?'selected':''}>${s}</option>`).join("")}</select></label>
+    <button class="btn btn-s btn-sm" onclick="state.filters={vendor:'',account:'',dept:'',sev:'',status:'',min:'',max:'',dq:''};render()">Clear</button></div>`;
+}
+function applyTxn(){ const f=state.filters; return TXN.filter(t=>(!f.vendor||t.vendor===f.vendor)&&(!f.account||t.account===f.account)&&(!f.dept||String(t.dept)===String(f.dept))&&(!f.min||Math.abs(t.amount)>=parseFloat(f.min))&&(!f.max||Math.abs(t.amount)<=parseFloat(f.max))); }
+function applyFind(){ const f=state.filters; return FINDINGS.filter(x=>(!f.sev||x.sev===f.sev)&&(!f.status||x.status===f.status)&&(!f.dq||x.group===f.dq)); }
+
+function reviewTabBody(){
+  const A=accounts(),V=vendors(),t=totals();
+  switch(state.reviewTab){
+    case "overview":{ const rag=ragState(); const dn=donut(sevCounts(FINDINGS)); return `
+      <div class="kpis">${kpi("k-"+rag.k,"Status",rag.icon+" "+rag.label,"")}${kpi("","Budget",money(t.budget),"")}${kpi(t.varAmt>0?"k-dng":"k-ok","Actual",money(t.actual),pct(t.varPct))}${kpi("","EAC",money(t.eac),"Actual + ETC")}</div>
+      <div class="grid g2">${chartPanel("Budget vs Actual by account","Over budget in red, under in green",barBudgetActual(A).inner,barBudgetActual(A).table)}${chartPanel("Findings by severity","",dn.inner)}</div>
+      <div class="panel"><div class="ph"><h3>The complete picture — normal, favorable and unfavorable</h3>${finBtn("Financial overview")}</div><div class="pb"><p class="sec">This review is not only about exceptions. Of 8 accounts: <b>3 are over budget</b> (unfavorable), <b>5 are under or on budget</b> (favorable). Findings highlight only what needs attention; the analysis below covers everything.</p></div></div>`; }
+    case "budget":{ const ba=barBudgetActual(A); return `${chartPanel("Budget vs Actual by account","All 8 accounts",ba.inner,ba.table)}
+      <div class="panel"><div class="ph"><h3>Budget vs Actual — detail</h3></div><div class="pb"><div class="tw"><table><thead><tr><th>Account</th><th>Dept</th><th class="num">Budget</th><th class="num">Actual</th><th class="num">ETC</th><th class="num">EAC</th><th class="num">Variance</th><th class="num">%</th></tr></thead><tbody>
+      ${A.map(a=>`<tr class="click" onclick="acctDrawer('${a.code}')"><td>${a.code} ${esc(a.name)}</td><td>${a.dept}</td><td class="num tnum">${money(a.budget)}</td><td class="num tnum">${money(a.actual)}</td><td class="num tnum">${money(a.etc)}</td><td class="num tnum">${money(a.eac)}</td><td class="num tnum ${a.varAmt>0?'unf':'fav'}">${money(a.varAmt)}</td><td class="num tnum ${a.varAmt>0?'unf':'fav'}">${pct(a.varPct)}</td></tr>`).join("")}
+      <tr style="font-weight:700;"><td>Total</td><td></td><td class="num tnum">${money(t.budget)}</td><td class="num tnum">${money(t.actual)}</td><td class="num tnum">${money(t.etc)}</td><td class="num tnum">${money(t.eac)}</td><td class="num tnum ${t.varAmt>0?'unf':'fav'}">${money(t.varAmt)}</td><td class="num tnum ${t.varAmt>0?'unf':'fav'}">${pct(t.varPct)}</td></tr>
+      </tbody></table></div></div></div>${chartPanel("Variance by account","Diverging bars",diverging(A).inner)}`; }
+    case "vendors":{ const bv=barVendors(V); return `${chartPanel("Spend by vendor","Change vs prior period shown at right",bv.inner,bv.table)}
+      <div class="panel"><div class="ph"><h3>Vendor analysis — click a vendor to drill down</h3>${finBtn("Vendor analysis")}</div><div class="pb"><div class="tw"><table><thead><tr><th>Vendor</th><th class="num">Spend</th><th class="num">Prior</th><th class="num">Change</th><th class="num">%</th><th class="num">Txns</th><th>Accounts</th></tr></thead><tbody>
+      ${V.map(v=>`<tr class="click" onclick="vendorDrawer('${esc(v.name)}')"><td>${esc(v.name)}</td><td class="num tnum">${money(v.spend)}</td><td class="num tnum">${money(v.prior)}</td><td class="num tnum ${v.change>0?'unf':'fav'}">${money(v.change)}</td><td class="num tnum ${v.change>0?'unf':'fav'}">${pct(v.changePct)}</td><td class="num">${v.count}</td><td>${v.accounts.join(", ")}</td></tr>`).join("")}
+      </tbody></table></div></div></div>`; }
+    case "accounts":{ return `<div class="panel"><div class="ph"><h3>Account analysis — click to drill to vendors &amp; transactions</h3></div><div class="pb"><div class="tw"><table><thead><tr><th>Account</th><th>Dept</th><th class="num">Budget</th><th class="num">Actual</th><th class="num">Variance</th><th>Vendors</th><th>Findings</th></tr></thead><tbody>
+      ${A.map(a=>{ const vs=acctVendors(a.code).length; const fn=FINDINGS.filter(f=>f.acct===a.code).length; return `<tr class="click" onclick="acctDrawer('${a.code}')"><td>${a.code} ${esc(a.name)}</td><td>${a.dept}</td><td class="num tnum">${money(a.budget)}</td><td class="num tnum">${money(a.actual)}</td><td class="num tnum ${a.varAmt>0?'unf':'fav'}">${varCell(a.varAmt)} (${pct(a.varPct)})</td><td class="num">${vs}</td><td class="num">${fn}</td></tr>`; }).join("")}
+      </tbody></table></div></div></div>`; }
+    case "depts":{ const D=depts(); return `<div class="panel"><div class="ph"><h3>Department analysis</h3></div><div class="pb"><div class="tw"><table><thead><tr><th>Dept</th><th class="num">Accounts</th><th class="num">Budget</th><th class="num">Actual</th><th class="num">EAC</th><th class="num">Variance</th><th class="num">%</th></tr></thead><tbody>
+      ${D.map(d=>`<tr><td>${d.dept} ${esc(d.name)}</td><td class="num">${d.accounts}</td><td class="num tnum">${money(d.budget)}</td><td class="num tnum">${money(d.actual)}</td><td class="num tnum">${money(d.eac)}</td><td class="num tnum ${d.varAmt>0?'unf':'fav'}">${money(d.varAmt)}</td><td class="num tnum ${d.varAmt>0?'unf':'fav'}">${pct(d.varPct)}</td></tr>`).join("")}
+      </tbody></table></div></div></div>`; }
+    case "ged":{ const T=applyTxn(); return `${filterBar("ged")}<div class="panel"><div class="ph"><h3>GED Detail — General Expense Detail (${T.length} of ${TXN.length} rows)</h3></div><div class="pb"><div class="tw"><table><thead><tr><th>ID</th><th>Dept</th><th>CC</th><th>Account</th><th>Vendor</th><th>Type</th><th>Description</th><th>Inv/Ref</th><th>Date</th><th class="num">Amount</th><th>Conf</th></tr></thead><tbody>
+      ${T.map(t=>`<tr class="click" onclick="sourceTxn('${t.id}')"><td>${t.id}</td><td>${t.dept}</td><td>${t.cc}</td><td>${t.account}</td><td>${esc(t.vendor)}</td><td>${t.type}</td><td>${esc(t.desc)}</td><td>${esc(t.inv)}</td><td>${t.date}</td><td class="num tnum">${money2(t.amount)}</td><td>${t.conf==='low'?'<span class="chip warn">low</span>':'high'}</td></tr>`).join("")}
+      </tbody></table></div></div></div>`; }
+    case "recon":{ return `<div class="panel"><div class="ph"><h3>Reconciliation</h3><button class="btn btn-s btn-sm" style="margin-left:auto;" onclick="reconWork()">Open matching work ›</button></div><div class="pb"><p class="sec">Reconciliation <b>exceptions</b> render as findings; the <b>matching work</b> is a focused Operator sub-task (not a separate system).</p><div class="tw"><table><thead><tr><th>GED line</th><th class="num">Amount</th><th>Tier</th></tr></thead><tbody>
+      <tr><td>Northstar · INV-31993</td><td class="num tnum">${money(184500)}</td><td><span class="chip ok">Exact</span></td></tr>
+      <tr><td>Meridian · AT-88120</td><td class="num tnum">${money(9400)}</td><td><span class="chip warn">Probable</span></td></tr>
+      <tr><td>Northstar · CR-3120 (credit)</td><td class="num tnum">${money(-4200)}</td><td><span class="chip dng">Unmatched → finding</span></td></tr>
+      </tbody></table></div></div></div>`; }
+    case "findings":{ return revFindingsInner(); }
+    case "dq":{ return `<div class="grid g2"><div class="panel"><div class="ph"><h3>Data quality &amp; coverage</h3></div><div class="pb">${coverageBlock()}</div></div>
+      <div class="panel"><div class="ph"><h3>Quality checks</h3></div><div class="pb"><div class="alert warn"><span class="ai">⚠</span><div><b>1 low-confidence value</b> — Meridian duplicate line (reviewed at verification)</div></div><div class="alert warn"><span class="ai">⚠</span><div><b>1 period mismatch</b> — Verity charge posted before cutoff</div></div><div class="alert info"><span class="ai">ℹ</span><div><b>1 duplicate candidate</b> — see Findings</div></div><div class="alert ok"><span class="ai">✓</span><div>No missing required values; no rejected rows</div></div></div></div></div>`; }
+  }
+}
+function viewReview(){ const r=curr()||{month:"July",year:"2026"}; state.finContext="Financial review";
+  const tabs=REVIEW_TABS.map(([k,l])=>`<button class="tab" role="tab" aria-selected="${state.reviewTab===k}" onclick="setTab('${k}')">${l}</button>`).join("");
+  return rframe(6, `${pagehead("Financial Review · "+esc(r.month+" "+r.year),"Financial Review",finBtn("Financial review")+`<button class="btn btn-p btn-sm" onclick="curr()&&(curr().step=7);go('summary')">Leadership Summary ›</button>`)}
+    ${lensBanner()}${scopeStrip()}
+    <div class="tabs" role="tablist">${tabs}</div>
+    ${reviewTabBody()}`);
+}
+function reconWork(){ drawer("Reconciliation matching (Operator sub-task)", `<p class="sec">A focused matching view opened from within the review — not a separate system. Residual unmatched items become findings.</p>
+  <div class="tw"><table><thead><tr><th>GED line</th><th class="num">Amount</th><th>Tier</th><th></th></tr></thead><tbody>
+  <tr><td>Northstar · INV-31993</td><td class="num tnum">${money(184500)}</td><td><span class="chip ok">Exact</span></td><td>—</td></tr>
+  <tr><td>Meridian · AT-88120</td><td class="num tnum">${money(9400)}</td><td><span class="chip warn">Probable</span></td><td><button class="btn btn-g btn-sm" onclick="toast('Match confirmed')">Confirm</button></td></tr>
+  <tr><td>Northstar · CR-3120</td><td class="num tnum">${money(-4200)}</td><td><span class="chip dng">Unmatched</span></td><td><button class="btn btn-g btn-sm" onclick="toast('Manual match…')">Match</button></td></tr>
+  </tbody></table></div>`); }
+/*__REVIEW__*/
+/* ================= FINDINGS + EXPLAIN + DECISIONS ================= */
+function entityOf(f){ const a=acctByCode(f.acct); return (a?a.code+" "+a.name:f.acct)+(f.vendor?" · "+f.vendor:""); }
+function findingRows(list){ return list.map(f=>`<tr>
+  <td>${sevBadge(f.sev)}</td>
+  <td><b>${esc(f.title)}</b><br><span class="muted" style="font-size:.8rem;">${esc(entityOf(f))}</span></td>
+  <td style="font-size:.82rem;">${esc(f.plain)}</td>
+  <td>${statusChip(f.status)}${f.decision?' <span class="chip warn"><span>◈</span> Decision</span>':''}</td>
+  <td style="white-space:nowrap;"><button class="btn btn-g btn-sm" onclick="explainFinding('${f.id}')">Explain</button><button class="btn btn-g btn-sm" onclick="lifecycle('${f.id}')">Status</button></td></tr>`).join(""); }
+function revFindingsInner(){ const list=applyFind(); const sc=sevCounts(list); return `${filterBar("find")}
+  <div class="panel"><div class="pb" style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;"><b>Triage:</b> ${sevBadge("critical")} <span class="pill">${sc.critical}</span> ${sevBadge("high")} <span class="pill">${sc.high}</span> ${sevBadge("medium")} <span class="pill">${sc.medium}</span> ${sevBadge("low")} <span class="pill">${sc.low}</span><span style="margin-left:auto;">${finBtn("Findings")}</span></div></div>
+  <div class="panel"><div class="ph"><h3>Findings (${list.length})</h3><span class="muted" style="margin-left:auto;font-size:.78rem;">Findings are one analytical section — the full picture is in the other tabs.</span></div><div class="pb"><div class="tw"><table><thead><tr><th>Severity</th><th>Finding</th><th>What happened</th><th>Status</th><th></th></tr></thead><tbody>${findingRows(list)||'<tr><td colspan="5"><div class="alert ok"><span class="ai">✓</span><div>No findings match the filters.</div></div></td></tr>'}</tbody></table></div></div></div>`; }
+function viewFindings(){ return `<div class="page">${pagehead("Analysis · Findings","Findings",finBtn("Findings")+`<button class="btn btn-s btn-sm" onclick="go('decisions')">Decisions required ›</button>`)}${lensBanner()}
+  <p class="sec">One findings experience, grouped and severity-led. Severity is shown by icon + shape + label (never color alone). Findings are a separate analytical section — open <b>Financial Review</b> for the complete picture.</p>${revFindingsInner()}</div>`; }
+
+function explainFinding(id){ const f=FINDINGS.find(x=>x.id===id); const a=acctByCode(f.acct); const txns=TXN.filter(t=>t.account===f.acct);
+  const ev=`<div class="tw"><table><tbody>
+    <tr><th>Source</th><td>GED Report + Budget Tracker (synthetic)</td></tr>
+    <tr><th>Account</th><td>${a?a.code+" "+esc(a.name):esc(f.acct)}</td></tr>
+    <tr><th>Vendor</th><td>${esc(f.vendor||"—")}</td></tr>
+    <tr><th>Period</th><td>July 2026</td></tr>
+    ${a?`<tr><th>Budget</th><td class="tnum">${money(a.budget)}</td></tr><tr><th>Actual</th><td class="tnum">${money(a.actual)}</td></tr><tr><th>Variance</th><td class="tnum ${a.varAmt>0?'unf':'fav'}">${money(a.varAmt)} (${pct(a.varPct)})</td></tr>`:""}
+    <tr><th>Configured threshold</th><td>${esc(f.threshold)}</td></tr>
+    <tr><th>Source rows</th><td>${txns.map(t=>t.id).join(", ")||"—"}</td></tr>
+  </tbody></table></div>`;
+  drawer("Explain This — "+esc(f.title), `${sevBadge(f.sev)} ${statusChip(f.status)}
+    <h4 style="margin-top:10px;">What happened</h4><p>${esc(f.plain)}</p>
+    <h4>Why FinSight flagged it</h4><p>${esc(f.why)}</p>
+    <h4>Why it matters</h4><p>${esc(f.matters)}</p>
+    <h4>Supporting evidence</h4>${ev}
+    <div style="margin:10px 0;">${txns.length?`<button class="btn btn-g btn-sm" onclick="sourceTxn('${txns[0].id}')">Open a source record ›</button>`:""}</div>
+    <details class="dt"><summary>Technical details (rule, configuration, audit)</summary><div class="factbox"><div class="kv"><dt>Rule</dt><dd>${esc(f.rule)}</dd><dt>Finding ID</dt><dd>${f.id}</dd><dt>Config version</dt><dd>Configured Value</dd><dt>Determinism</dt><dd>Reproducible with AI off</dd></div></div></details>
+    <div class="aislot" style="margin-top:12px;">AI-generated narrative — <b>not configured</b> in this prototype (labeled, empty). The plain-language explanation above is deterministic and complete without AI.</div>
+    <div class="btnrow" style="margin-top:12px;"><button class="btn btn-s btn-sm" onclick="lifecycle('${f.id}')">Change status</button>${finBtn("Finding "+f.id)}</div>`); }
+
+const LIFECYCLE=["New","Acknowledged","Assigned","In Review","Resolved","Dismissed","Reopened"];
+function lifecycle(id){ const f=FINDINGS.find(x=>x.id===id);
+  const opts=LIFECYCLE.filter(s=>s!==f.status).map(s=>`<button class="btn btn-s btn-sm" onclick="setStatus('${id}','${s}')">${s}</button>`).join(" ");
+  drawer("Finding status — "+f.id, `<div style="margin-bottom:8px;">${sevBadge(f.sev)} ${statusChip(f.status)}</div><p class="sec">${esc(f.title)} — ${esc(entityOf(f))}</p>
+    <h4>Change status to</h4><div class="btnrow">${opts}</div>
+    <h4 style="margin-top:14px;">History</h4>${f.history.map(h=>`<div class="factbox" style="font-size:.8rem;"><b>${h.action}</b> — ${h.actor} · ${h.ts}${h.note?`<br><span class="muted">${esc(h.note)}</span>`:""}</div>`).join("")}`); }
+function setStatus(id,status){ const f=FINDINGS.find(x=>x.id===id);
+  if(status==="Resolved"||status==="Dismissed"){ modal(`<h3>${status} — reason required</h3><p class="sec">${status} a finding requires a reason (captured and audited).</p><div class="field"><label>Reason</label><input id="reasonI" style="width:100%;" placeholder="e.g., Timing difference — expected"></div><div class="btnrow"><button class="btn btn-p" onclick="applyStatus('${id}','${status}',document.getElementById('reasonI').value)">${status}</button><button class="btn btn-s" onclick="closeAll()">Cancel</button></div>`); return; }
+  applyStatus(id,status,""); }
+function applyStatus(id,status,reason){ const f=FINDINGS.find(x=>x.id===id); f.status=status; f.history.push({ts:"(synthetic) 2026-08-03 (now)",actor:state.lens,action:status,note:reason||undefined}); closeAll(); render(); toast("Finding "+id+" → "+status); }
+
+function viewDecisions(){ const D=decisionsList(); const roleFor=f=>f.group==="Budget"?"Budget owner / Leader":f.group==="GED"?"Operator":"Operator";
+  return `<div class="page">${pagehead("Human judgement","Decisions Required",finBtn("Decisions"))}${lensBanner()}
+    <p class="sec">These conditions require human judgement. FinSight surfaces them with evidence and possible next actions — it never makes the decision.</p>
+    ${D.length?D.map(f=>`<div class="panel"><div class="ph">${sevBadge(f.sev)} <b style="margin-left:6px;">${esc(f.title)}</b><span class="pill" style="margin-left:auto;">${esc(f.group)}</span></div><div class="pb">
+      <div class="kv"><dt>Issue</dt><dd>${esc(entityOf(f))}</dd><dt>Why a decision is needed</dt><dd>${esc(f.matters)}</dd><dt>Supporting evidence</dt><dd>${esc(f.plain)}</dd><dt>Responsible role</dt><dd>${roleFor(f)}</dd><dt>Due state</dt><dd>Before period close</dd><dt>Audit note</dt><dd>Decision and reason will be recorded (${f.id})</dd></div>
+      <div class="btnrow" style="margin-top:10px;"><button class="btn btn-s btn-sm" onclick="explainFinding('${f.id}')">View evidence</button><button class="btn btn-s btn-sm" onclick="setStatus('${f.id}','Acknowledged')">Acknowledge</button><button class="btn btn-s btn-sm" onclick="setStatus('${f.id}','Resolved')">Resolve (reason)</button><button class="btn btn-s btn-sm" onclick="setStatus('${f.id}','Dismissed')">Dismiss (reason)</button>${finBtn("Decision "+f.id)}</div>
+      <p class="muted" style="font-size:.75rem;margin-top:8px;">Possible next actions are suggestions only; the human decides.</p></div></div>`).join(""):'<div class="alert ok"><span class="ai">✓</span><div>No open decisions require attention.</div></div>'}</div>`; }
+/*__FINDINGS__*/
+/* ================= LEADERSHIP SUMMARY + AUDIT/SETTINGS/HELP ================= */
+function viewSummary(){ const r=curr()||{month:"July",year:"2026",status:"completed"}; const t=totals(),rag=ragState(),A=accounts(),V=vendors();
+  const unf=A.filter(a=>a.varAmt>0).sort((x,y)=>y.varAmt-x.varAmt).slice(0,5);
+  const fav=A.filter(a=>a.varAmt<0).sort((x,y)=>x.varAmt-y.varAmt).slice(0,3);
+  const topV=V.slice(0,5); const openF=openFindings(); const closed=FINDINGS.filter(f=>["Resolved","Dismissed"].includes(f.status));
+  const inWiz = r.status!=="completed";
+  const head = inWiz ? rframe(7,"") : "";
+  const body=`<div class="page">
+    ${r.status==="completed"?back('dashboard','Dashboard'):""}
+    ${pagehead("Leadership pack · "+esc(r.month+" "+r.year),"Leadership Summary",finBtn("Leadership summary")+`<button class="btn btn-s btn-sm" onclick="exportSummary()">Export / share</button>`)}
+    <div class="panel"><div class="pb"><div class="rag ${rag.k}"><span class="ragi">${rag.icon}</span><div><div class="ov">Overall status — deterministic, never AI</div><h2 style="margin:2px 0 0;">${rag.label}</h2></div><div style="margin-left:auto;text-align:right;font-size:.8rem;" class="sec">Total actual ${money(t.actual)} vs budget ${money(t.budget)}<br>Variance <b class="${t.varAmt>0?'unf':'fav'}">${money(t.varAmt)} (${pct(t.varPct)})</b></div></div></div></div>
+    <div class="kpis">${kpi("","Budget",money(t.budget),"")}${kpi(t.varAmt>0?"k-dng":"k-ok","Actual",money(t.actual),pct(t.momPct)+" vs June")}${kpi("","ETC",money(t.etc),"")}${kpi("","EAC",money(t.eac),"")}</div>
+    <div class="grid g2">
+      ${chartPanel("Budget vs Actual by account","",barBudgetActual(A).inner,barBudgetActual(A).table)}
+      ${chartPanel("Monthly spend trend","",lineTrend(TREND).inner,lineTrend(TREND).table)}
+    </div>
+    <div class="grid g2">
+      <div class="panel"><div class="ph"><h3>Top 5 vendors by spend</h3></div><div class="pb"><div class="tw"><table><thead><tr><th>Vendor</th><th class="num">Spend</th><th class="num">vs prior</th></tr></thead><tbody>${topV.map(v=>`<tr class="click" onclick="vendorDrawer('${esc(v.name)}')"><td>${esc(v.name)}</td><td class="num tnum">${money(v.spend)}</td><td class="num tnum ${v.change>0?'unf':'fav'}">${money(v.change)}</td></tr>`).join("")}</tbody></table></div></div></div>
+      <div class="panel"><div class="ph"><h3>Top 5 unfavorable accounts</h3></div><div class="pb"><div class="tw"><table><thead><tr><th>Account</th><th class="num">Variance</th><th class="num">%</th></tr></thead><tbody>${unf.map(a=>`<tr class="click" onclick="acctDrawer('${a.code}')"><td>${a.code} ${esc(a.name)}</td><td class="num tnum unf">▲ ${money(a.varAmt)}</td><td class="num tnum unf">${pct(a.varPct)}</td></tr>`).join("")}</tbody></table></div></div></div>
+    </div>
+    <div class="grid g3">
+      <div class="panel"><div class="ph"><h3>Top favorable accounts</h3></div><div class="pb">${fav.map(a=>`<div style="display:flex;justify-content:space-between;font-size:.82rem;padding:4px 0;"><span>${a.code} ${esc(a.name)}</span><span class="fav tnum">▼ ${money(Math.abs(a.varAmt))}</span></div>`).join("")}</div></div>
+      <div class="panel"><div class="ph"><h3>Reconciliation status</h3></div><div class="pb"><p class="sec">1 unmatched credit (−$4,200) carried to findings; 1 probable match to confirm.</p></div></div>
+      <div class="panel"><div class="ph"><h3>Data quality</h3></div><div class="pb"><p class="sec">${verifiedPct()}% verified · 1 low-confidence · 1 duplicate candidate · 1 period mismatch.</p></div></div>
+    </div>
+    <div class="grid g2">
+      <div class="panel"><div class="ph"><h3>Material changes from prior period</h3></div><div class="pb"><ul style="margin:0;padding-left:18px;font-size:.86rem;">
+        <li>Total spend up ${money(t.mom)} (${pct(t.momPct)}) vs June.</li>
+        <li>Ironclad Contract Labor up ${money(vendorByName("Ironclad Contract Labor").change)}; Northstar up ${money(vendorByName("Northstar Technology Services").change)}.</li>
+        <li>Cloud Infrastructure now favorable vs prior; Marketing under budget.</li></ul></div></div>
+      <div class="panel"><div class="ph"><h3>Findings &amp; decisions</h3></div><div class="pb">
+        <div class="kv"><dt>New findings</dt><dd>${FINDINGS.filter(f=>f.status==="New").length}</dd><dt>Open findings</dt><dd>${openF.length}</dd><dt>Resolved / dismissed</dt><dd>${closed.length}</dd><dt>Decisions required</dt><dd>${decisionsList().length}</dd></div>
+        <div class="btnrow" style="margin-top:8px;"><button class="btn btn-s btn-sm" onclick="go('findings')">Findings ›</button><button class="btn btn-s btn-sm" onclick="go('decisions')">Decisions ›</button></div></div></div>
+    </div>
+    <div class="panel"><div class="ph"><h3>Recommended attention areas</h3></div><div class="pb"><ul style="margin:0 0 8px;padding-left:18px;font-size:.88rem;">
+      <li>Review the over-budget Professional Services account (6100) with Northstar before re-forecast.</li>
+      <li>Confirm or dismiss the duplicate Software Licenses charge (6220, Meridian).</li>
+      <li>Confirm additional consulting scope (6500, BluePeak) was approved.</li></ul>
+      <div class="aislot">AI-narrative slot — labeled &amp; empty until AI is configured. This summary reads complete without it.</div></div></div>
+    <div class="btnrow">${r.status!=="completed"?`<button class="btn btn-p" onclick="curr()&&(curr().step=8);go('complete')">Continue to Complete ›</button>`:`<button class="btn btn-p" onclick="go('dashboard')">Back to Dashboard</button>`}<button class="btn btn-s" onclick="exportSummary()">Export</button></div>
+    <p class="muted" style="font-size:.76rem;">Every figure drills to its account/vendor/finding and source record. Synthetic demonstration data.</p>
+  </div>`;
+  return head + body;
+}
+function exportSummary(){ const r=curr()||{month:"July",year:"2026"}; drawer("Export / share", `<p class="sec">Self-describing, labeled output (survives as a shared PDF / email).</p>
+  <div class="kv"><dt>Period</dt><dd>${esc(r.month+" "+r.year)}</dd><dt>Data as-of</dt><dd>Configured Value</dd><dt>Configuration version</dt><dd>Configured Value</dd><dt>Generated</dt><dd>(prototype)</dd><dt>AI content</dt><dd>None (labeled)</dd></div>
+  <div class="btnrow" style="margin-top:14px;"><button class="btn btn-p" onclick="toast('Export prepared (prototype)')">Export summary (PDF)</button><button class="btn btn-s" onclick="toast('Export prepared (prototype)')">Export findings</button><button class="btn btn-s" onclick="toast('Export prepared (prototype)')">Export data</button></div>`); }
+
+function viewAudit(){ const edits=Object.keys(state.savedEdits);
+  return `<div class="page">${pagehead("Auditor","Audit trail",finBtn("Audit"))}${lensBanner()}
+    <div class="panel"><div class="ph"><h3>Cycle timeline — July 2026 (synthetic)</h3></div><div class="pb"><div class="tw"><table><thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Detail</th></tr></thead><tbody>
+      <tr><td>(synthetic) 2026-08-03 08:55</td><td>Operator</td><td>Created review</td><td>July 2026</td></tr>
+      <tr><td>08:58</td><td>Operator</td><td>Uploaded GED + Budget</td><td>provenance recorded (name, fingerprint, user, ts)</td></tr>
+      <tr><td>09:05</td><td>Operator</td><td>Verification confirmed</td><td>Step 4 hard gate; ${edits.length} correction(s) saved</td></tr>
+      <tr><td>09:12</td><td>System</td><td>Ran deterministic analysis</td><td>rule-set + config version = Configured Value</td></tr>
+      ${FINDINGS.flatMap(f=>f.history.map(h=>`<tr><td>${esc(h.ts)}</td><td>${esc(h.actor)}</td><td>${esc(h.action)} ${f.id}</td><td>${esc(h.note||f.title)}</td></tr>`)).join("")}
+    </tbody></table></div></div></div>
+    <div class="grid g2"><div class="panel"><div class="ph"><h3>Edits / overrides</h3></div><div class="pb">${edits.length?edits.map(id=>Object.keys(state.savedEdits[id]).map(f=>{const e=state.savedEdits[id][f];return `<div class="factbox" style="font-size:.8rem;"><b>${id}.${f}</b>: ${esc(f==='amount'?money2(e.orig):e.orig)} → ${esc(f==='amount'?money2(e.val):e.val)} <span class="muted">(${e.actor}, ${e.ts})</span></div>`}).join("")).join(""):'<p class="muted">No edits recorded this session.</p>'}</div></div>
+      <div class="panel"><div class="ph"><h3>Rules &amp; configuration</h3></div><div class="pb"><div class="kv"><dt>Materiality</dt><dd>Configured Value</dd><dt>Duplicate keys</dt><dd>Configured Value</dd><dt>Cutoff calendar</dt><dd>Configured Value</dd><dt>Rule-set version</dt><dd>Configured Value</dd><dt>Reproducible</dt><dd>Yes — deterministic, AI off</dd></div></div></div></div></div>`; }
+function viewSettings(){ return `<div class="page">${pagehead("Administrator","Settings / Configuration","")}<div class="panel"><div class="pb"><p class="sec">Transparent, versioned configuration (Admin). <b>Prototype stub.</b></p><div class="kv"><dt>Variance materiality</dt><dd>Configured Value</dd><dt>Duplicate match keys</dt><dd>Configured Value</dd><dt>Cutoff calendar</dt><dd>Configured Value</dd><dt>AI provider</dt><dd>Not configured</dd><dt>Active theme</dt><dd>${state.theme}</dd><dt>Active lens</dt><dd>${state.lens}</dd></div></div></div></div>`; }
+function viewHelp(){ return `<div class="page">${pagehead("Guidance","Help",finBtn("Help"))}<div class="panel"><div class="pb"><h3>How a finding is produced</h3><p>Verified data → a deterministic rule compares an observed value to a configured parameter → a finding with evidence and a one-click source trace. AI (Fin), if present, only explains.</p><h3>The 8 steps</h3><p>${STEP_LABELS.join(" · ")}. You always know which step you are on, what happened, and what's next.</p><h3>Glossary</h3><div class="kv"><dt>GED</dt><dd>General Expense Detail</dd><dt>EAC</dt><dd>Estimate at Completion (Actual + ETC)</dd><dt>ETC</dt><dd>Estimate to Complete</dd><dt>RAG</dt><dd>Red / Amber (Yellow) / Green status</dd><dt>Materiality</dt><dd>The configured threshold above which a variance becomes a finding</dd></div></div></div></div>`; }
+/*__SUMMARY__*/
+/* ================= COMPARE + WHAT'S NEW (functional) ================= */
+function viewCompare(){ const t=totals(),A=accounts(),V=vendors();
+  const accRows=A.map(a=>{ const pv=a.prior-a.budget; return {a,pv,delta:a.varAmt-pv}; }).sort((x,y)=>Math.abs(y.delta)-Math.abs(x.delta));
+  const vmov=V.slice().sort((x,y)=>Math.abs(y.change)-Math.abs(x.change)).slice(0,6);
+  return `<div class="page">${pagehead("Cross-cycle","Compare — July 2026 vs June 2026",finBtn("Compare July vs June"))}${lensBanner()}
+    <div class="kpis">
+      ${kpi("","Budget (both)",money(t.budget),"same budget basis")}
+      ${kpi(t.mom>0?"k-dng":"k-ok","Actual",money(t.actual),`<span class="${t.momPct>0?'up':'down'}">${t.momPct>0?'▲':'▼'} ${pct(t.momPct)} vs June (${money(totals().priorActual)})</span>`)}
+      ${kpi("","Change in spend",money(t.mom),"July − June")}
+      ${kpi("","Findings now",FINDINGS.length,`${openFindings().length} open`)}
+    </div>
+    <div class="panel"><div class="ph"><h3>Account variance — this month vs prior</h3></div><div class="pb"><div class="tw"><table><thead><tr><th>Account</th><th class="num">Prior variance</th><th class="num">Current variance</th><th class="num">Movement</th></tr></thead><tbody>
+      ${accRows.map(({a,pv,delta})=>`<tr class="click" onclick="acctDrawer('${a.code}')"><td>${a.code} ${esc(a.name)}</td><td class="num tnum ${pv>0?'unf':'fav'}">${money(pv)}</td><td class="num tnum ${a.varAmt>0?'unf':'fav'}">${money(a.varAmt)}</td><td class="num tnum ${delta>0?'unf':'fav'}">${delta>0?'▲ worse ':'▼ better '}${money(Math.abs(delta))}</td></tr>`).join("")}
+    </tbody></table></div></div></div>
+    <div class="grid g2">
+      <div class="panel"><div class="ph"><h3>Vendor spend changes</h3></div><div class="pb"><div class="tw"><table><thead><tr><th>Vendor</th><th class="num">Prior</th><th class="num">Now</th><th class="num">Change</th></tr></thead><tbody>${vmov.map(v=>`<tr class="click" onclick="vendorDrawer('${esc(v.name)}')"><td>${esc(v.name)}</td><td class="num tnum">${money(v.prior)}</td><td class="num tnum">${money(v.spend)}</td><td class="num tnum ${v.change>0?'unf':'fav'}">${money(v.change)} (${pct(v.changePct)})</td></tr>`).join("")}</tbody></table></div></div></div>
+      <div class="panel"><div class="ph"><h3>Findings &amp; quality changes</h3></div><div class="pb"><ul style="margin:0;padding-left:18px;font-size:.86rem;">
+        <li>New findings this month: ${FINDINGS.filter(f=>f.status==="New").length}</li>
+        <li>Resolved / dismissed: ${FINDINGS.filter(f=>["Resolved","Dismissed"].includes(f.status)).length}</li>
+        <li>Severity mix: ${(()=>{const s=sevCounts(FINDINGS);return `${s.critical}C · ${s.high}H · ${s.medium}M · ${s.low}L`;})()}</li>
+        <li>Data quality: verification ${verifiedPct()}% (prior period: Configured Value)</li>
+        <li>Major movement: Contract Labor and Professional Services drove most of the increase.</li></ul></div></div>
+    </div></div>`; }
+function viewWhatsNew(){ const A=accounts(),V=vendors();
+  const newlyOver=A.filter(a=>a.varAmt>0 && (a.prior-a.budget)<=0);
+  const movedFav=A.filter(a=>a.varAmt<=0 && (a.prior-a.budget)>0);
+  const bigUp=V.filter(v=>v.changePct>0.10).sort((x,y)=>y.change-x.change);
+  const bigDown=V.filter(v=>v.changePct<-0.05).sort((x,y)=>x.change-y.change);
+  const resolved=FINDINGS.filter(f=>f.status==="Resolved");
+  const item=(icon,cls,text)=>`<div class="alert ${cls}"><span class="ai">${icon}</span><div>${text}</div></div>`;
+  return `<div class="page">${pagehead("Cross-cycle","What's New — July 2026",finBtn("What's New"))}${lensBanner()}
+    <p class="sec"><b>New does not mean wrong.</b> Change is surfaced separately from findings so you are informed without alarm. A new item becomes a finding only if a rule independently fires.</p>
+    <div class="panel"><div class="ph"><h3>Changes for attention</h3></div><div class="pb">
+      ${item("✦","info","<b>New vendors:</b> none this period (all vendors appeared in June).")}
+      ${bigUp.map(v=>item("▲","warn",`<b>${esc(v.name)}</b> increased ${money(v.change)} (${pct(v.changePct)}).`)).join("")}
+      ${bigDown.map(v=>item("▼","ok",`<b>${esc(v.name)}</b> decreased ${money(Math.abs(v.change))} (${pct(v.changePct)}).`)).join("")}
+      ${newlyOver.length?newlyOver.map(a=>item("▲","warn",`<b>${a.code} ${esc(a.name)}</b> is newly over budget this month.`)).join(""):item("✓","ok","No accounts newly over budget vs prior.")}
+      ${movedFav.map(a=>item("▼","ok",`<b>${a.code} ${esc(a.name)}</b> moved from over to under budget.`)).join("")}
+      ${item("◈","info","<b>New unmatched record:</b> Northstar credit −$4,200 (now a reconciliation finding).")}
+      ${resolved.map(f=>item("✓","ok",`<b>Newly resolved:</b> ${esc(f.title)} — ${esc(f.entity||entityOf(f))}.`)).join("")}
+      ${item("ℹ","info","<b>Data:</b> no newly missing or restored sources vs prior period.")}
+    </div></div></div>`; }
+/*__COMPARE__*/
+/* ================= ASK FIN (grounded, explain-only, predefined) ================= */
+const FIN_SAMPLES=["What changed from last month?","Which vendors drove the increase in spending?","Which accounts are over budget?","Show the largest unfavorable variances.","Which findings still need attention?","What decisions are needed?","Is the dataset complete?"];
+function citeBtns(cites){ if(!cites||!cites.length) return ""; return `<div class="btnrow" style="margin-top:6px;">`+cites.map(c=>{ if(c.t==="a")return `<button class="btn btn-g btn-sm" onclick="acctDrawer('${c.v}')">${c.v} ›</button>`; if(c.t==="v")return `<button class="btn btn-g btn-sm" onclick="vendorDrawer('${esc(c.v)}')">${esc(c.v)} ›</button>`; if(c.t==="f")return `<button class="btn btn-g btn-sm" onclick="explainFinding('${c.v}')">${c.v} ›</button>`; return ""; }).join("")+`</div>`; }
+function finAnswer(qraw){ const q=qraw.toLowerCase(); const t=totals(),A=accounts(),V=vendors();
+  function ans(facts,narration,cites){ return {facts,narration,cites}; }
+  if(/(chang|last month|prior|vs june|month-over)/.test(q)){ const up=V.filter(v=>v.change>0).sort((a,b)=>b.change-a.change).slice(0,2); return ans([`Total spend: ${money(t.actual)} (July) vs ${money(t.priorActual)} (June) — ${pct(t.momPct)}.`,`Largest increases: ${up.map(v=>v.name+" "+money(v.change)).join("; ")}.`],`Spending rose ${money(t.mom)} versus June, driven mainly by contract labor and professional services. This is a change summary, not a judgement — see Findings for what a rule flagged.`,up.map(v=>({t:"v",v:v.name}))); }
+  if(/(drove|increase|which vendor|top vendor|vendor.*spend)/.test(q)){ const up=V.slice().sort((a,b)=>b.change-a.change).slice(0,3); return ans(up.map(v=>`${v.name}: ${money(v.spend)} (${v.change>0?'+':''}${money(v.change)} vs prior)`),`These vendors account for most of the movement. Amounts are deterministic from the verified GED; Fin is only summarising them.`,up.map(v=>({t:"v",v:v.name}))); }
+  if(/(over budget|overspend|unfavorable|largest.*variance|variance)/.test(q)){ const unf=A.filter(a=>a.varAmt>0).sort((a,b)=>b.varAmt-a.varAmt); return ans(unf.map(a=>`${a.code} ${a.name}: over by ${money(a.varAmt)} (${pct(a.varPct)})`),`${unf.length} accounts are over budget. Whether each is "material" depends on the configured materiality setting (Configured Value); those crossing it appear in Findings.`,unf.slice(0,4).map(a=>({t:"a",v:a.code}))); }
+  if(/(finding|attention|need.*attention|unresolved)/.test(q)){ const o=openFindings(); const s=sevCounts(o); return ans([`${o.length} open findings: ${s.critical} Critical, ${s.high} High, ${s.medium} Medium, ${s.low} Low.`,...o.slice(0,3).map(f=>`${f.id} ${f.title} — ${entityOf(f)}`)],`Critical and High findings should be reviewed first. Fin can explain any finding in plain language — open “Explain This”.`,o.slice(0,3).map(f=>({t:"f",v:f.id}))); }
+  if(/(decision|approve|judgement|judgment)/.test(q)){ const d=decisionsList(); return ans(d.map(f=>`${f.id} ${f.title} — ${entityOf(f)}`),`${d.length} conditions need human judgement. Fin surfaces them with evidence and possible next actions, but never makes the decision.`,d.map(f=>({t:"f",v:f.id}))); }
+  if(/(complete|dataset|verified|coverage|data quality)/.test(q)){ const c=coverage(); return ans([`${verifiedPct()}% of extracted rows verified.`,`${c.totalRows} rows · ${c.lowConf} low-confidence · ${c.duplicates} duplicate candidate · ${c.rejected} rejected.`,`Capabilities run: Budget, GED, Reconciliation. Skipped: Invoice, Resource.`],`Results are complete for the capabilities that ran. Invoice and Resource analysis were skipped because those sources were not provided.`,null); }
+  if(/summar/.test(q)){ const v=V.find(x=>q.includes(x.name.toLowerCase().split(" ")[0])); if(v) return ans([`${v.name}: ${money(v.spend)} across accounts ${v.accounts.join(", ")} (${v.count} txns).`,`Change vs prior: ${money(v.change)} (${pct(v.changePct)}).`],`Summary of ${v.name} from verified records; open the vendor to drill into transactions.`,[{t:"v",v:v.name}]); }
+  if(/(source|records behind|evidence|trace)/.test(q)){ return ans([`Every figure traces to a source GED row (file › sheet › row › cell).`],`Open any account, vendor, or finding and use “Source” / “View source record” to see the exact origin. Fin never invents a figure — it points you to the record.`,null); }
+  if(/explain/.test(q)){ const f=openFindings()[0]; return ans([f?`Example: ${f.id} — ${f.title}`:"No open findings."],`Open a finding and choose “Explain This” for a plain-language explanation (what happened, why flagged, why it matters) with evidence. Deterministic and available with AI off.`,f?[{t:"f",v:f.id}]:null); }
+  return ans([`Total budget ${money(t.budget)}, actual ${money(t.actual)} (${pct(t.varPct)}), ${openFindings().length} open findings.`],`I can answer questions about spend, vendors, accounts, findings, decisions and data completeness — all from the verified synthetic data. Try a suggested question.`,null); }
+
+function renderFinBody(){ const log=state.finLog||[]; const ctxQs=finContextQuestions();
+  const msgs=log.map(m=> m.who==="you"?`<div class="finmsg"><div class="who">You</div><div>${esc(m.text)}</div></div>`
+    :`<div class="finmsg"><div class="who">✦ Fin — deterministic facts</div><div class="factbox">${m.a.facts.map(x=>`<div>• ${esc(x)}</div>`).join("")}</div><div class="who" style="margin-top:6px;">Explanation</div><div style="font-size:.86rem;">${esc(m.a.narration)}</div>${citeBtns(m.a.cites)}</div>`).join("");
+  return `<div style="font-size:.78rem;color:var(--tm);margin-bottom:10px;">Context: <b>${esc(state.finContext)}</b>. Fin explains deterministic results — it never creates financial values, findings, or actions (DEC-005).</div>
+    ${msgs||`<div class="finmsg"><div class="who">✦ Fin</div><div style="font-size:.86rem;">Hello — I explain your verified July 2026 review. Ask about spend, vendors, accounts, findings, decisions, or data completeness. I only summarise deterministic results.</div></div>`}
+    <div style="margin-top:10px;"><div class="ov" style="margin-bottom:6px;">Suggested questions</div>${ctxQs.concat(FIN_SAMPLES).filter((v,i,a)=>a.indexOf(v)===i).slice(0,8).map(q=>`<button class="finq" onclick="finAsk('${esc(q).replace(/'/g,"&#39;")}')">${esc(q)}</button>`).join("")}</div>
+    <div class="btnrow" style="margin-top:8px;"><input id="finInput" placeholder="Ask Fin about this review…" style="flex:1;font:inherit;padding:8px 10px;border:1px solid var(--bstrong);border-radius:var(--r-md);background:var(--raised);color:var(--tp);" onkeydown="if(event.key==='Enter'){finAsk(this.value);}"><button class="btn btn-fin btn-sm" onclick="finAsk(document.getElementById('finInput').value)">Ask</button></div>`; }
+function finContextQuestions(){ const c=state.finContext||""; if(/Vendor:/.test(c)){ const n=c.split("Vendor:")[1].trim(); return [`Summarize ${n.split(" ")[0]}`,"Which vendors drove the increase in spending?"]; } if(/Finding|Decision/.test(c)) return ["Explain this finding in simple language","What decisions are needed?"]; if(/Vendor/.test(c)) return ["Which vendors drove the increase in spending?","Show the largest unfavorable variances."]; if(/[Aa]ccount/.test(c)) return ["Which accounts are over budget?","Show the largest unfavorable variances."]; if(/Summary/.test(c)) return ["What changed from last month?","Which findings still need attention?"]; return ["What changed from last month?","Which accounts are over budget?"]; }
+function askFin(ctx){ if(ctx) state.finContext=ctx; state.finLog=state.finLog||[]; $("#finBody").innerHTML=renderFinBody(); $("#scrim").classList.add("open"); $("#finPanel").classList.add("open"); const i=$("#finInput"); if(i) i.focus(); }
+function finAsk(q){ q=(q||"").trim(); if(!q) return; state.finLog=state.finLog||[]; state.finLog.push({who:"you",text:q}); state.finLog.push({who:"fin",a:finAnswer(q)}); $("#finBody").innerHTML=renderFinBody(); const b=$("#finBody"); b.scrollTop=b.scrollHeight; }
+/*__ASKFIN__*/
+/* ================= INTERACTIONS + ROUTER ================= */
+document.querySelectorAll("[data-nav]").forEach(b=>b.addEventListener("click",()=>go(b.getAttribute("data-nav"))));
+$("#themeBtn").addEventListener("click",()=>{ state.theme=state.theme==="light"?"dark":"light"; document.documentElement.setAttribute("data-theme",state.theme); toast("Theme: "+state.theme); });
+$("#textBtn").addEventListener("click",()=>{ const o=["default","large","larger"]; state.textSize=o[(o.indexOf(state.textSize)+1)%3]; document.documentElement.setAttribute("data-textsize",state.textSize); toast("Text size: "+state.textSize); });
+$("#lensSel").addEventListener("change",e=>{ state.lens=e.target.value; render(); toast(state.lens+" lens"); });
+$("#periodSel").addEventListener("change",e=>{ state.period=e.target.value; if(e.target.value!=="July 2026"){ toast("Prototype data is populated for July 2026"); } render(); });
+function finCtxForView(){ const m={dashboard:"Dashboard",review:"Financial review",findings:"Findings",decisions:"Decisions",summary:"Leadership summary",compare:"Compare",whatsnew:"What's New",verify:"Verification",audit:"Audit"}; return m[state.view]||"FinSight"; }
+$("#finBtnTop").addEventListener("click",()=>askFin(finCtxForView()));
+$("#finBtnSide").addEventListener("click",()=>askFin(finCtxForView()));
+
+const VIEWS={ welcome:viewWelcome, selectpast:viewSelectPast, dashboard:viewDashboard, history:viewHistory, create:viewCreate, upload:viewUpload, validate:viewValidate, processing:viewProcessing, verify:viewVerify, analyze:viewAnalyze, review:viewReview, findings:viewFindings, decisions:viewDecisions, summary:viewSummary, complete:viewComplete, compare:viewCompare, whatsnew:viewWhatsNew, audit:viewAudit, settings:viewSettings, help:viewHelp };
+function render(){
+  const r=curr();
+  const inFlow=["upload","validate","processing","verify","analyze","review","summary","complete"].includes(state.view);
+  $("#topReview").textContent = (r&&inFlow) ? `${r.month} ${r.year} Review` : "FinSight";
+  document.querySelectorAll("[data-nav]").forEach(b=>b.setAttribute("aria-current", b.getAttribute("data-nav")===state.view?"page":"false"));
+  $("#navFind").textContent=openFindings().length; $("#navDec").textContent=decisionsList().length;
+  const wizardOnly=["upload","validate","processing","verify","analyze","complete"];
+  if(wizardOnly.includes(state.view)&&!r){ state.view="welcome"; }
+  // Gate: never show a financial screen (esp. the dashboard) before the user creates or opens a review.
+  if(state.view==="dashboard" && !state.selectedReviewId){ state.view="welcome"; }
+  const financial=["review","findings","decisions","summary","compare","whatsnew","audit"];
+  if(financial.includes(state.view) && !state.currentReviewId){ state.view="welcome"; toast("Create or open a review first"); }
+  $("#main").innerHTML=(VIEWS[state.view]||viewWelcome)();
+}
+/*__INTERACT__*/
+/* ================= BOOT ================= */
+document.documentElement.setAttribute("data-theme","light");
+render();
+/*__BOOT__*/
+</script>
+</body>
+</html>

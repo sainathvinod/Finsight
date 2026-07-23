@@ -1,0 +1,22 @@
+[project]
+name = "finsight"
+version = "0.0.1"
+# Intentional floor: pytest 9.x / coverage 7.15.x require >=3.10, and 3.9 is EOL (2025-10).
+# Recommended build interpreter: 3.12. Single source of truth for pins: build/versions.json.
+requires-python = ">=3.10"
+dependencies = ["openpyxl==3.1.5"]
+
+[project.optional-dependencies]
+# Pinned intentionally; verified latest-stable 2026-07-17. Mirrors requirements-dev.txt.
+dev = [
+    "pytest==9.1.1",
+    "import-linter==2.13",
+    "ruff==0.15.22",
+    "coverage==7.15.2",
+]
+
+[tool.pytest.ini_options]
+markers = ["unit","golden","determinism","fitness","audit","accessibility","security"]
+
+[tool.ruff]
+target-version = "py310"
