@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import List, Optional
 
 from finsight.application.read_models.views import (
-    ReviewListItem, ReviewStatusView, FindingView, AuditEventView,
+    ReviewListItem, ReviewStatusView, FindingView, AuditEventView, SummaryView,
 )
 
 
@@ -19,6 +19,14 @@ class ReviewQueryService:
     def list_reviews(self) -> List[ReviewListItem]:
         return [ReviewListItem(c.cycle_id, c.month, c.year, c.state.value)
                 for c in self._cycles.list_all()]
+
+    def list_with_status(self) -> List[ReviewStatusView]:
+        """Reviews plus their finding counts, for the Reviews table. Read-only."""
+        out = []
+        for c in self._cycles.list_all():
+            count = len(self._findings.list(c.cycle_id))
+            out.append(ReviewStatusView(c.cycle_id, c.month, c.year, c.state.value, count))
+        return out
 
     def get_status(self, cycle_id: str) -> Optional[ReviewStatusView]:
         cycle = self._cycles.get(cycle_id)
@@ -54,3 +62,30 @@ class AuditQueryService:
     def timeline(self, cycle_id: str) -> List[AuditEventView]:
         return [AuditEventView(e["action"], e["actor"], e["ts"], e["detail"])
                 for e in self._audit.events(cycle_id)]
+
+
+class SummaryQueryService:
+    """Compose the deterministic Budget Health summary for a review, read-only.
+
+    Delegates the actual summary construction to the existing ReportingService; this service
+    only gathers the already-persisted inputs (cycle, findings, rule run) and adapts the result
+    into a typed view. It creates and alters nothing.
+    """
+
+    def __init__(self, cycle_repo, finding_repo, run_repo, reporting):
+        self._cycles = cycle_repo
+        self._findings = finding_repo
+        self._runs = run_repo
+        self._reporting = reporting
+
+    def for_cycle(self, cycle_id: str) -> Optional[SummaryView]:
+        cycle = self._cycles.get(cycle_id)
+        if cycle is None:
+            return None
+        finding_dicts = self._findings.list(cycle_id)
+        run = self._runs.get_by_cycle(cycle_id) or {}
+        s = self._reporting.summary(cycle, finding_dicts, run)
+        return SummaryView(
+            section=s["section"], period=s["period"], status_label=s["status_label"],
+            finding_count=s["finding_count"], lines=s["budget_health_lines"],
+        )

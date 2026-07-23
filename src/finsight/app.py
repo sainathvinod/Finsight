@@ -1,5 +1,7 @@
 # Implements: F-02-02 (composition root - wires ports; FindingsCommandPort injected ONLY into the engine)
 from __future__ import annotations
+from dataclasses import dataclass
+from typing import Optional
 from finsight.infrastructure.persistence import (Dal, SqliteUnitOfWork, ReviewCycleRepoSqlite,
     IngestedFileRepoSqlite, FindingRepoSqlite, RuleRunRepoSqlite, ConfigRepoSqlite)
 from finsight.infrastructure.audit import AuditStoreSqlite
@@ -52,3 +54,33 @@ def build_app(db_path: str, clock, reader=None):
     return {"dal": dal, "uow": uow, "orch": orch, "cycle_repo": cycle_repo, "finding_repo": finding_repo,
             "run_repo": run_repo, "ingested_repo": ingested_repo, "config_repo": config_repo,
             "audit": audit, "config": active}
+
+
+@dataclass(frozen=True)
+class QueryServices:
+    """Read-only application services handed to the desktop UI. No repositories or storage
+    objects are exposed; the UI depends only on these composed query services."""
+    reviews: "ReviewQueryService"
+    findings: "FindingsQueryService"
+    audit: "AuditQueryService"
+    summary: "SummaryQueryService"
+
+
+def build_query_services(db_path: str, clock=None) -> "QueryServices":
+    """Composition root for the desktop UI: wires the read-only query services.
+
+    The UI calls this and receives only query services — it never constructs SQLite
+    repositories or a Dal itself, and there is no global service locator. A production
+    SystemClock is injected here (the domain never reads a wall clock)."""
+    from finsight.infrastructure.clock import SystemClock
+    from finsight.application.reporting import ReportingService
+    from finsight.application.read_models.queries import (
+        ReviewQueryService, FindingsQueryService, AuditQueryService, SummaryQueryService)
+    app = build_app(db_path, clock or SystemClock())
+    reporting = ReportingService()
+    return QueryServices(
+        reviews=ReviewQueryService(app["cycle_repo"], app["finding_repo"]),
+        findings=FindingsQueryService(app["finding_repo"]),
+        audit=AuditQueryService(app["audit"]),
+        summary=SummaryQueryService(app["cycle_repo"], app["finding_repo"], app["run_repo"], reporting),
+    )

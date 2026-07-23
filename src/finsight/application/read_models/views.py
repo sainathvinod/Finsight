@@ -40,3 +40,12 @@ class AuditEventView:
     actor: str
     ts: str
     detail: Dict[str, Any]
+
+
+@dataclass(frozen=True)
+class SummaryView:
+    section: str
+    period: str
+    status_label: str
+    finding_count: int
+    lines: List[str]

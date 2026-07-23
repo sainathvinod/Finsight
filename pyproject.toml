@@ -7,16 +7,22 @@ requires-python = ">=3.10"
 dependencies = ["openpyxl==3.1.5"]
 
 [project.optional-dependencies]
-# Pinned intentionally; verified latest-stable 2026-07-17. Mirrors requirements-dev.txt.
+# Pinned intentionally; verified installable under Python 3.11. Mirrors requirements-dev.txt.
 dev = [
     "pytest==9.1.1",
+    "pytest-qt==4.5.0",
     "import-linter==2.13",
     "ruff==0.15.22",
     "coverage==7.15.2",
 ]
+# Desktop UI (delivery ring). NOT a core runtime dependency — the deterministic workflow runs
+# without PySide6. Install with:  pip install -e ".[dev,desktop]"
+desktop = [
+    "PySide6==6.11.1",
+]
 
 [tool.pytest.ini_options]
-markers = ["unit","golden","determinism","fitness","audit","accessibility","security"]
+markers = ["unit","golden","determinism","fitness","audit","accessibility","security","ui","integration","migration"]
 
 [tool.ruff]
 target-version = "py310"

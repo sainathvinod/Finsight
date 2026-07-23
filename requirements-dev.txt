@@ -2,6 +2,10 @@
 # Verified latest-stable as of 2026-07-17. Requires Python >=3.10 (pytest 9.x / coverage 7.15.x floor).
 -r requirements.txt
 pytest==9.1.1
+pytest-qt==4.5.0
 import-linter==2.13
 ruff==0.15.22
 coverage==7.15.2
+# Desktop UI stack (delivery ring). Required to run the UI tests; NOT a core runtime dependency
+# (the deterministic FinSight workflow runs without PySide6). See ADR-008.
+PySide6==6.11.1
