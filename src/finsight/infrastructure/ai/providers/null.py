@@ -6,7 +6,7 @@
 #
 # Implements: finsight.application.ai.ports.AiProviderPort (Phase 4C.1).
 from __future__ import annotations
-from finsight.application.ai.contracts import PromptRequest, RawProviderResponse
+from finsight.application.ai.contracts import PromptRequest, ProviderStatus, RawProviderResponse
 from finsight.domain.ai.contracts import ProviderConfiguration
 
 # A deterministic, schema-shaped safe refusal. No financial content, no citations, no fabrication.
@@ -22,7 +22,11 @@ class NullProvider:
     missing-model, and offline operation."""
 
     def available(self) -> bool:
-        return True
+        return True                 # adapter-callable / operational — NOT a healthy generative model
+
+    def status(self) -> ProviderStatus:
+        # Operational (always callable) but generation is not available: no live model answers here.
+        return ProviderStatus(operational=True, generation_available=False, reason="no_active_provider")
 
     def generate(self, request: PromptRequest, config: ProviderConfiguration) -> RawProviderResponse:
         return RawProviderResponse(

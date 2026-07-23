@@ -18,8 +18,15 @@ class TestNullProvider(unittest.TestCase):
         self.assertTrue(hasattr(self.p, "available"))
         self.assertTrue(hasattr(self.p, "generate"))
 
-    def test_always_available(self):
+    def test_available_means_adapter_callable_not_generation(self):
+        # Documented semantics: available() == adapter operational/callable, NOT generation health.
         self.assertTrue(self.p.available())
+
+    def test_status_distinguishes_operational_from_generation(self):
+        st = self.p.status()
+        self.assertTrue(st.operational)            # adapter is callable
+        self.assertFalse(st.generation_available)  # but no live generative model answers
+        self.assertEqual(st.reason, "no_active_provider")
 
     def test_generate_is_deterministic(self):
         a = self.p.generate(_req(), self.cfg)

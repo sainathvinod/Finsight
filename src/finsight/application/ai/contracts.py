@@ -32,3 +32,14 @@ class RawProviderResponse:
     provider: str
     model: str
     metadata: Dict[str, object] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ProviderStatus:
+    """Two orthogonal facts about a provider. `operational` = the adapter is callable. `generation
+    _available` = a real generative model will actually answer. NullProvider is operational but NOT
+    generation-available. UI generation status and provider selection MUST use `generation_available`
+    — never adapter callability alone."""
+    operational: bool
+    generation_available: bool
+    reason: str = ""

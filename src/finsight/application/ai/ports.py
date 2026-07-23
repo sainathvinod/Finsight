@@ -4,7 +4,7 @@
 # never constructs one directly.
 from __future__ import annotations
 from typing import Protocol
-from finsight.application.ai.contracts import PromptRequest, RawProviderResponse
+from finsight.application.ai.contracts import PromptRequest, ProviderStatus, RawProviderResponse
 from finsight.domain.ai.contracts import ProviderConfiguration
 
 
@@ -12,6 +12,11 @@ class AiProviderPort(Protocol):
     """A pluggable AI text generator. The application depends only on this Protocol and never
     constructs a provider — composition selects one (Ollama when reachable, else NullProvider).
     Providers must not persist prompts or responses, and must never author findings, severity,
-    approvals, or financial actions."""
+    approvals, or financial actions.
+
+    `available()` means the ADAPTER is operational/callable — it does NOT mean a generative model is
+    ready. For generation readiness (e.g. provider selection or UI status) use
+    `status().generation_available`."""
     def available(self) -> bool: ...
+    def status(self) -> ProviderStatus: ...
     def generate(self, request: PromptRequest, config: ProviderConfiguration) -> RawProviderResponse: ...

@@ -3,6 +3,10 @@
 # inputs it returns a byte-identical PromptRequest. It does NOT mask, call a provider, log, mutate its
 # inputs, or perform any I/O. Finding order uses the domain's authoritative Severity ranks (not an
 # invented ordering); all other sections use stable total-order sort keys.
+#
+# Prompt format v1 fences every untrusted data region with fixed, provider-neutral delimiters so that
+# data cannot visually blend with system instructions. This is structural defense-in-depth only — it
+# does not by itself prevent prompt injection.
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import List, Optional, Sequence
@@ -16,6 +20,15 @@ from finsight.domain.ai.contracts import (
 )
 from finsight.domain.findings import Severity
 
+PROMPT_FORMAT_VERSION = "v1"
+
+# Fixed, provider-neutral data delimiters (prompt format v1). Content inside these fences is DATA.
+CONTEXT_OPEN, CONTEXT_CLOSE = "<CONTEXT_DATA>", "</CONTEXT_DATA>"
+CONVERSATION_OPEN, CONVERSATION_CLOSE = "<CONVERSATION_DATA>", "</CONVERSATION_DATA>"
+QUESTION_OPEN, QUESTION_CLOSE = "<USER_QUESTION>", "</USER_QUESTION>"
+_ALL_DELIMITERS = (CONTEXT_OPEN, CONTEXT_CLOSE, CONVERSATION_OPEN, CONVERSATION_CLOSE,
+                   QUESTION_OPEN, QUESTION_CLOSE)
+
 _SEVERITY_RANK = {s.label: s.rank for s in Severity}
 
 
@@ -27,6 +40,18 @@ class PromptBuildResult:
 
 def _sev_rank(label: str) -> int:
     return _SEVERITY_RANK.get(label, 0)     # unknown label sorts last, deterministically
+
+
+def _fence_safe(text: str) -> str:
+    """Neutralize any data-supplied occurrence of a fence delimiter so untrusted content cannot close
+    or forge a data section (defense-in-depth). Deterministic and structural only."""
+    for d in _ALL_DELIMITERS:
+        text = text.replace(d, d.replace("<", "(").replace(">", ")"))
+    return text
+
+
+def _fence(open_tag: str, close_tag: str, inner: str) -> str:
+    return "%s\n%s\n%s" % (open_tag, _fence_safe(inner), close_tag)
 
 
 def _keep_tail(items, limit):
@@ -58,7 +83,7 @@ class PromptBuilder:
               audience: Optional[str] = None,
               answer_detail: Optional[str] = None) -> PromptBuildResult:
         lines: List[str] = []
-        f_trim = 0
+        f_omitted = 0
 
         r = grounding.review
         if r is not None:
@@ -90,15 +115,17 @@ class PromptBuilder:
         else:
             lines.append("- (none)")
 
-        # findings — severity desc, then account, then id; beyond budget => citation-key-only lines
+        # findings — severity desc, then account, then id. Beyond budget a finding is reduced to a
+        # DISTINCT non-citable namespace ([omitted-finding:<id>]); a valid [finding:<id>] citation key
+        # appears ONLY when full deterministic detail is present.
         f_sorted = sorted(grounding.findings, key=lambda f: (-_sev_rank(f.severity), f.account, f.id))
         limit = self._budget.max_findings
         lines.append("FINDINGS:")
         if f_sorted:
             for i, f in enumerate(f_sorted):
                 if limit is not None and i >= limit:
-                    lines.append("- [finding:%s] (detail omitted by budget)" % f.id)
-                    f_trim += 1
+                    lines.append("- [omitted-finding:%s] unavailable for answering or citation" % f.id)
+                    f_omitted += 1
                     continue
                 lines.append("- [finding:%s] account=%s rule=%s severity=%s type=%s period=%s state=%s"
                              % (f.id, f.account, f.rule_id, f.severity, f.finding_type, f.period, f.state))
@@ -129,26 +156,24 @@ class PromptBuilder:
         else:
             lines.append("- (none)")
 
-        context_block = "\n".join(lines)
+        context_block = _fence(CONTEXT_OPEN, CONTEXT_CLOSE, "\n".join(lines))
 
         # conversation — chronological (seq), most-recent kept, rendered chronologically
         conv_sorted = sorted(conversation, key=lambda m: (m.seq, m.message_id))
         kept_conv, c_drop = _keep_tail(conv_sorted, self._budget.max_conversation_messages)
-        conv_lines = ["CONVERSATION:"]
         if kept_conv:
-            for m in kept_conv:
-                conv_lines.append("- [%s] %s" % (m.role.value, m.content))
+            conv_inner = "\n".join("- [%s] %s" % (m.role.value, m.content) for m in kept_conv)
         else:
-            conv_lines.append("- (none)")
-        conversation_block = "\n".join(conv_lines)
+            conv_inner = "- (none)"
+        conversation_block = _fence(CONVERSATION_OPEN, CONVERSATION_CLOSE, conv_inner)
 
-        report = TruncationReport(findings_trimmed=f_trim, conversation_dropped=c_drop,
+        report = TruncationReport(findings_omitted=f_omitted, conversation_dropped=c_drop,
                                   memory_dropped=m_drop, provenance_dropped=p_drop, audit_dropped=a_drop)
         request = PromptRequest(
             system_prompt=self._render_system(audience, answer_detail),
             context_block=context_block,
             conversation_block=conversation_block,
-            question=question,
+            question=_fence(QUESTION_OPEN, QUESTION_CLOSE, question),
             output_schema=output_schema(self._schema_ver),
             prompt_version=self._sys_ver,           # prompt version tracks the system-prompt version
             schema_version=self._schema_ver,
