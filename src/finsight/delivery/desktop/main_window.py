@@ -3,11 +3,11 @@ from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel,
                                QStackedWidget)
 from finsight.delivery.desktop.components import NavItem
-from finsight.delivery.desktop.views import ReviewsView, OverviewView, FindingsView, AuditView
+from finsight.delivery.desktop.views import ReviewsView, FindingsView, AuditView, WorkflowView
 from finsight.delivery.desktop.theme import tokens as t
 
 # (nav key, label) in order; index aligns with the workspace stack.
-_NAV = [("reviews", "Reviews"), ("overview", "Review Overview"),
+_NAV = [("reviews", "Reviews"), ("workspace", "Review Workspace"),
         ("findings", "Findings"), ("audit", "Audit")]
 
 
@@ -35,10 +35,10 @@ class MainWindow(QMainWindow):
         right.addWidget(self._build_topbar())
         self._stack = QStackedWidget()
         self._reviews = ReviewsView(controller)
-        self._overview = OverviewView(controller)
+        self._workspace = WorkflowView(controller)
         self._findings = FindingsView(controller)
         self._audit = AuditView(controller)
-        for v in (self._reviews, self._overview, self._findings, self._audit):
+        for v in (self._reviews, self._workspace, self._findings, self._audit):
             self._stack.addWidget(v)
         right.addWidget(self._stack, 1)
         right_wrap = QWidget()
@@ -47,7 +47,8 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
 
         # wiring
-        self._reviews.reviewActivated.connect(lambda _cid: self.navigate("overview"))
+        self._reviews.reviewActivated.connect(lambda _cid: self.navigate("workspace"))
+        self._reviews.newReviewRequested.connect(self._on_new_review)
         self._c.activeReviewChanged.connect(self._on_active_changed)
         for i, (key, _label) in enumerate(_NAV):
             sc = QShortcut(QKeySequence(f"Ctrl+{i + 1}"), self)
@@ -111,6 +112,10 @@ class MainWindow(QMainWindow):
         if hasattr(current, "refresh"):
             current.refresh()
         self._nav_items[key].setFocus()
+
+    def _on_new_review(self) -> None:
+        self._c.begin_new_review()
+        self.navigate("workspace")
 
     def _on_active_changed(self, cycle_id: str) -> None:
         if cycle_id:

@@ -1,6 +1,6 @@
 from __future__ import annotations
 from PySide6.QtCore import Signal, QModelIndex
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QStackedWidget
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QStackedWidget, QPushButton
 from finsight.delivery.desktop.components import SectionHeader, DataTable, EmptyState
 from finsight.delivery.desktop.models import ReviewsTableModel
 from finsight.delivery.desktop.theme import tokens as t
@@ -8,9 +8,10 @@ from finsight.delivery.desktop.theme import tokens as t
 
 class ReviewsView(QWidget):
     """Home: list persisted reviews. Selecting a row sets the active review; opening (Enter or
-    double-click) navigates to the review workspace."""
+    double-click) navigates to the review workspace. 'New review' starts the workflow at Setup."""
 
-    reviewActivated = Signal(str)  # cycle_id when a review is opened
+    reviewActivated = Signal(str)   # cycle_id when a review is opened
+    newReviewRequested = Signal()   # user asked to create a new review
 
     def __init__(self, controller, parent=None):
         super().__init__(parent)
@@ -20,7 +21,13 @@ class ReviewsView(QWidget):
         root = QVBoxLayout(self)
         root.setContentsMargins(t.SP_5, t.SP_5, t.SP_5, t.SP_5)
         root.setSpacing(t.SP_3)
-        root.addWidget(SectionHeader("Reviews", "Select a review to open its workspace."))
+        header_row = QHBoxLayout()
+        header_row.addWidget(SectionHeader("Reviews", "Select a review to open its workspace."), 1)
+        self._new_btn = QPushButton("New review")
+        self._new_btn.setProperty("role", "secondary")
+        self._new_btn.clicked.connect(self.newReviewRequested.emit)
+        header_row.addWidget(self._new_btn)
+        root.addLayout(header_row)
 
         self._stack = QStackedWidget()
         self._table = DataTable()

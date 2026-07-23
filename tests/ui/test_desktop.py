@@ -31,7 +31,7 @@ def test_navigation_switches(window_factory, populated_db):
 
 def test_empty_database_renders_without_crashing(window_factory, empty_db):
     w = window_factory(empty_db)
-    for key in ("reviews", "overview", "findings", "audit"):
+    for key in ("reviews", "workspace", "findings", "audit"):
         w.navigate(key)  # must not raise
     assert not w._c.active_review_id            # nothing selected
     assert "No review selected" in w._context.text()

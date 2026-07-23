@@ -57,30 +57,33 @@ def build_app(db_path: str, clock, reader=None):
 
 
 @dataclass(frozen=True)
-class QueryServices:
-    """Read-only application services handed to the desktop UI. No repositories or storage
-    objects are exposed; the UI depends only on these composed query services."""
+class AppServices:
+    """Application services handed to the desktop UI. Read-only query services plus the
+    step-oriented review workflow command service. No repositories or storage objects are
+    exposed; the UI depends only on these composed services and there is no global service
+    locator."""
     reviews: "ReviewQueryService"
     findings: "FindingsQueryService"
     audit: "AuditQueryService"
     summary: "SummaryQueryService"
+    workflow: "ReviewWorkflowService"
 
 
-def build_query_services(db_path: str, clock=None) -> "QueryServices":
-    """Composition root for the desktop UI: wires the read-only query services.
-
-    The UI calls this and receives only query services — it never constructs SQLite
-    repositories or a Dal itself, and there is no global service locator. A production
-    SystemClock is injected here (the domain never reads a wall clock)."""
+def build_query_services(db_path: str, clock=None) -> "AppServices":
+    """Composition root for the desktop UI: wires the read-only query services and the review
+    workflow command service. The workflow service drives the same Orchestrator transition logic.
+    A production SystemClock is injected here (the domain never reads a wall clock)."""
     from finsight.infrastructure.clock import SystemClock
     from finsight.application.reporting import ReportingService
     from finsight.application.read_models.queries import (
         ReviewQueryService, FindingsQueryService, AuditQueryService, SummaryQueryService)
+    from finsight.application.workflow import ReviewWorkflowService
     app = build_app(db_path, clock or SystemClock())
     reporting = ReportingService()
-    return QueryServices(
+    return AppServices(
         reviews=ReviewQueryService(app["cycle_repo"], app["finding_repo"]),
         findings=FindingsQueryService(app["finding_repo"]),
         audit=AuditQueryService(app["audit"]),
         summary=SummaryQueryService(app["cycle_repo"], app["finding_repo"], app["run_repo"], reporting),
+        workflow=ReviewWorkflowService(app["orch"]),
     )

@@ -1,6 +1,5 @@
 # Implements: FR-001, FR-003, FR-010, FR-007, NFR-012, NFR-062, F-02-02 (provenance + safe-rejection)
 from __future__ import annotations
-import os
 from typing import Dict, List, Tuple
 from finsight.domain.ingest import IngestedFile
 

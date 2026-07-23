@@ -1,6 +1,6 @@
 # Implements: FR-005/006, FR-001/003/010, FR-007, FR-026, FR-084..089, NFR-005/006/019/057/062, F-02-02
 from __future__ import annotations
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from finsight.domain.review_cycle import ReviewCycle, CycleState
 from finsight.application import intake as INTAKE
 
@@ -8,10 +8,16 @@ from finsight.application import intake as INTAKE
 ORDER = [CycleState.CREATED, CycleState.INTAKE, CycleState.PROCESSED, CycleState.VERIFIED,
          CycleState.ANALYZED, CycleState.SUMMARIZED, CycleState.EXPORTED]
 
+
 def _idx(state: CycleState) -> int:
     return ORDER.index(state)
 
+
 class Orchestrator:
+    """Owns the single set of review-cycle transition rules (atomic persistence + audit + state
+    advancement, resume gating, rejected safe stop). run_review()/resume() are the batch/convenience
+    operations; the interactive ReviewWorkflowService drives the SAME step methods one at a time."""
+
     def __init__(self, cycle_repo, ingested_repo, run_repo, finding_repo, audit, uow, hasher,
                  pipeline, verification, analysis, reporting, export, clock, actor="local-user"):
         self.cycle_repo = cycle_repo; self.ingested_repo = ingested_repo; self.run_repo = run_repo
@@ -19,7 +25,7 @@ class Orchestrator:
         self.pipeline = pipeline; self.verification = verification; self.analysis = analysis
         self.reporting = reporting; self.export = export; self.clock = clock; self.actor = actor
 
-    # ---- public entry points ----
+    # ---- public entry points (batch / convenience) ----
     def run_review(self, cycle_id, month, year, ged_path, budget_path, approve=True) -> Dict[str, Any]:
         cycle = ReviewCycle(cycle_id, month, year, CycleState.CREATED)
         with self.uow.atomic():                                   # setup transition (atomic)
@@ -39,51 +45,67 @@ class Orchestrator:
         self._drive(cycle, ctx)
         return self._result(cycle, ctx)
 
-    # ---- deterministic recompute (pure: no DB writes, no audit) ----
-    def _prepare(self, cycle, ged_path, budget_path, approve) -> Dict[str, Any]:
-        provenance, missing = INTAKE.build_provenance(
+    # ---- deterministic recompute helpers (pure: no DB writes, no audit) ----
+    def _build_provenance(self, cycle, ged_path, budget_path):
+        return INTAKE.build_provenance(
             cycle, {"GED": ged_path, "BUDGET": budget_path}, self.hasher, self.clock, self.actor)
+
+    def _extract(self, ged_path, budget_path):
+        return self.pipeline.run(ged_path, budget_path)
+
+    def _build_verified(self, cycle_id, extracted, approve):
+        return self.verification.build(cycle_id, extracted, approved=approve)
+
+    def _prepare(self, cycle, ged_path, budget_path, approve) -> Dict[str, Any]:
+        provenance, missing = self._build_provenance(cycle, ged_path, budget_path)
         ctx = {"provenance": provenance, "paths": {"GED": ged_path, "BUDGET": budget_path},
                "rejected": None, "extracted": None, "vds": None, "findings": None, "run": None}
         if missing:
             ctx["rejected"] = "Required file(s) missing or unreadable: " + ", ".join(missing) + "."
             ctx["readiness"] = {"Budget Analysis": "Unavailable - " + ctx["rejected"]}
             return ctx
-        extracted = self.pipeline.run(ged_path, budget_path)
+        extracted = self._extract(ged_path, budget_path)
         ctx["extracted"] = extracted
         ctx["readiness"] = extracted["readiness"]
         if not extracted["available"]:
             ctx["rejected"] = extracted["reason"]
             return ctx
-        ctx["vds"] = self.verification.build(cycle.cycle_id, extracted, approved=approve)
+        ctx["vds"] = self._build_verified(cycle.cycle_id, extracted, approve)
         return ctx
 
-    # ---- persist + audit only the not-yet-done transitions, each atomic ----
-    def _drive(self, cycle, ctx):
+    # ---- individual transitions (the single source of transition rules) ----
+    # Each persists + audits + advances state atomically via _transition, and is a no-op if the
+    # cycle has already reached (or passed) the target state - preserving no-duplicate on resume.
+    def _do_intake(self, cycle, ctx):
         cid = cycle.cycle_id
 
-        def intake():
+        def body():
             for f in ctx["provenance"]:
                 self.ingested_repo.save(f)
             for f in ctx["provenance"]:
                 self._audit(cid, "upload_ged" if f.doc_type == "GED" else "upload_budget",
                             {"name": f.name, "fingerprint": f.fingerprint, "period": f.period})
-        self._transition(cycle, CycleState.INTAKE, intake)
+        self._transition(cycle, CycleState.INTAKE, body)
 
-        def processed():
+    def _do_processed(self, cycle, ctx):
+        cid = cycle.cycle_id
+
+        def body():
             self._audit(cid, "validate", {"readiness": ctx["readiness"]})
             ex = ctx["extracted"] or {}
             self._audit(cid, "extract", {"ged_valid": len(ex.get("ged_valid", [])),
                         "quarantined": len(ex.get("ged_quarantined", [])) + len(ex.get("budget_quarantined", [])),
                         "rejected": bool(ctx["rejected"])})
-        self._transition(cycle, CycleState.PROCESSED, processed)
+        self._transition(cycle, CycleState.PROCESSED, body)
 
-        if ctx["rejected"]:
-            return  # safe stop: no verification, no rule ever runs (NFR-062/AC-3)
-
+    def _do_verified(self, cycle, ctx):
+        cid = cycle.cycle_id
         self._transition(cycle, CycleState.VERIFIED, lambda: self._audit(cid, "verify", {"approved": True}))
 
-        def analyzed():
+    def _do_analyzed(self, cycle, ctx):
+        cid = cycle.cycle_id
+
+        def body():
             findings, run = self.analysis.run(ctx["vds"])   # engine writes findings via command port
             run["cycle_id"] = cid
             self.run_repo.save(run)                          # RuleRun persisted (AC-6)
@@ -93,23 +115,40 @@ class Orchestrator:
                 self._audit(cid, "finding", {"id": f.id, "account": f.account,
                             "severity": f.severity, "type": f.finding_type})
             ctx["findings"] = findings; ctx["run"] = run
-        self._transition(cycle, CycleState.ANALYZED, analyzed)
+        self._transition(cycle, CycleState.ANALYZED, body)
 
-        def summarized():
+    def _do_summarized(self, cycle, ctx):
+        cid = cycle.cycle_id
+
+        def body():
             fdicts = self.finding_repo.list(cid)
             run = self.run_repo.get_by_cycle(cid) or {}
             summary = self.reporting.summary(cycle, fdicts, run)
             self._audit(cid, "summarize", {"status": summary["status_label"], "findings": summary["finding_count"]})
             ctx["summary"] = summary
-        self._transition(cycle, CycleState.SUMMARIZED, summarized)
+        self._transition(cycle, CycleState.SUMMARIZED, body)
 
-        def exported():
+    def _do_exported(self, cycle, ctx):
+        cid = cycle.cycle_id
+
+        def body():
             run = self.run_repo.get_by_cycle(cid) or {}
             summary = ctx.get("summary") or self.reporting.summary(cycle, self.finding_repo.list(cid), run)
             export = self.export.build(cycle, summary, run, data_as_of=self.clock.now())
             self._audit(cid, "export", {"period": export["period"]})
             ctx["export"] = export
-        self._transition(cycle, CycleState.EXPORTED, exported)
+        self._transition(cycle, CycleState.EXPORTED, body)
+
+    # ---- drive all remaining transitions (batch) ----
+    def _drive(self, cycle, ctx):
+        self._do_intake(cycle, ctx)
+        self._do_processed(cycle, ctx)
+        if ctx["rejected"]:
+            return  # safe stop: no verification, no rule ever runs (NFR-062/AC-3)
+        self._do_verified(cycle, ctx)
+        self._do_analyzed(cycle, ctx)
+        self._do_summarized(cycle, ctx)
+        self._do_exported(cycle, ctx)
 
     def _transition(self, cycle, target: CycleState, fn):
         if _idx(cycle.state) >= _idx(target):

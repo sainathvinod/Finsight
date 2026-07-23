@@ -1,6 +1,7 @@
 # Implements: FR-086, NFR-021, NFR-022, F-02-06, F-02-02 (versioned, fingerprinted run; replayable)
 from __future__ import annotations
-import hashlib, json
+import hashlib
+import json
 from finsight.domain.money import money_str
 from finsight.domain.rules import RulesEngine
 
