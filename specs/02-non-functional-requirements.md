@@ -80,7 +80,7 @@ When data is sent to an AI provider, only the fields required for the specific o
 
 ### NFR-016 — Masking effectiveness
 - **Classification:** Should · **Status:** Approved
-When masking is enabled, sensitive identifiers (vendor names, resource names, invoice numbers, amounts per configuration) are irreversibly absent from transmitted content; the token map never leaves the application.
+When masking is enabled, sensitive personal and contact identifiers (configured employee names, email addresses, phone numbers, tax identifiers, banking identifiers, and structured actor fields) are irreversibly redacted from AI-bound content; redaction is one-way and produces no token map. Deterministic financial facts — amounts, percentages, variances, GL/accounting account numbers, invoice numbers, vendor/resource names, findings, and rules — are never masked. *(Aligned in Phase 4C.3 to the approved AI architecture; supersedes the earlier reversible-tokenization wording.)*
 
 ### NFR-017 — Local data disposal
 - **Classification:** Should · **Status:** Approved

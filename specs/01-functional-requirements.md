@@ -473,9 +473,9 @@ Before any data transmission to an AI provider: disclose the provider, the speci
 - **Classification:** Must, Phase 1 · **Status:** Approved
 The user selects the AI provider from configured options. Providers outside the organization-recommended list trigger an explicit warning state before consent can be given.
 
-### FR-098 — Masking/tokenization option
+### FR-098 — Masking (redaction) option
 - **Classification:** Should, Phase 1 · **Status:** Approved
-Support masking or tokenizing sensitive values (vendor names, resource names, amounts, identifiers) before AI transmission, per configuration; the UI shows whether masking is active. Token-to-real mapping never leaves the application.
+Support deterministic redaction of sensitive personal and contact identifiers (configured employee names, email addresses, phone numbers, tax identifiers, banking identifiers, and structured actor fields) from AI-bound content before transmission, per configuration; the UI shows whether masking is active. Redaction is irreversible and produces no token-to-real mapping. Deterministic financial facts — amounts, percentages, variances, GL/accounting account numbers, invoice numbers, vendor/resource names, findings, and rules — are never masked. *(Aligned in Phase 4C.3 to the approved AI architecture; supersedes the earlier reversible-tokenization wording.)*
 
 ### FR-099 — AI answer citation
 - **Classification:** Should, Phase 1 · **Status:** Approved
