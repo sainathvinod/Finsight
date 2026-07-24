@@ -7,8 +7,11 @@
 # Trust > AI, so it is explicitly out of scope. Citation existence != claim correctness.
 #
 # Pure, deterministic, provider-independent, side-effect-free. Parsing is case-sensitive; keys are
-# never lowercased or repaired. CitationError (non-retryable) carries a NON-SENSITIVE code only —
-# never answer content, raw output, prompts, or original values (ADR-009/ADR-010).
+# never lowercased or repaired. The ONLY normalization is removing exactly one surrounding [..] pair —
+# the context-display syntax the prompt shows (e.g. [finding:F1]) — before namespace parsing; the bare
+# key is the canonical form. No whitespace stripping, no nested/partial-bracket repair. CitationError
+# (non-retryable) carries a NON-SENSITIVE code only — never answer content, raw output, prompts, or
+# original values (ADR-009/ADR-010).
 from __future__ import annotations
 from typing import Tuple
 
@@ -48,19 +51,29 @@ class CitationVerifier:
         return tuple(refs)
 
     def _parse(self, key: str) -> CitationReference:
-        if "[" in key or "]" in key:
+        core = self._strip_one_bracket_pair(key)  # canonicalize [finding:F1] → finding:F1
+        if "[" in core or "]" in core:            # nested/partial brackets remain → malformed
             raise CitationError("bracketed citation key", code="malformed_citation")
-        if any(ch.isspace() for ch in key):
+        if any(ch.isspace() for ch in core):      # e.g. "[ finding:F1 ]", "finding :F1", trailing text
             raise CitationError("citation key contains whitespace", code="malformed_citation")
-        if ":" not in key:
+        if ":" not in core:
             raise CitationError("citation key missing namespace separator", code="malformed_citation")
-        ns_str, identifier = key.split(":", 1)    # split on FIRST ':' — an audit timestamp contains ':'
+        ns_str, identifier = core.split(":", 1)   # split on FIRST ':' — an audit timestamp contains ':'
         if identifier == "":
             raise CitationError("citation key has empty identifier", code="malformed_citation")
         ns = _NAMESPACE_BY_VALUE.get(ns_str)      # case-sensitive; 'omitted-finding' is not a member
         if ns is None:
             raise CitationError("unknown citation namespace", code="unknown_namespace")
-        return CitationReference(ns, identifier, key)
+        return CitationReference(ns, identifier, core)   # canonical bare key
+
+    @staticmethod
+    def _strip_one_bracket_pair(key: str) -> str:
+        """Remove EXACTLY one surrounding [..] pair (the context-display syntax) if present. No
+        whitespace stripping, no lowercasing, no repair — `[[finding:F1]]`, `[ finding:F1 ]`, and
+        partial brackets fall through to the strict checks above and are rejected as malformed."""
+        if len(key) >= 2 and key[0] == "[" and key[-1] == "]":
+            return key[1:-1]
+        return key
 
     def _resolve(self, ref: CitationReference, index: CitationIndex) -> None:
         if ref.key in index.valid_keys:

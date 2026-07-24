@@ -56,6 +56,22 @@ class TestValidCitations(unittest.TestCase):
                          [CitationNamespace.FINDING, CitationNamespace.RUN, CitationNamespace.PROV,
                           CitationNamespace.AUDIT, CitationNamespace.MEMORY])
 
+    def test_single_bracket_pair_canonicalized(self):
+        # The context-display syntax [finding:F1] canonicalizes to the bare key finding:F1.
+        refs = CitationVerifier().verify(_validated("[finding:F1]"), _index())
+        self.assertEqual(len(refs), 1)
+        self.assertEqual(refs[0].namespace, CitationNamespace.FINDING)
+        self.assertEqual(refs[0].identifier, "F1")
+        self.assertEqual(refs[0].key, "finding:F1")        # canonical bare key, not the bracketed form
+
+    def test_bracketed_and_bare_are_the_same_citation(self):
+        # both forms canonicalize to finding:F1 → treated as a duplicate, never silently kept twice
+        _reject(self, _validated("[finding:F1]", "finding:F1"), _index(), "duplicate_citation")
+
+    def test_bracketed_audit_key_with_timestamp(self):
+        refs = CitationVerifier().verify(_validated("[%s]" % _AUDIT_KEY), _index())
+        self.assertEqual(refs[0].key, _AUDIT_KEY)          # inner ':' in the timestamp preserved
+
     def test_unable_to_answer_yields_no_references(self):
         refs = CitationVerifier().verify(_validated(answer_text="", unable=True), _index())
         self.assertEqual(refs, ())
@@ -74,11 +90,26 @@ class TestCitationRejection(unittest.TestCase):
     def test_empty_identifier(self):
         _reject(self, _validated("finding:"), _index(), "malformed_citation")
 
-    def test_bracketed_key(self):
-        _reject(self, _validated("[finding:F1]"), _index(), "malformed_citation")
+    def test_double_bracketed_key_rejected(self):
+        _reject(self, _validated("[[finding:F1]]"), _index(), "malformed_citation")
+
+    def test_bracket_with_inner_whitespace_rejected(self):
+        _reject(self, _validated("[ finding:F1 ]"), _index(), "malformed_citation")
+
+    def test_partial_leading_bracket_rejected(self):
+        _reject(self, _validated("[finding:F1"), _index(), "malformed_citation")
+
+    def test_partial_trailing_bracket_rejected(self):
+        _reject(self, _validated("finding:F1]"), _index(), "malformed_citation")
 
     def test_whitespace_key(self):
         _reject(self, _validated("finding: F1"), _index(), "malformed_citation")
+
+    def test_trailing_text_after_key_rejected(self):
+        _reject(self, _validated("finding:F1 extra"), _index(), "malformed_citation")
+
+    def test_space_before_colon_rejected(self):
+        _reject(self, _validated("finding :F1"), _index(), "malformed_citation")
 
     def test_unknown_namespace(self):
         _reject(self, _validated("vendor:ACME"), _index(), "unknown_namespace")
