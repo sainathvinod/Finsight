@@ -4,13 +4,13 @@ from PySide6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, Q
                                QStackedWidget)
 from finsight.delivery.desktop.components import NavItem
 from finsight.delivery.desktop.views import (
-    ReviewsView, OverviewView, FindingsView, AuditView, WorkflowView, AskFinView)
+    ReviewsView, OverviewView, FindingsView, AuditView, WorkflowView, AskFinView, DashboardView)
 from finsight.delivery.desktop.theme import tokens as t
 
-# (nav key, label) in order; index aligns with the workspace stack. "overview" is the active-review
-# home/dashboard; "workspace" is the guided workflow.
-_NAV = [("reviews", "Reviews"), ("overview", "Review Overview"), ("workspace", "Workflow"),
-        ("findings", "Findings"), ("audit", "Audit"), ("askfin", "Ask Fin")]
+# (nav key, label) in order; index aligns with the workspace stack. "dashboard" is the portfolio
+# launch home; "overview" is the active-review home; "workspace" is the guided workflow.
+_NAV = [("dashboard", "Dashboard"), ("reviews", "Reviews"), ("overview", "Review Overview"),
+        ("workspace", "Workflow"), ("findings", "Findings"), ("audit", "Audit"), ("askfin", "Ask Fin")]
 
 
 class MainWindow(QMainWindow):
@@ -37,14 +37,15 @@ class MainWindow(QMainWindow):
         right.setSpacing(0)
         right.addWidget(self._build_topbar())
         self._stack = QStackedWidget()
+        self._dashboard = DashboardView(controller)
         self._reviews = ReviewsView(controller)
         self._overview = OverviewView(controller)
         self._workspace = WorkflowView(controller)
         self._findings = FindingsView(controller)
         self._audit = AuditView(controller)
         self._askfin = AskFinView(controller)
-        for v in (self._reviews, self._overview, self._workspace, self._findings, self._audit,
-                  self._askfin):
+        for v in (self._dashboard, self._reviews, self._overview, self._workspace, self._findings,
+                  self._audit, self._askfin):
             self._stack.addWidget(v)
         right.addWidget(self._stack, 1)
         right_wrap = QWidget()
@@ -56,12 +57,14 @@ class MainWindow(QMainWindow):
         self._reviews.reviewActivated.connect(lambda _cid: self.navigate("overview"))
         self._reviews.newReviewRequested.connect(self._on_new_review)
         self._overview.openWorkflowRequested.connect(lambda: self.navigate("workspace"))
+        self._dashboard.openReviewRequested.connect(self._on_open_from_dashboard)
+        self._dashboard.newReviewRequested.connect(self._on_new_review)
         self._c.activeReviewChanged.connect(self._on_active_changed)
         for i, (key, _label) in enumerate(_NAV):
             sc = QShortcut(QKeySequence(f"Ctrl+{i + 1}"), self)
             sc.activated.connect(lambda k=key: self.navigate(k))
 
-        self.navigate("reviews")
+        self.navigate("dashboard")   # portfolio overview is the launch home
         # ReviewsView selects its first row during construction (before the signal above was
         # connected), so sync the top-bar context to whatever is already active.
         self._on_active_changed(self._c.active_review_id or "")
@@ -126,12 +129,17 @@ class MainWindow(QMainWindow):
         return self._current_key
 
     def view(self, key: str):
-        return {"reviews": self._reviews, "overview": self._overview, "workspace": self._workspace,
-                "findings": self._findings, "audit": self._audit, "askfin": self._askfin}[key]
+        return {"dashboard": self._dashboard, "reviews": self._reviews, "overview": self._overview,
+                "workspace": self._workspace, "findings": self._findings, "audit": self._audit,
+                "askfin": self._askfin}[key]
 
     def _on_new_review(self) -> None:
         self._c.begin_new_review()
         self.navigate("workspace")
+
+    def _on_open_from_dashboard(self, cycle_id: str) -> None:
+        self._c.select_review(cycle_id)
+        self.navigate("overview")
 
     def _on_active_changed(self, cycle_id: str) -> None:
         if cycle_id:

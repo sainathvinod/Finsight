@@ -1,21 +1,10 @@
 from __future__ import annotations
-from PySide6.QtCore import Qt, Signal, QModelIndex
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QStackedWidget, QPushButton, QLabel
+from PySide6.QtCore import Signal, QModelIndex
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QStackedWidget, QPushButton
 from finsight.delivery.desktop.components import SectionHeader, DataTable
+from finsight.delivery.desktop.components.first_run import build_first_run_card, FIRST_RUN_LEAD
 from finsight.delivery.desktop.models import ReviewsTableModel
 from finsight.delivery.desktop.theme import tokens as t
-
-# Concise, professional first-run guidance (not a marketing page).
-_FIRST_RUN_TITLE = "Welcome to FinSight"
-_FIRST_RUN_LEAD = ("FinSight runs a monthly financial review end to end: upload the source workbooks, "
-                   "verify the extracted data, run the deterministic analysis, review findings, and "
-                   "export the package — with a complete audit trail throughout.")
-_FIRST_RUN_POINTS = [
-    "Lifecycle:  Create → Upload → Verify → Analyze → Findings → Summary → Export.",
-    "Your source files are never modified — FinSight only reads them.",
-    "Deterministic analysis is the source of truth; every finding traces to a rule and its inputs.",
-    "Ask Fin explains verified results — it never creates findings, amounts, or decisions.",
-]
 
 
 class ReviewsView(QWidget):
@@ -48,42 +37,11 @@ class ReviewsView(QWidget):
         self._table.activated.connect(self._on_open)
         self._table.selectionModel().currentRowChanged.connect(self._on_current_changed)
         self._stack.addWidget(self._table)
-        self._stack.addWidget(self._build_first_run())
+        first_run, self._first_run_btn = build_first_run_card(self.newReviewRequested.emit)
+        self._stack.addWidget(first_run)
         root.addWidget(self._stack, 1)
 
         self.refresh()
-
-    def _build_first_run(self) -> QWidget:
-        wrap = QWidget()
-        outer = QVBoxLayout(wrap)
-        outer.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        card = QWidget()
-        card.setProperty("role", "card")
-        card.setMaximumWidth(640)                     # bounded width — no giant empty canvas
-        lay = QVBoxLayout(card)
-        lay.setContentsMargins(t.SP_6, t.SP_6, t.SP_6, t.SP_6)
-        lay.setSpacing(t.SP_3)
-        title = QLabel(_FIRST_RUN_TITLE)
-        title.setProperty("role", "sectionHeader")
-        lay.addWidget(title)
-        lead = QLabel(_FIRST_RUN_LEAD)
-        lead.setProperty("role", "kvVal")
-        lead.setWordWrap(True)
-        lay.addWidget(lead)
-        for point in _FIRST_RUN_POINTS:
-            p = QLabel("•  " + point)
-            p.setProperty("role", "context")
-            p.setWordWrap(True)
-            lay.addWidget(p)
-        row = QHBoxLayout()
-        row.addStretch(1)
-        self._first_run_btn = QPushButton("Create first review")
-        self._first_run_btn.setProperty("role", "primary")
-        self._first_run_btn.clicked.connect(self.newReviewRequested.emit)
-        row.addWidget(self._first_run_btn)
-        lay.addLayout(row)
-        outer.addWidget(card)
-        return wrap
 
     def refresh(self) -> None:
         rows = self._c.reviews_with_status()
@@ -95,7 +53,7 @@ class ReviewsView(QWidget):
     # --- public seams ---
     def first_run_message(self) -> str:
         """The welcome guidance shown on an empty database ('' when reviews exist)."""
-        return _FIRST_RUN_LEAD if self._stack.currentIndex() == 1 else ""
+        return FIRST_RUN_LEAD if self._stack.currentIndex() == 1 else ""
 
     def primary_action_text(self) -> str:
         return self._first_run_btn.text()

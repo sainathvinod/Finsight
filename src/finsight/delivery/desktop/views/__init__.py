@@ -5,5 +5,7 @@ from finsight.delivery.desktop.views.findings_view import FindingsView
 from finsight.delivery.desktop.views.audit_view import AuditView
 from finsight.delivery.desktop.views.workflow_view import WorkflowView
 from finsight.delivery.desktop.views.ask_fin_view import AskFinView
+from finsight.delivery.desktop.views.dashboard_view import DashboardView
 
-__all__ = ["ReviewsView", "OverviewView", "FindingsView", "AuditView", "WorkflowView", "AskFinView"]
+__all__ = ["ReviewsView", "OverviewView", "FindingsView", "AuditView", "WorkflowView", "AskFinView",
+           "DashboardView"]

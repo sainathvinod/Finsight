@@ -83,6 +83,12 @@ class AppController(QObject):
     def workflow_state(self, cycle_id: str) -> Optional[str]:
         return self._s.workflow.state(cycle_id)
 
+    def portfolio(self):
+        """Deterministic cross-review portfolio summary (Phase 5.3). Built on demand from the existing
+        read-only query services — no caching, so it always reflects current persisted state."""
+        from finsight.application.read_models.portfolio import PortfolioQueryService
+        return PortfolioQueryService(self._s.reviews, self._s.findings).summary()
+
     def has_session_context(self, cycle_id: str) -> bool:
         s = self._session
         return bool(s and s.cycle_id == cycle_id and s.has_files())
