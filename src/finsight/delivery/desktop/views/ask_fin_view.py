@@ -13,6 +13,7 @@ from finsight.application.ai.ask_fin_contracts import AskFinStatus
 from finsight.application.ai.contracts import GroundingConfidence
 from finsight.delivery.desktop.components import SectionHeader, EmptyState
 from finsight.delivery.desktop.components.message import InlineMessage
+from finsight.delivery.desktop import presentation as pres
 from finsight.delivery.desktop.theme import tokens as t
 
 
@@ -39,6 +40,16 @@ _PROVIDER_TEXT = {
     "unreachable": "AI provider is not reachable",
     "status_timeout": "AI provider did not respond in time",
     "malformed_status_response": "AI provider status is unavailable",
+}
+# Concise availability guidance per provider state (no environment-variable commands for reviewers).
+_PROVIDER_GUIDANCE = {
+    "ok": "",
+    "provider_disabled": "Ask Fin is disabled for this session. Local development access must be "
+                         "enabled before launching FinSight.",
+    "model_missing": "The configured AI model is not installed for the local AI service.",
+    "unreachable": "The AI provider could not be reached. Ensure the local AI service is running.",
+    "status_timeout": "The AI provider did not respond in time. It may be starting up.",
+    "malformed_status_response": "The AI provider status could not be read.",
 }
 
 # Non-sensitive error_code → user-friendly message. Unknown codes fall back to a safe generic message.
@@ -108,6 +119,11 @@ class AskFinView(QWidget):
         self._provider_status = QLabel("")
         self._provider_status.setProperty("role", "context")
         lay.addWidget(self._provider_status)
+        self._guidance = QLabel("")
+        self._guidance.setProperty("role", "context")
+        self._guidance.setWordWrap(True)
+        self._guidance.setVisible(False)
+        lay.addWidget(self._guidance)
 
         self._question = QPlainTextEdit()
         self._question.setPlaceholderText("Ask a question about this review…")
@@ -217,8 +233,10 @@ class AskFinView(QWidget):
         self._grounding.setText(self._shown_grounding)
         self._grounding.setVisible(True)
         if answer.citations:
-            self._shown_citations = [c.key for c in answer.citations]
-            self._citations.setText("Citations:   " + "    ".join(self._shown_citations))
+            self._shown_citations = [c.key for c in answer.citations]     # canonical keys (seam/tooltip)
+            labels = [pres.citation_label(c.key) for c in answer.citations]  # human labels (display)
+            self._citations.setText("Citations:   " + "    ".join(labels))
+            self._citations.setToolTip("Citation keys:  " + ", ".join(self._shown_citations))
             self._citations.setVisible(True)
 
     def _set_message(self, text: str, kind: str) -> None:
@@ -239,9 +257,14 @@ class AskFinView(QWidget):
 
     def _on_provider_status(self, status) -> None:
         self._provider_status.setText(_PROVIDER_TEXT.get(status.reason, "AI provider status unknown"))
+        guidance = _PROVIDER_GUIDANCE.get(status.reason, "")
+        self._guidance.setText(guidance)
+        self._guidance.setVisible(bool(guidance))
 
     def _on_provider_status_error(self, _exc) -> None:
         self._provider_status.setText("AI provider status unavailable")
+        self._guidance.setText("The AI provider status could not be read.")
+        self._guidance.setVisible(True)
 
     # --- control state ---
     def _sync_controls_enabled(self) -> None:
@@ -284,3 +307,8 @@ class AskFinView(QWidget):
 
     def provider_status_text(self) -> str:
         return self._provider_status.text()
+
+    def ask_fin_guidance_text(self) -> str:
+        """Availability guidance for the current provider state ('' when ready). Result-specific
+        guidance (REFUSED / grounding-unavailable) is surfaced via displayed_message()."""
+        return self._guidance.text()

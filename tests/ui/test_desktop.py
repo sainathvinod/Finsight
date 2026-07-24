@@ -16,15 +16,15 @@ def _inspector_text(inspector) -> str:
 def test_shell_launches(window_factory, populated_db):
     w = window_factory(populated_db)
     assert w.windowTitle() == "FinSight"
-    assert w._stack.count() == 5  # Reviews, Workspace, Findings, Audit, Ask Fin
+    assert w._stack.count() == 6  # Reviews, Overview, Workflow, Findings, Audit, Ask Fin
 
 
 def test_navigation_switches(window_factory, populated_db):
     w = window_factory(populated_db)
     w.navigate("findings")
-    assert w._stack.currentIndex() == 2
-    w.navigate("audit")
     assert w._stack.currentIndex() == 3
+    w.navigate("audit")
+    assert w._stack.currentIndex() == 4
     w.navigate("reviews")
     assert w._stack.currentIndex() == 0
 
@@ -86,7 +86,7 @@ def test_keyboard_navigation_activates_nav(window_factory, populated_db, qtbot):
     item = w._nav_items["findings"]
     item.setFocus()
     qtbot.keyClick(item, Qt.Key.Key_Space)   # keyboard activation of a focused nav item
-    assert w._stack.currentIndex() == 2
+    assert w._stack.currentIndex() == 3      # findings is now nav index 3 (after Overview)
 
 
 def test_severity_is_not_color_only(window_factory, populated_db):

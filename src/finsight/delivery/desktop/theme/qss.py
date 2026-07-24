@@ -79,7 +79,30 @@ QPushButton[role="secondary"] {{
 }}
 QPushButton[role="secondary"]:hover {{ background: {t.BG_HOVER}; }}
 QPushButton[role="secondary"]:focus {{ border: 1px solid {t.FOCUS_RING}; }}
+/* Primary action: the single emphasized call-to-action on a screen (accent fill). */
+QPushButton[role="primary"] {{
+    border: 1px solid {t.ACCENT};
+    border-radius: {t.RADIUS_MD}px;
+    padding: {t.SP_2}px {t.SP_4}px;
+    background: {t.ACCENT};
+    color: {t.TEXT_ON_ACCENT};
+    font-weight: 600;
+}}
+QPushButton[role="primary"]:hover {{ background: {t.ACCENT_HOVER}; border-color: {t.ACCENT_HOVER}; }}
+QPushButton[role="primary"]:focus {{ border: 1px solid {t.FOCUS_RING}; }}
+QPushButton[role="primary"]:disabled {{ background: {t.BORDER_STRONG}; border-color: {t.BORDER_STRONG};
+    color: {t.WHITE}; }}
 QPushButton:disabled {{ color: {t.TEXT_MUTED}; border-color: {t.BORDER}; }}
+
+/* Grouped summary card (review overview / verification preview). Restrained: hairline + subtle fill. */
+QWidget[role="card"] {{
+    background: {t.BG_SUBTLE};
+    border: 1px solid {t.BORDER};
+    border-radius: {t.RADIUS_MD}px;
+}}
+QLabel[role="cardLabel"] {{ font-size: {t.FS_LABEL}px; font-weight: 600; color: {t.TEXT_MUTED}; }}
+QLabel[role="cardValue"] {{ font-size: {t.FS_TITLE}px; font-weight: 600; color: {t.TEXT_PRIMARY}; }}
+QLabel[role="cardDetail"] {{ font-size: {t.FS_SMALL}px; color: {t.TEXT_SECONDARY}; }}
 
 QScrollArea {{ border: none; background: transparent; }}
 QToolTip {{ background: {t.TEXT_PRIMARY}; color: {t.WHITE}; border: none; padding: 3px 6px; }}

@@ -38,8 +38,9 @@ def test_create_review_via_setup(window_factory, empty_db):
     w = window_factory(empty_db)
     w.navigate("workspace")
     setup = w._workspace.panel(0)
-    setup._year.setText("2026")
+    setup._year.setValue(2026)          # year is a constrained QSpinBox (Phase 5.1)
     setup._month.setCurrentIndex(6)     # July
+    assert setup.displayed_review_period() == "July 2026"
     setup._on_create()
     assert w._c.active_review_id == "2026-07"
     assert w._c.workflow_state("2026-07") == "Created"

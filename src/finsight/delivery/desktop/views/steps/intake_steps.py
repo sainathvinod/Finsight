@@ -1,15 +1,19 @@
 from __future__ import annotations
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QComboBox,
-                               QPushButton, QProgressBar, QFileDialog)
+                               QSpinBox, QPushButton, QProgressBar, QFileDialog)
 from finsight.delivery.desktop.components import SectionHeader  # noqa: F401 (re-exported convenience)
 from finsight.delivery.desktop.components.form_row import FormRow
 from finsight.delivery.desktop.views.steps.base import StepPanel
+from finsight.delivery.desktop import presentation as pres
 from finsight.application.errors import FinsightAppError
 from finsight.delivery.desktop.theme import tokens as t
 
 _MONTHS = ["January", "February", "March", "April", "May", "June",
            "July", "August", "September", "October", "November", "December"]
 _WORKBOOKS = "Workbooks (*.xlsx *.xls);;All files (*)"
+
+# Approved Release-1 sources (backend-supported) and honestly-deferred future types (FR-004/NFR-045).
+_DEFERRED_SOURCES = "Invoices, resource sheets, contracts/SOWs, and rate cards are planned and not yet accepted."
 
 
 class SetupPanel(StepPanel):
@@ -23,16 +27,22 @@ class SetupPanel(StepPanel):
         fl.setSpacing(t.SP_3)
         self._month = QComboBox()
         self._month.addItems(_MONTHS)
-        self._year = QLineEdit()
-        self._year.setPlaceholderText("e.g. 2026")
-        self._cid = QLineEdit()
-        self._cid.setReadOnly(True)
-        self._cid.setPlaceholderText("generated from month and year")
+        self._month.setCurrentIndex(6)                    # July, the demo period
+        self._year = QSpinBox()                           # constrained numeric year
+        self._year.setRange(2000, 2100)
+        self._year.setValue(2026)
+        self._year.setGroupSeparatorShown(False)
+        # Prominent, human-readable resulting period (not the internal identifier).
+        self._period = QLabel()
+        self._period.setProperty("role", "cardValue")
+        self._id_hint = QLabel()                          # internal id kept as small secondary detail
+        self._id_hint.setProperty("role", "context")
         self._create = QPushButton("Create review")
-        self._create.setProperty("role", "secondary")
+        self._create.setProperty("role", "primary")       # the one primary action on this screen
         fl.addWidget(FormRow("Month", self._month))
         fl.addWidget(FormRow("Year", self._year))
-        fl.addWidget(FormRow("Identifier", self._cid))
+        fl.addWidget(FormRow("Review period", self._period))
+        fl.addWidget(self._id_hint)
         row = QHBoxLayout()
         row.addStretch(1)
         row.addWidget(self._create)
@@ -46,30 +56,47 @@ class SetupPanel(StepPanel):
         self.content.addWidget(self._note)
 
         self._month.currentIndexChanged.connect(self._derive)
-        self._year.textChanged.connect(self._derive)
+        self._year.valueChanged.connect(self._derive)
         self._create.clicked.connect(self._on_create)
         self._derive()
 
+    def _derived_id(self) -> str:
+        return f"{self._year.value()}-{self._month.currentIndex() + 1:02d}"
+
     def _derive(self):
-        y = self._year.text().strip()
-        self._cid.setText(f"{y}-{self._month.currentIndex() + 1:02d}" if y else "")
+        self._period.setText(pres.period_text(self._month.currentText(), str(self._year.value())))
+        self._id_hint.setText(f"Internal identifier: {self._derived_id()}")
 
     def _on_create(self):
         self.clear_message()
+        month, year = self._month.currentText(), str(self._year.value())
+        if not year:                                      # validate before creation (QSpinBox guarantees)
+            self.show_warning("Enter a valid year.")
+            return
         try:
-            self._c.create_review(self._cid.text().strip(), self._month.currentText(), self._year.text().strip())
+            self._c.create_review(self._derived_id(), month, year)
         except FinsightAppError as e:
             self.show_error(e)
+
+    def displayed_review_period(self) -> str:             # public seam
+        cid = self.cid()
+        if cid:
+            status = self._c.review_status(cid)
+            if status is not None:
+                return pres.period_text(status.month, status.year)
+        return self._period.text()
 
     def refresh(self):
         cid = self.cid()
         if cid:
             status = self._c.review_status(cid)
             if status is not None:
-                self.set_subtitle(f"{status.month} {status.year}  ·  State: {status.state}")
+                self.set_subtitle(f"{pres.period_text(status.month, status.year)}  ·  "
+                                  f"{pres.state_label(status.state)}")
                 self._note.setText(
-                    f"Review “{status.month} {status.year}” exists (state: {status.state}). "
-                    "Continue with Data Upload, or revisit a completed step from the rail.")
+                    f"Review “{pres.period_text(status.month, status.year)}” already exists "
+                    f"({pres.state_label(status.state)}). Continue with Data Upload, or revisit a "
+                    "completed step from the rail.")
             self._form.setVisible(False)
             self._note.setVisible(True)
         else:
@@ -81,20 +108,29 @@ class SetupPanel(StepPanel):
 class UploadPanel(StepPanel):
     def __init__(self, controller):
         super().__init__(controller, "Data Upload",
-                         "Select the General Expense Detail and Budget workbooks. Sources are never modified.")
+                         "Select the two required source workbooks. Your source files are never modified.")
         self._ged = None
         self._bud = None
         self._ged_field = QLineEdit(); self._ged_field.setReadOnly(True)
+        self._ged_field.setPlaceholderText("Accepted: .xlsx, .xls")
         self._bud_field = QLineEdit(); self._bud_field.setReadOnly(True)
+        self._bud_field.setPlaceholderText("Accepted: .xlsx, .xls")
         ged_btn = QPushButton("Choose GED…"); ged_btn.setProperty("role", "secondary")
         bud_btn = QPushButton("Choose Budget…"); bud_btn.setProperty("role", "secondary")
         ged_row = QWidget(); gl = QHBoxLayout(ged_row); gl.setContentsMargins(0, 0, 0, 0); gl.setSpacing(t.SP_2)
         gl.addWidget(self._ged_field, 1); gl.addWidget(ged_btn)
         bud_row = QWidget(); bl = QHBoxLayout(bud_row); bl.setContentsMargins(0, 0, 0, 0); bl.setSpacing(t.SP_2)
         bl.addWidget(self._bud_field, 1); bl.addWidget(bud_btn)
-        self.content.addWidget(FormRow("GED file", ged_row))
-        self.content.addWidget(FormRow("Budget file", bud_row))
-        self._upload = QPushButton("Upload files"); self._upload.setProperty("role", "secondary")
+        self.content.addWidget(FormRow("General Expense Detail  (required)", ged_row, label_width=220))
+        self._ged_purpose = QLabel("The month's expense transactions to analyze.")
+        self._ged_purpose.setProperty("role", "context"); self.content.addWidget(self._ged_purpose)
+        self.content.addWidget(FormRow("Budget Tracker  (required)", bud_row, label_width=220))
+        self._bud_purpose = QLabel("Approved budget and actuals to compare spending against.")
+        self._bud_purpose.setProperty("role", "context"); self.content.addWidget(self._bud_purpose)
+        self._deferred = QLabel(_DEFERRED_SOURCES)     # honest: not silently pretended as accepted
+        self._deferred.setProperty("role", "context"); self._deferred.setWordWrap(True)
+        self.content.addWidget(self._deferred)
+        self._upload = QPushButton("Upload files"); self._upload.setProperty("role", "primary")
         self._upload.setEnabled(False)
         row = QHBoxLayout(); row.addStretch(1); row.addWidget(self._upload)
         self.content.addLayout(row)

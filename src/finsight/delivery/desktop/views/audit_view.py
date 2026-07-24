@@ -1,9 +1,20 @@
 from __future__ import annotations
-import json
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QStackedWidget, QSplitter, QScrollArea
 from finsight.delivery.desktop.components import SectionHeader, EmptyState, DetailInspector, AuditTimeline
+from finsight.delivery.desktop import presentation as pres
 from finsight.delivery.desktop.theme import tokens as t
+
+
+def _detail_value(value) -> str:
+    """Render an audit detail value as a readable string (no raw JSON as the primary surface)."""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        return "; ".join(f"{k}: {v}" for k, v in value.items())
+    if isinstance(value, (list, tuple)):
+        return ", ".join(str(v) for v in value)
+    return str(value)
 
 
 class AuditView(QWidget):
@@ -63,14 +74,14 @@ class AuditView(QWidget):
         if not (0 <= index < len(self._events)):
             return
         e = self._events[index]
-        self._inspector.begin(f"Event: {e.action}")
+        self._inspector.begin(f"Event: {pres.action_label(e.action)}")
         self._inspector.add_section("Event")
-        self._inspector.add_row("Action", e.action)
+        self._inspector.add_row("Action", pres.action_label(e.action))
         self._inspector.add_row("Actor", e.actor)
         self._inspector.add_row("Timestamp", e.ts, mono=True)
         self._inspector.add_section("Detail")
         if e.detail:
             for k, v in e.detail.items():
-                self._inspector.add_row(k, json.dumps(v) if not isinstance(v, str) else v, mono=True)
+                self._inspector.add_row(pres.action_label(k), _detail_value(v))
         else:
             self._inspector.add_row("(none)", "")
