@@ -138,6 +138,8 @@ class OverviewView(QWidget):
         attention = sev_counts["Critical"] + sev_counts["High"]
         attention_val = "None" if attention == 0 else f"{attention} to review"
 
+        readiness = self._c.review_readiness(cid)
+
         self._header.set_subtitle(f"{period}  ·  {pres.state_label(state)}")
         self._clear_cards()
         cards = [
@@ -150,8 +152,10 @@ class OverviewView(QWidget):
         for i, card in enumerate(cards):
             self._cards.addWidget(card, i // 3, i % 3)
 
+        blocker = readiness.blocking_reasons[0] if readiness.blocking_reasons else ""
         if current >= 0:
-            self._next_lbl.setText(f"Next recommended step:  {next_step}")
+            base = f"Next recommended step:  {next_step}"
+            self._next_lbl.setText(base + (f"   ·   {blocker}" if blocker else ""))
             self._continue.setText(f"Go to {next_step} →")
             self._continue.setEnabled(True)
         else:
@@ -165,8 +169,24 @@ class OverviewView(QWidget):
             "finding_count": len(findings), "severity": dict(sev_counts),
             "source_ready": snap.available if snap is not None else False,
         }
+        self._readiness = readiness
         self._stack.setCurrentIndex(0)
 
-    # --- public seam ---
+    # --- public seams ---
     def review_overview_summary(self) -> Dict[str, object]:
         return dict(self._summary)
+
+    def review_readiness_summary(self) -> Dict[str, object]:
+        r = getattr(self, "_readiness", None)
+        if r is None:
+            return {}
+        return {
+            "required_sources_present": r.required_sources_present,
+            "normalized_data_available": r.normalized_data_available,
+            "validation_status": r.validation_status,
+            "analysis_available": r.analysis_available,
+            "export_ready": r.export_ready,
+            "accepted_rows": r.accepted_rows,
+            "quarantined_rows": r.quarantined_rows,
+            "blocking_reasons": list(r.blocking_reasons),
+        }

@@ -163,6 +163,33 @@ class ReviewWorkflowService:
             return None
         return self._validation_from_ctx(session.ctx)
 
+    def verification_preview(self, session: ReviewSession):
+        """Read-only representative-row preview of the SESSION's already-normalized data (Phase 5.4).
+        None when no extraction exists in this session. Reads no raw files and persists nothing."""
+        from finsight.application.read_models import verification as V
+        if session is None or session.ctx.get("extracted") is None:
+            return None
+        ex = session.ctx["extracted"]
+        prov = {p.doc_type: p for p in (session.ctx.get("provenance") or [])}
+
+        def _prov(doc_type):
+            p = prov.get(doc_type)
+            return (p.name if p else "", p.period if p else "", p.fingerprint if p else "")
+
+        messages = [] if ex.get("available") else [session.ctx.get("rejected") or "Data unavailable"]
+        ged_name, ged_period, ged_fp = _prov("GED")
+        bud_name, bud_period, bud_fp = _prov("BUDGET")
+        sources = (
+            V.source_preview("GED", ged_name, ged_period, V.ged_columns(),
+                             ex.get("ged_valid", []), len(ex.get("ged_quarantined", [])),
+                             bool(ex.get("available")), messages, ged_fp),
+            V.source_preview("Budget Tracker", bud_name, bud_period, V.budget_columns(),
+                             ex.get("budget_valid", []), len(ex.get("budget_quarantined", [])),
+                             bool(ex.get("available")), messages, bud_fp),
+        )
+        return V.VerificationPreview(available=bool(ex.get("available")),
+                                     rejected_reason=session.ctx.get("rejected"), sources=sources)
+
     # ---- Step 5: Verification (VERIFIED) — explicit human approval ----
     def verify(self, session: ReviewSession) -> ReviewCycle:
         cycle = self._require_cycle(session.cycle_id)

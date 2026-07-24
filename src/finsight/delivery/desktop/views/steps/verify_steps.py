@@ -1,7 +1,10 @@
 from __future__ import annotations
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTableWidget, QTableWidgetItem,
+    QAbstractItemView, QHeaderView,
+)
 from finsight.delivery.desktop.components.form_row import FormRow
 from finsight.delivery.desktop.views.steps.base import StepPanel
 from finsight.delivery.desktop.views.findings_view import FindingsView
@@ -26,6 +29,11 @@ class VerificationPanel(StepPanel):
         inner.addLayout(self._preview)
         self._preview_holder = holder
         self.content.addWidget(holder)
+
+        # Representative normalized rows per source (Phase 5.4). Session-scoped, read-only.
+        self._sources: Dict[str, object] = {}
+        self._rep_area = QVBoxLayout(); self._rep_area.setSpacing(t.SP_2)
+        self.content.addLayout(self._rep_area)
 
         self._meaning = QLabel(); self._meaning.setProperty("role", "context"); self._meaning.setWordWrap(True)
         self.content.addWidget(self._meaning)
@@ -57,8 +65,64 @@ class VerificationPanel(StepPanel):
         except FinsightAppError as e:
             self.show_error(e)
 
-    def verification_preview_rows(self) -> List[Tuple[str, str]]:   # public seam
+    def verification_preview_rows(self) -> List[Tuple[str, str]]:   # public seam (summary)
         return list(self._preview_rows)
+
+    # --- representative normalized rows (Phase 5.4) ---
+    def _clear_rep(self):
+        while self._rep_area.count():
+            item = self._rep_area.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.setParent(None); w.deleteLater()
+        self._sources = {}
+
+    def _render_representative(self, cid):
+        self._clear_rep()
+        preview = self._c.verification_preview(cid) if cid else None
+        if preview is None:
+            return
+        for sp in preview.sources:
+            self._sources[sp.source_type] = sp
+            head = QLabel(f"{sp.source_type} — {sp.filename or '(source)'}  ·  "
+                          f"{sp.accepted_rows} accepted, {sp.quarantined_rows} quarantined")
+            head.setProperty("role", "cardLabel"); head.setWordWrap(True)
+            self._rep_area.addWidget(head)
+            if sp.rows:
+                self._rep_area.addWidget(self._source_table(sp))
+            else:
+                none_lbl = QLabel("No representative rows available.")
+                none_lbl.setProperty("role", "context")
+                self._rep_area.addWidget(none_lbl)
+
+    def _source_table(self, sp) -> QTableWidget:
+        table = QTableWidget(len(sp.rows), len(sp.columns))
+        table.setHorizontalHeaderLabels([c.replace("_", " ") for c in sp.columns])
+        table.verticalHeader().setVisible(False)
+        table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)   # read-only
+        table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        table.setMaximumHeight(220)
+        for ri, row in enumerate(sp.rows):
+            for ci, val in enumerate(row):
+                table.setItem(ri, ci, QTableWidgetItem(str(val)))
+        return table
+
+    # --- new preview seams ---
+    def verification_preview_columns(self, source: str):
+        sp = self._sources.get(source)
+        return list(sp.columns) if sp else []
+
+    def verification_preview_values(self, source: str):
+        sp = self._sources.get(source)
+        return [list(r) for r in sp.rows] if sp else []
+
+    def verification_source_summary(self, source: str) -> Dict[str, object]:
+        sp = self._sources.get(source)
+        if sp is None:
+            return {}
+        return {"filename": sp.filename, "period": sp.period, "accepted": sp.accepted_rows,
+                "quarantined": sp.quarantined_rows, "available": sp.available}
 
     def refresh(self):
         cid = self.cid()
@@ -69,6 +133,7 @@ class VerificationPanel(StepPanel):
 
         if snap is None:
             self._set_preview([])
+            self._clear_rep()
             self._approve.setEnabled(False)
             self.show_info("Process the uploaded data (Processing) before verification.")
             return
@@ -83,6 +148,7 @@ class VerificationPanel(StepPanel):
         if snap.rejected_reason:
             rows.append(("Issue", snap.rejected_reason))
         self._set_preview(rows)
+        self._render_representative(cid)
         if snap.provenance:
             self._details.setText("Details:  " + "; ".join(
                 f"{p.doc_type} fingerprint {p.fingerprint[:12]}…" for p in snap.provenance))
@@ -96,9 +162,8 @@ class VerificationPanel(StepPanel):
         else:
             self._approve.setEnabled(True)
             self._meaning.setText(
-                f"Approving certifies these {snap.ged_valid} GED and {snap.budget_valid} budget rows as "
-                "the basis for analysis. Your source files are not modified, and the originals are "
-                "preserved.")
+                "Approval confirms that the normalized data shown is suitable for deterministic "
+                "analysis. Source files remain unchanged.")
             self.clear_message()
 
 

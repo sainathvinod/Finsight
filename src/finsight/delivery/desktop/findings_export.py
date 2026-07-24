@@ -7,6 +7,9 @@ import csv
 import io
 from typing import List
 
+# Canonical, deterministic reviewer fields. Account/rule NAMES are intentionally NOT columns: the
+# extraction pipeline does not retain account names in normalized data and there is no runtime
+# rule-name source, so name columns would be misleading always-empty fields (Phase 5.4 finding).
 _HEADERS = ["Finding ID", "Period", "Account", "Rule", "Severity", "Type", "State",
             "Source references"]
 

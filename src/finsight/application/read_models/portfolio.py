@@ -7,6 +7,7 @@ from typing import Dict, List, Tuple
 
 from finsight.domain.findings import Severity
 from finsight.domain.review_cycle import CycleState
+from finsight.application.read_models.verification import build_readiness
 
 _CRITICAL = Severity.CRITICAL.label
 _HIGH = Severity.HIGH.label
@@ -85,7 +86,10 @@ class PortfolioQueryService:
             elif h:
                 reason = f"{h} high finding(s)"
             elif r.state != _EXPORTED:
-                reason = "In progress — not yet exported"
+                # Stage-specific workflow readiness blocker derived from persisted state (no session
+                # needed). Validation/quarantine blockers are session-only and not shown cross-review.
+                blockers = build_readiness(r.cycle_id, r.state, None).blocking_reasons
+                reason = blockers[0] if blockers else "In progress"
             if reason is not None:
                 attention.append(AttentionItem(r.cycle_id, r.month, r.year, r.state, reason,
                                                r.finding_count, c, h))

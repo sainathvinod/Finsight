@@ -30,14 +30,17 @@ def _findings():
 
 
 class FakeController:
-    def __init__(self, findings=None, cid="2026-07", state="Analyzed"):
+    def __init__(self, findings=None, cid="2026-07", state="Analyzed", account_labels=None):
         self.active_review_id = cid
         self._findings = findings if findings is not None else _findings()
         self._state = state
+        self._labels = account_labels or {}
     def findings(self, cid):
         return list(self._findings) if cid else []
     def workflow_state(self, cid):
         return self._state
+    def account_labels(self, cid):
+        return dict(self._labels) if cid else {}
 
 
 # ===================== pure filter/sort =====================

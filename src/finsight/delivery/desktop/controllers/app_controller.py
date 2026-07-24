@@ -89,6 +89,17 @@ class AppController(QObject):
         from finsight.application.read_models.portfolio import PortfolioQueryService
         return PortfolioQueryService(self._s.reviews, self._s.findings).summary()
 
+    # --- Phase 5.4: verification preview, account labels, readiness (session-scoped where noted) ---
+    def verification_preview(self, cycle_id: str):
+        s = self._session
+        return self._s.workflow.verification_preview(s) if (s and s.cycle_id == cycle_id) else None
+
+    def review_readiness(self, cycle_id: str):
+        """Deterministic readiness derived from persisted state, enriched by the session snapshot."""
+        from finsight.application.read_models.verification import build_readiness
+        return build_readiness(cycle_id, self.workflow_state(cycle_id),
+                               self.validation_snapshot(cycle_id))
+
     def has_session_context(self, cycle_id: str) -> bool:
         s = self._session
         return bool(s and s.cycle_id == cycle_id and s.has_files())

@@ -73,7 +73,8 @@ class TestPortfolioSummary:
         by_id = {a.cycle_id: a.reason for a in _portfolio().attention_items}
         assert "critical" in by_id["2026-07"].lower()
         assert "high" in by_id["2026-05"].lower()
-        assert "progress" in by_id["2026-04"].lower()
+        # 2026-04 is in Intake → stage-specific readiness blocker derived from persisted state
+        assert "not processed" in by_id["2026-04"].lower()
 
     def test_recent_most_recent_first(self):
         assert [r.cycle_id for r in _portfolio().recent_reviews] == \

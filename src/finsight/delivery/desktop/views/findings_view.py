@@ -336,3 +336,18 @@ class FindingsView(QWidget):
 
     def selected_finding_id(self) -> Optional[str]:
         return self._selected_id if self._empty_code == "" else None
+
+    def finding_account_label(self, finding_id: str) -> str:
+        """The account code. Human account names are not retained by the extraction pipeline, so the
+        canonical code is the label (Phase 5.4 finding — no invented names)."""
+        for f in self._all:
+            if f.id == finding_id:
+                return f.account
+        return ""
+
+    def finding_rule_label(self, finding_id: str) -> str:
+        """No authoritative runtime rule-name source exists — the canonical rule id is the label."""
+        for f in self._all:
+            if f.id == finding_id:
+                return f.rule_id
+        return ""
