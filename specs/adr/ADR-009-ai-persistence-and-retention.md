@@ -26,4 +26,4 @@ The AI Platform explains what the deterministic engine decided. It persists conv
 Migration `0002` is additive/idempotent (tests: fresh, upgrade-from-0001, repeat, FK cascade, deterministic tables unchanged). Isolation, retention, provenance, and non-mutation are covered by tests. `application/ai` imports no `sqlite3`/PySide6/deterministic-command modules; the deterministic engine does not depend on AI.
 
 ## 6. Traceability
-Extends the persistence architecture (ADR-004); distinct from ADR-005 (financial audit). Provider abstraction, prompt construction, grounding retrieval, masking, and the response contract are **out of scope** here and deferred to Phase 4C+.
+Extends the persistence architecture (ADR-004); distinct from ADR-005 (financial audit). Provider abstraction, prompt construction, grounding retrieval, masking, and the response contract are **out of scope** here and deferred to Phase 4C+. (The masking policy is now defined in **ADR-010**; this ADR remains authoritative only for non-persistence of AI data.)

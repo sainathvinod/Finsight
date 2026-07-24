@@ -1,9 +1,11 @@
-# Verifies: Phase 4C.3 MaskingService — deterministic redaction policy (NFR-016, FR-098, ADR-009).
+# Verifies: Phase 4C.3 / 4C.3A MaskingService — deterministic redaction policy (NFR-016, FR-098,
+# ADR-010 masking policy; ADR-009 non-persistence).
 import copy
 import unittest
 
 from finsight.application.ai.errors import MaskingError
 from finsight.application.ai.masking import MaskingService, MaskingResult, MaskingSummary
+from finsight.application.ai.masking_policy import MASKING_POLICY_VERSION, RESERVED_TOKENS, TOKENS
 from finsight.domain.ai.contracts import (
     AiGroundingContext, ConversationMessage, GroundedAuditEvent, GroundedFinding, GroundedProvenanceItem,
     GroundedReview, GroundedRuleRun, GroundedSummary, MaskingConfiguration, MessageRole,
@@ -112,11 +114,34 @@ class TestEmployeeName(unittest.TestCase):
             self.assertEqual(out, "[REDACTED_EMPLOYEE_NAME]", raw)
             self.assertEqual(s.employee_name, 1, raw)
 
-    def test_partial_and_longer_names_not_masked(self):
-        for raw in ("Jane", "Smith", "Jane Smithson", "Mary Jane Smith"):
+    def test_partial_and_glued_names_not_masked(self):
+        # Substring protection: bare partial tokens, a longer glued token, and a no-space run never
+        # match the complete configured sequence.
+        for raw in ("Jane", "Smith", "Jane Smithson", "JaneSmith"):
             out, s = _mask_value(raw, names=["Jane Smith"])
             self.assertEqual(out, raw, raw)
             self.assertEqual(s.employee_name, 0, raw)
+
+    def test_configured_name_masked_in_normal_prose(self):
+        # Revised 4C.3A policy (ADR-010): a complete configured name is masked wherever it occurs,
+        # including mid-sentence — the earlier adjacency suppression was too conservative.
+        cases = {
+            "approved by Jane Smith": "approved by [REDACTED_EMPLOYEE_NAME]",
+            "from jane smith": "from [REDACTED_EMPLOYEE_NAME]",
+            "ask Jane Smith tomorrow": "ask [REDACTED_EMPLOYEE_NAME] tomorrow",
+            "JANE   SMITH reviewed it": "[REDACTED_EMPLOYEE_NAME] reviewed it",
+        }
+        for raw, expected in cases.items():
+            out, s = _mask_value(raw, names=["Jane Smith"])
+            self.assertEqual(out, expected, raw)
+            self.assertEqual(s.employee_name, 1, raw)
+
+    def test_configured_name_masked_inside_longer_name_documented_limitation(self):
+        # Documented deterministic limitation (ADR-010 §4): the service does not infer that adjacent
+        # words form a larger human name, so "Jane Smith" IS masked within "Mary Jane Smith".
+        out, s = _mask_value("Mary Jane Smith", names=["Jane Smith"])
+        self.assertEqual(out, "Mary [REDACTED_EMPLOYEE_NAME]")
+        self.assertEqual(s.employee_name, 1)
 
     def test_empty_list_never_blocks(self):
         out, s = _mask_value("Jane Smith reviewed the file", names=[])
@@ -228,6 +253,91 @@ class TestPurityDeterminismIdempotence(unittest.TestCase):
         self.assertEqual(res.summary.email, 1)
         self.assertEqual(res.summary.actor, 1)
         self.assertEqual(res.summary.total, 2)
+
+
+class TestPolicyVersion(unittest.TestCase):
+    def test_summary_reports_policy_version(self):
+        _, s = _mask_value("nothing sensitive")
+        self.assertEqual(s.policy_version, MASKING_POLICY_VERSION)
+        self.assertEqual(s.policy_version, "v1")
+
+    def test_policy_version_present_on_result_summary(self):
+        res = _svc().mask(grounding=AiGroundingContext(review=None), question="q")
+        self.assertEqual(res.summary.policy_version, "v1")
+
+    def test_policy_version_is_immutable_and_non_sensitive(self):
+        _, s = _mask_value("ssn 123-45-6789 and a@b.com")   # sensitive input present
+        self.assertIsInstance(s.policy_version, str)
+        self.assertNotIn("123-45-6789", s.policy_version)   # no original value leaks into version
+        self.assertNotIn("a@b.com", s.policy_version)
+
+
+class TestProvenanceMasking(unittest.TestCase):
+    def _prov(self, name):
+        g = AiGroundingContext(
+            review=None,
+            provenance=[GroundedProvenanceItem("GED", name, "fp-ged-123", "2026-07")],
+        )
+        return _svc().mask(grounding=g, question="q").grounding.provenance[0]
+
+    def test_provenance_name_email_masked(self):
+        p = self._prov("vendor-jane.doe@example.com.xlsx")
+        self.assertNotIn("jane.doe@example.com", p.name)     # email must not transmit unmasked
+        self.assertIn("[REDACTED_EMAIL]", p.name)
+
+    def test_provenance_structural_fields_preserved(self):
+        p = self._prov("vendor-jane.doe@example.com.xlsx")
+        self.assertEqual(p.doc_type, "GED")                  # structural identifier preserved
+        self.assertEqual(p.fingerprint, "fp-ged-123")        # fingerprint preserved
+        self.assertEqual(p.period, "2026-07")                # period preserved
+
+    def test_ordinary_provenance_name_unchanged(self):
+        p = self._prov("vendor-acme-file.xlsx")              # no sensitive tokens
+        self.assertEqual(p.name, "vendor-acme-file.xlsx")
+
+    def test_provenance_ordering_preserved(self):
+        g = AiGroundingContext(review=None, provenance=[
+            GroundedProvenanceItem("GED", "a.xlsx", "fp-a", "2026-07"),
+            GroundedProvenanceItem("INV", "b.xlsx", "fp-b", "2026-07"),
+        ])
+        res = _svc().mask(grounding=g, question="q")
+        self.assertEqual([p.fingerprint for p in res.grounding.provenance], ["fp-a", "fp-b"])
+
+
+class TestReservedTokens(unittest.TestCase):
+    def test_reserved_set_matches_emitted_tokens(self):
+        self.assertEqual(RESERVED_TOKENS, frozenset(TOKENS.values()))
+
+    def test_reserved_token_literal_passes_through_idempotently(self):
+        # A literal input equal to a reserved token is treated as already redacted: unchanged, uncounted.
+        for token in RESERVED_TOKENS:
+            out, s = _mask_value(token)
+            self.assertEqual(out, token, token)
+            self.assertEqual(s.total, 0, token)
+
+    def test_reserved_token_survives_surrounding_masking(self):
+        out, s = _mask_value("prior [REDACTED_EMAIL] plus new a@b.com")
+        self.assertEqual(out, "prior [REDACTED_EMAIL] plus new [REDACTED_EMAIL]")
+        self.assertEqual(s.email, 1)                          # only the new address is counted
+
+
+class TestByteIdenticalDeterminism(unittest.TestCase):
+    def test_identical_inputs_produce_byte_identical_output(self):
+        svc = _svc(names=["Jane Smith"])
+        q = "from Jane Smith, mail a@b.com, ssn 123-45-6789, cell 5551234567"
+        r1 = svc.mask(grounding=AiGroundingContext(review=None), question=q)
+        r2 = svc.mask(grounding=AiGroundingContext(review=None), question=q)
+        self.assertEqual(r1.question.encode("utf-8"), r2.question.encode("utf-8"))
+
+
+class TestFuturePipelineEnforcement(unittest.TestCase):
+    @unittest.skip(
+        "Phase 4C.4+ orchestration placeholder (ADR-010 §5): when AskFinService is implemented it must "
+        "pass ONLY MaskingResult values to the PromptBuilder. No provider pipeline exists in 4C.3A, so "
+        "this is documented here and enforced when orchestration lands — not stubbed with a fake provider."
+    )
+    def test_orchestration_passes_only_masked_values_to_prompt_builder(self):
+        raise AssertionError("enforced when orchestration is implemented")
 
 
 if __name__ == "__main__":

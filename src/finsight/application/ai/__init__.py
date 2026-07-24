@@ -6,6 +6,7 @@ from finsight.application.ai.memory import ReviewMemoryService
 from finsight.application.ai.preferences import PreferencesService, PREFERENCE_DEFAULTS
 from finsight.application.ai.grounding import GroundingQueryService
 from finsight.application.ai.masking import MaskingService, MaskingResult, MaskingSummary
+from finsight.application.ai.masking_policy import MASKING_POLICY_VERSION, RESERVED_TOKENS
 from finsight.application.ai.errors import (
     AiError, AiScopeError, ConversationNotFoundError, MemoryProvenanceError, MaskingError,
 )
@@ -13,6 +14,7 @@ from finsight.application.ai.errors import (
 __all__ = [
     "ConversationService", "ReviewMemoryService", "PreferencesService", "GroundingQueryService",
     "MaskingService", "MaskingResult", "MaskingSummary",
+    "MASKING_POLICY_VERSION", "RESERVED_TOKENS",
     "DEFAULT_RETENTION_POLICY", "PREFERENCE_DEFAULTS",
     "AiError", "AiScopeError", "ConversationNotFoundError", "MemoryProvenanceError", "MaskingError",
 ]

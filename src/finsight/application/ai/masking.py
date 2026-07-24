@@ -1,4 +1,4 @@
-# Implements: Phase 4C.3, NFR-016, FR-098, ADR-009
+# Implements: Phase 4C.3 / 4C.3A, NFR-016, FR-098, ADR-010 (masking policy). Non-persistence: ADR-009.
 #
 # MaskingService — deterministic redaction of AI-bound content BEFORE prompt construction. It sits in
 # the (future) pipeline at: Authorization → Scope → Grounding → **Masking** → PromptBuilder → Provider.
@@ -19,23 +19,27 @@ from dataclasses import dataclass
 from typing import Dict, Optional, Sequence, Tuple
 
 from finsight.application.ai.errors import MaskingError
-from finsight.application.ai.masking_policy import TOKENS, apply_text, build_employee_patterns
+from finsight.application.ai.masking_policy import (
+    MASKING_POLICY_VERSION, TOKENS, apply_text, build_employee_patterns,
+)
 from finsight.domain.ai.contracts import (
-    AiGroundingContext, ConversationMessage, GroundedAuditEvent, GroundedFinding, MaskCategory,
-    MaskingConfiguration, ReviewMemoryEntry,
+    AiGroundingContext, ConversationMessage, GroundedAuditEvent, GroundedFinding, GroundedProvenanceItem,
+    MaskCategory, MaskingConfiguration, ReviewMemoryEntry,
 )
 
 
 @dataclass(frozen=True)
 class MaskingSummary:
-    """Deterministic counts-only summary of what was redacted, by category. Contains NO original
-    values, NO hashes, NO token map, and NO reversible data."""
+    """Deterministic counts-only summary of what was redacted, by category, plus the immutable
+    masking-policy version that produced it. Contains NO original values, NO hashes, NO token map, and
+    NO reversible data — suitable as-is for a future metadata-only interaction journal."""
     employee_name: int = 0
     email: int = 0
     phone: int = 0
     tax_id: int = 0
     banking_id: int = 0
     actor: int = 0
+    policy_version: str = MASKING_POLICY_VERSION
 
     @property
     def total(self) -> int:
@@ -82,16 +86,23 @@ class MaskingService:
 
     # --- structured traversal (new objects only; inputs never mutated) ---
     def _mask_grounding(self, g: AiGroundingContext, counts: Dict[str, int]) -> AiGroundingContext:
-        # review/summary/rule_run/provenance carry only deterministic facts and vendor/resource
-        # names — never masked. Only finding evidence VALUES and audit actors are person/PII-bearing.
+        # review/summary/rule_run carry only deterministic facts and are never masked. Finding evidence
+        # VALUES, audit actors, and the free-text provenance NAME (document/source filename) are the
+        # person/PII-bearing surfaces. Provenance structural fields (doc_type, fingerprint, period) are
+        # deterministic identifiers and are preserved verbatim. Ordering is preserved throughout.
         return AiGroundingContext(
             review=g.review,
             findings=[self._mask_finding(f, counts) for f in g.findings],
             summary=g.summary,
             rule_run=g.rule_run,
-            provenance=list(g.provenance),
+            provenance=[self._mask_provenance(p, counts) for p in g.provenance],
             audit_events=[self._mask_audit(e, counts) for e in g.audit_events],
         )
+
+    def _mask_provenance(self, p: GroundedProvenanceItem, counts: Dict[str, int]) -> GroundedProvenanceItem:
+        # Only `name` is genuinely free-text (a document/source name or filename) and may embed an email
+        # or other identifier. doc_type, fingerprint, and period are deterministic/structural — verbatim.
+        return GroundedProvenanceItem(p.doc_type, self._text(p.name, counts), p.fingerprint, p.period)
 
     def _mask_finding(self, f: GroundedFinding, counts: Dict[str, int]) -> GroundedFinding:
         # Mask evidence VALUES only; keys, id, account, rule_id, severity, type, period, source_refs,

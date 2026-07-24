@@ -1,9 +1,9 @@
-# Implements: Phase 4C.3, NFR-016, FR-098, ADR-009
+# Implements: Phase 4C.3 / 4C.3A, NFR-016, FR-098, ADR-010 (masking policy). Non-persistence: ADR-009.
 #
 # Deterministic redaction patterns for the MaskingService. This module owns HOW each sensitive
 # category is recognized in free text; masking.py owns WHICH structured fields are transformed.
 #
-# Policy (approved Phase 4C architecture; Trust > AI):
+# Policy (approved Phase 4C architecture; Trust > AI; defining record ADR-010):
 #   - Redaction, NOT reversible tokenization. There is NO token map. Category-specific replacement
 #     tokens (e.g. [REDACTED_EMAIL]) are one-way and irreversible for AI-bound content.
 #   - Explicit, named, compiled patterns with a fixed precedence. No generic long-digit rule.
@@ -19,6 +19,11 @@ from typing import Dict, Tuple
 from finsight.application.ai.errors import MaskingError
 from finsight.domain.ai.contracts import MaskCategory
 
+# Explicit, immutable, non-sensitive masking-policy version. Surfaced on the masking summary so a
+# future metadata-only interaction journal can record WHICH policy applied. It carries no original
+# values, no hashes, and no token map. Bump only when the redaction policy changes materially.
+MASKING_POLICY_VERSION = "v1"
+
 # One-way replacement tokens per category. Applying masking again must never alter these (see the
 # token-guard split in apply_text) — redaction is idempotent.
 TOKENS: Dict[MaskCategory, str] = {
@@ -29,6 +34,13 @@ TOKENS: Dict[MaskCategory, str] = {
     MaskCategory.BANKING_ID: "[REDACTED_BANKING_ID]",
     MaskCategory.ACTOR: "[REDACTED_ACTOR]",
 }
+
+# The exact, explicit set of one-way tokens this policy emits. A literal input string equal to one of
+# these is treated as ALREADY REDACTED and passes through unchanged (idempotence) — the service never
+# attempts to preserve or recover original content behind such a literal. The token-guard split in
+# apply_text protects any `[REDACTED_*]`-shaped substring; this frozenset is the canonical emitted set
+# for tests and callers.
+RESERVED_TOKENS = frozenset(TOKENS.values())
 
 # Precedence 1: already-redacted tokens are never re-processed. apply_text splits on this so prior
 # tokens survive a second pass unchanged (idempotence), regardless of configured employee names.
@@ -115,10 +127,17 @@ def _normalize_name(raw: str) -> str:
 
 def build_employee_patterns(names: Tuple[str, ...]) -> Tuple["re.Pattern[str]", ...]:
     """Compile one pattern per configured employee name. Matching is exact against the complete
-    normalized name, whitespace-normalized, case-insensitive (no fuzzy, no NER, no ML). Boundaries
-    reject partial-word matches (Jane Smithson) and an adjacent alphabetic word on either side
-    (Mary Jane Smith) so a configured name is never masked inside a different, longer name. Duplicate
-    normalized names are deduplicated; empty/whitespace-only entries raise MaskingError."""
+    normalized name, whitespace-normalized (internal whitespace matches one or more spaces),
+    case-insensitive — no fuzzy matching, no NER, no title-case inference, no ML (ADR-010).
+
+    A configured name is masked wherever its COMPLETE token sequence occurs, including inside ordinary
+    prose ("approved by Jane Smith", "from Jane Smith"). Word boundaries reject substring matches:
+    a longer token (Jane Smithson), a glued token (JaneSmith), and bare partial tokens (Jane / Smith)
+    never match. The service deliberately does NOT inspect adjacent words to decide whether they form a
+    larger human name — doing so correctly needs NER, which is excluded. Documented consequence: a
+    configured "Jane Smith" WILL be masked inside "Mary Jane Smith" (ADR-010 §4).
+
+    Duplicate normalized names are deduplicated; empty/whitespace-only entries raise MaskingError."""
     seen: Dict[str, str] = {}
     for raw in names:
         norm = _normalize_name(raw)
@@ -130,10 +149,7 @@ def build_employee_patterns(names: Tuple[str, ...]) -> Tuple["re.Pattern[str]", 
         tokens = seen[key].split(" ")
         name_re = r"\s+".join(re.escape(t) for t in tokens)
         patterns.append(re.compile(
-            r"(?<![A-Za-z0-9])"
-            r"(?P<pre>[A-Za-z]+\s+)?"              # adjacent leading word → part of a longer name
-            r"(?P<name>%s)(?![A-Za-z0-9])"
-            r"(?P<post>\s+[A-Za-z]+)?" % name_re,  # adjacent trailing word → part of a longer name
+            r"(?<![A-Za-z0-9])(%s)(?![A-Za-z0-9])" % name_re,
             re.IGNORECASE,
         ))
     return tuple(patterns)
@@ -152,24 +168,12 @@ def _apply(pattern: "re.Pattern[str]", category: MaskCategory, labeled: bool,
     return pattern.sub(repl, text)
 
 
-def _apply_employee(pattern: "re.Pattern[str]", text: str, counts: Dict[str, int]) -> str:
-    token = TOKENS[MaskCategory.EMPLOYEE_NAME]
-
-    def repl(m: "re.Match[str]") -> str:
-        if m.group("pre") or m.group("post"):
-            return m.group(0)                      # adjacent word → different/longer name; leave as-is
-        counts[MaskCategory.EMPLOYEE_NAME.value] = counts.get(MaskCategory.EMPLOYEE_NAME.value, 0) + 1
-        return token
-
-    return pattern.sub(repl, text)
-
-
 def _mask_segment(text: str, employee_patterns: Tuple["re.Pattern[str]", ...],
                   counts: Dict[str, int]) -> str:
     for pattern, category, labeled in _PIPELINE:
         text = _apply(pattern, category, labeled, text, counts)
-    for pattern in employee_patterns:
-        text = _apply_employee(pattern, text, counts)
+    for pattern in employee_patterns:              # configured complete-name sequences (unlabeled)
+        text = _apply(pattern, MaskCategory.EMPLOYEE_NAME, False, text, counts)
     return text
 
 
