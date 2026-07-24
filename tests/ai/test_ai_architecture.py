@@ -36,10 +36,52 @@ class TestAiArchitecture(unittest.TestCase):
     def test_domain_ai_has_no_forbidden_imports(self):
         self.assertEqual(_scan(_DOMAIN_AI), [])
 
-    def test_providers_have_no_forbidden_imports_yet(self):
-        # Phase 4C.1: only NullProvider exists. No urllib/HTTP transport, no PySide6, no sqlite3,
-        # no deterministic-engine imports. (OllamaProvider introduces urllib in a later sub-phase.)
-        self.assertEqual(_scan(_PROVIDERS), [])
+    def test_providers_forbidden_imports_urllib_confined_to_ollama(self):
+        # Phase 4C.6: OllamaProvider legitimately imports urllib; NO other provider module may, and
+        # PySide6/sqlite3/deterministic-engine imports remain forbidden everywhere.
+        offenders = []
+        for dp, _dirs, files in os.walk(_PROVIDERS):
+            for fn in files:
+                if not fn.endswith(".py"):
+                    continue
+                for line in open(os.path.join(dp, fn), encoding="utf-8"):
+                    s = line.strip()
+                    if not (s.startswith("import ") or s.startswith("from ")):
+                        continue
+                    for token in _FORBIDDEN:
+                        if token == "urllib" and fn == "ollama.py":
+                            continue                      # allowed ONLY in the Ollama adapter
+                        if token in s:
+                            offenders.append((fn, token))
+        self.assertEqual(offenders, [])
+
+    def test_urllib_confined_to_ollama_across_ai_stack(self):
+        # urllib may appear only in infrastructure/ai/providers/ollama.py — nowhere else in the AI stack.
+        roots = [_APP_AI, _DOMAIN_AI, os.path.join("src", "finsight", "infrastructure", "ai")]
+        offenders = []
+        for base in roots:
+            for dp, _dirs, files in os.walk(base):
+                for fn in files:
+                    if not fn.endswith(".py") or fn == "ollama.py":
+                        continue
+                    for line in open(os.path.join(dp, fn), encoding="utf-8"):
+                        s = line.strip()
+                        if (s.startswith("import ") or s.startswith("from ")) and "urllib" in s:
+                            offenders.append((fn, "urllib"))
+        self.assertEqual(offenders, [])
+
+    def test_ollama_provider_imports_are_clean(self):
+        # The provider imports no validator/verifier/AskFinService/UI/repositories/persistence.
+        path = os.path.join(_PROVIDERS, "ollama.py")
+        bad = []
+        for line in open(path, encoding="utf-8"):
+            s = line.strip()
+            if s.startswith("import ") or s.startswith("from "):
+                for tok in ("validation", "citations", "ask_fin", "repositories", "sqlite3",
+                            "PySide6", "delivery", "prompt.builder"):
+                    if tok in s:
+                        bad.append(tok)
+        self.assertEqual(bad, [])
 
     def test_prompt_package_is_pure(self):
         # Phase 4C.2: PromptBuilder is provider-independent and pure — it must not import any

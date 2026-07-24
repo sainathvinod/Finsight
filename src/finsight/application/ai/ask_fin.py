@@ -70,6 +70,7 @@ class _RunState:
     validation_retries: int = 0
     timeout_retries: int = 0
     started: Optional[float] = None
+    conversation_recorded: Optional[bool] = None
 
 
 def _masking_counts(summary) -> Dict[str, int]:
@@ -205,10 +206,11 @@ class AskFinService:
         else:
             status = AskFinStatus.UNANSWERABLE     # active provider genuinely refused
 
-        # 12. Conversation persistence — only a valid answer, only with a conversation, gated inside
-        # ConversationService by the user's conversation_persistence policy.
+        # 12. Conversation persistence — only a valid answer, only with a conversation, gated by the
+        # user's conversation_persistence policy. Records success/failure/None without corrupting the
+        # answer on failure.
         if request.conversation_id:
-            self._persist(request, answer)
+            state.conversation_recorded = self._persist(request, answer)
 
         # 13-14. completion journal + return
         return self._finalize(request, state, status, answer, None, AskFinStage.COMPLETE)
@@ -249,15 +251,22 @@ class AskFinService:
             return (None, execution, validated)
 
     # ------------------------------------------------------------------ side effects (isolated)
-    def _persist(self, request, answer) -> None:
+    def _persist(self, request, answer) -> Optional[bool]:
+        # None when persistence is disabled by preference; True on success; False on caught failure.
+        # A persistence failure must NOT corrupt a valid answer. Decided via existing services only —
+        # no repository access here.
+        if not self._context.preferences.conversation_persistence_enabled(request.user_id):
+            return None
         conv = self._context.conversations
         try:
             conv.append_user_message(request.conversation_id, request.user_id, request.cycle_id,
                                      request.question)
             conv.append_assistant_message(request.conversation_id, request.user_id, request.cycle_id,
                                           answer.answer_text)
-        except Exception:                          # persistence failure must not corrupt a valid answer
+            return True
+        except Exception:
             _log.warning("ask_fin conversation persistence failed cid=%s", request.cycle_id)
+            return False
 
     def _finalize(self, request, state, status, answer, error_code, stage) -> AskFinResult:
         meta = self._build_metadata(state, error_code, stage)
@@ -280,7 +289,7 @@ class AskFinService:
             masking_counts=dict(state.masking_counts), truncation_counts=dict(state.truncation_counts),
             provider_attempts=state.provider_attempts, validation_retries=state.validation_retries,
             timeout_retries=state.timeout_retries, error_code=error_code, last_stage=stage.value,
-            elapsed_ms=elapsed)
+            elapsed_ms=elapsed, conversation_recorded=state.conversation_recorded)
 
     def _journal_requested(self, request) -> None:
         try:

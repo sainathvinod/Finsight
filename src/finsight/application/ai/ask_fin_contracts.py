@@ -84,6 +84,9 @@ class AiExecutionMetadata:
     last_stage: Optional[str] = None
     elapsed_ms: Optional[int] = None
     journal_recorded: bool = True
+    # True = user+assistant persisted; False = attempted and failed; None = one-shot / no conversation
+    # id / persistence disabled.
+    conversation_recorded: Optional[bool] = None
 
     def as_journal_metadata(self) -> Dict[str, object]:
         """Flat, JSON-serializable, non-content metadata for AiInteractionEntry.metadata."""
@@ -105,6 +108,7 @@ class AiExecutionMetadata:
             "error_code": self.error_code,
             "last_stage": self.last_stage,
             "elapsed_ms": self.elapsed_ms,
+            "conversation_recorded": self.conversation_recorded,
         }
 
 

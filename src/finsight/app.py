@@ -22,6 +22,8 @@ if TYPE_CHECKING:  # type-only imports for the service-container annotations (ke
     from finsight.application.workflow import ReviewWorkflowService
     from finsight.application.ai import (
         ConversationService, ReviewMemoryService, PreferencesService, GroundingQueryService)
+    from finsight.application.ai.ask_fin import AskFinService
+    from finsight.application.ai.contracts import ProviderStatus
     from finsight.infrastructure.ai.repositories import AiInteractionJournalSqlite
 
 _log = get_logger("composition")
@@ -158,6 +160,67 @@ def build_ai_services(container: Container, new_id=None) -> AiServices:
     )
     return AiServices(conversations=conversations, memory=memory, preferences=prefs,
                       grounding=grounding, interaction_journal=journal)
+
+
+@dataclass(frozen=True)
+class AiExplanationServices:
+    """Typed bundle for the Ask Fin explanation pipeline (Phase 4C.6). Composed explicitly with an
+    INJECTED authorization policy — there is no production consent source yet, so this is built only
+    where an authorization policy is supplied (never from build_query_services). `provider_status` is
+    the bounded startup status used for selection (diagnostics-safe; non-sensitive)."""
+    ask_fin: "AskFinService"
+    provider_status: "ProviderStatus"
+
+
+def build_ai_explanation_service(container: Container, ai_services: AiServices, *, authorization,
+                                 settings=None, sleeper=None, monotonic=None, opener=None,
+                                 new_id=None) -> AiExplanationServices:
+    """Wire AskFinService from the existing AI services + deterministic grounding. Provider is chosen
+    from FINSIGHT_AI_PROVIDER (none|ollama); authorization is injected and independent of provider
+    selection/availability. No provider is constructed inside AskFinService; no service locator."""
+    import uuid
+    from finsight.application.ai.ask_fin import (
+        AskFinService, AiContextSources, AiPipeline, AiOrchestrationInfra)
+    from finsight.application.ai.citations import CitationVerifier
+    from finsight.application.ai.contracts import ProviderStatus
+    from finsight.application.ai.masking import MaskingService
+    from finsight.application.ai.prompt.budget import ContextBudget
+    from finsight.application.ai.prompt.builder import PromptBuilder
+    from finsight.application.ai.runtime import AiProviderRuntime
+    from finsight.application.ai.validation import ResponseValidator
+    from finsight.infrastructure.ai.config import load_ai_runtime_settings
+    from finsight.infrastructure.ai.providers.null import NullProvider
+    from finsight.infrastructure.timing import RealSleeper, monotonic as real_monotonic
+
+    settings = settings or load_ai_runtime_settings()
+    nid = new_id or (lambda: uuid.uuid4().hex)
+
+    # Provider/runtime selection — provider availability and authorization stay independent.
+    if settings.provider == "ollama":
+        from finsight.infrastructure.ai.providers.ollama import OllamaProvider
+        ollama = OllamaProvider(settings.provider_config, status_timeout=settings.status_timeout_seconds,
+                                enabled=True, opener=opener)
+        status = ollama.status()
+        active = ollama if status.generation_available else NullProvider()
+    else:
+        active = NullProvider()
+        status = ProviderStatus(operational=True, generation_available=False, reason="provider_disabled")
+    runtime = AiProviderRuntime(active, NullProvider(), settings.provider_config)
+
+    ask_fin = AskFinService(
+        authorization=authorization,
+        context=AiContextSources(grounding=ai_services.grounding, conversations=ai_services.conversations,
+                                 memory=ai_services.memory, preferences=ai_services.preferences),
+        pipeline=AiPipeline(masking=MaskingService(), prompt_builder=PromptBuilder(ContextBudget()),
+                            provider_runtime=runtime,
+                            validator=ResponseValidator(settings.validation_limits),
+                            verifier=CitationVerifier()),
+        infra=AiOrchestrationInfra(journal=ai_services.interaction_journal,
+                                   retry_policy=settings.retry_policy,
+                                   sleeper=sleeper or RealSleeper(), clock=container.clock, new_id=nid,
+                                   monotonic=monotonic or real_monotonic),
+    )
+    return AiExplanationServices(ask_fin=ask_fin, provider_status=status)
 
 
 def build_query_services(db_path: str, clock=None) -> "AppServices":

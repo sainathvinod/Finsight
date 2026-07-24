@@ -67,8 +67,8 @@ class FakeGrounding:
 
 
 class FakeConversations:
-    def __init__(self, messages=(), load_exc=None):
-        self._messages, self._load_exc = list(messages), load_exc
+    def __init__(self, messages=(), load_exc=None, fail_append=False):
+        self._messages, self._load_exc, self._fail = list(messages), load_exc, fail_append
         self.appended = []
         self.load_calls = 0
     def load(self, conversation_id, user_id, cycle_id):
@@ -77,8 +77,12 @@ class FakeConversations:
             raise self._load_exc
         return ("conv", list(self._messages))
     def append_user_message(self, conversation_id, user_id, cycle_id, content):
+        if self._fail:
+            raise RuntimeError("append failed")
         self.appended.append(("user", content))
     def append_assistant_message(self, conversation_id, user_id, cycle_id, content):
+        if self._fail:
+            raise RuntimeError("append failed")
         self.appended.append(("assistant", content))
 
 
@@ -92,13 +96,16 @@ class FakeMemory:
 
 
 class FakePreferences:
-    def __init__(self, values=None, order=None):
+    def __init__(self, values=None, order=None, persist=True):
         self._v = values or {"audience": "reviewer", "answer_detail": "standard"}
         self._order = order
+        self._persist = persist
     def get(self, user_id, key, default=None):
         if self._order is not None:
             self._order.append("preferences")
         return self._v.get(key, default)
+    def conversation_persistence_enabled(self, user_id):
+        return self._persist
 
 
 class ScriptedProvider:
@@ -417,22 +424,40 @@ class TestConversationPersistence(unittest.TestCase):
     def test_persists_user_and_assistant_on_valid_answer(self):
         conv = FakeConversations()
         svc, _ = _wire(conversations=conv)
-        svc.explain(_req(conversation_id="c1"))
+        res = svc.explain(_req(conversation_id="c1"))
         self.assertEqual(conv.appended,
                          [("user", "why is 6100 high?"), ("assistant", "grounded explanation")])
+        self.assertTrue(res.metadata.conversation_recorded)
 
     def test_no_persistence_on_failure(self):
         conv = FakeConversations()
         svc, _ = _wire(conversations=conv, builder=RaisingBuilder())
-        svc.explain(_req(conversation_id="c1"))
+        res = svc.explain(_req(conversation_id="c1"))
         self.assertEqual(conv.appended, [])
+        self.assertIsNone(res.metadata.conversation_recorded)   # persist never attempted (no answer)
 
     def test_no_persistence_for_one_shot(self):
         conv = FakeConversations()
         svc, _ = _wire(conversations=conv)
-        svc.explain(_req())                                  # no conversation_id
+        res = svc.explain(_req())                            # no conversation_id
         self.assertEqual(conv.appended, [])
         self.assertEqual(conv.load_calls, 0)
+        self.assertIsNone(res.metadata.conversation_recorded)
+
+    def test_conversation_recorded_false_on_persistence_failure(self):
+        conv = FakeConversations(fail_append=True)
+        svc, _ = _wire(conversations=conv)
+        res = svc.explain(_req(conversation_id="c1"))
+        self.assertEqual(res.status, AskFinStatus.OK)        # valid answer NOT corrupted
+        self.assertIsNotNone(res.answer)
+        self.assertFalse(res.metadata.conversation_recorded)
+
+    def test_conversation_recorded_none_when_persistence_disabled(self):
+        conv = FakeConversations()
+        svc, _ = _wire(conversations=conv, prefs=FakePreferences(persist=False))
+        res = svc.explain(_req(conversation_id="c1"))
+        self.assertEqual(conv.appended, [])
+        self.assertIsNone(res.metadata.conversation_recorded)
 
 
 class TestJournaling(unittest.TestCase):
