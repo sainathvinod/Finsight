@@ -17,7 +17,7 @@ class MemoryType(str, Enum):
 
 
 class InteractionEvent(str, Enum):
-    # Phase 4B: lifecycle events only (no provider interaction exists yet).
+    # Phase 4B: conversation/memory/preference lifecycle events.
     CONVERSATION_CREATED = "conversation_created"
     CONVERSATION_RENAMED = "conversation_renamed"
     CONVERSATION_DELETED = "conversation_deleted"
@@ -26,6 +26,10 @@ class InteractionEvent(str, Enum):
     MEMORY_DELETED = "memory_deleted"
     MEMORY_FORGOTTEN = "memory_forgotten"
     PREFERENCES_CHANGED = "preferences_changed"
+    # Phase 4C.5: AI explanation orchestration. One REQUESTED + one COMPLETED per user request
+    # (never one per provider retry). Metadata-only; never carries prompt/answer/response content.
+    EXPLANATION_REQUESTED = "explanation_requested"
+    EXPLANATION_COMPLETED = "explanation_completed"
 
 
 # --- persistence value types ---

@@ -330,15 +330,5 @@ class TestByteIdenticalDeterminism(unittest.TestCase):
         self.assertEqual(r1.question.encode("utf-8"), r2.question.encode("utf-8"))
 
 
-class TestFuturePipelineEnforcement(unittest.TestCase):
-    @unittest.skip(
-        "Phase 4C.4+ orchestration placeholder (ADR-010 §5): when AskFinService is implemented it must "
-        "pass ONLY MaskingResult values to the PromptBuilder. No provider pipeline exists in 4C.3A, so "
-        "this is documented here and enforced when orchestration lands — not stubbed with a fake provider."
-    )
-    def test_orchestration_passes_only_masked_values_to_prompt_builder(self):
-        raise AssertionError("enforced when orchestration is implemented")
-
-
 if __name__ == "__main__":
     unittest.main()

@@ -5,7 +5,18 @@
 from __future__ import annotations
 from typing import Protocol
 from finsight.application.ai.contracts import PromptRequest, ProviderStatus, RawProviderResponse
+from finsight.application.ai.ask_fin_contracts import AiAuthorizationContext
 from finsight.domain.ai.contracts import ProviderConfiguration
+
+
+class AiAuthorizationPolicy(Protocol):
+    """Decides whether explanation-only, non-mutating AI use is permitted. Fail-closed: raises
+    AiAuthorizationError when consent is missing/denied or the mode disallows it. Provider availability
+    is NOT authorization; NullProvider does not bypass it; it can never authorize deterministic-workflow
+    mutation. It resolves and returns the AiAuthorizationContext it evaluated (for non-sensitive
+    metadata). No production consent source exists yet — composition injects a concrete policy; tests
+    inject fakes. This phase introduces only the port and its contract."""
+    def authorize(self, *, user_id: str, cycle_id: str) -> AiAuthorizationContext: ...
 
 
 class AiProviderPort(Protocol):

@@ -73,6 +73,22 @@ class TestAiArchitecture(unittest.TestCase):
                             bad.append((fn, tok))
         self.assertEqual(bad, [])
 
+    def test_orchestration_layer_is_pure(self):
+        # Phase 4C.5: AskFinService/runtime/retry are synchronous application-layer coordinators —
+        # no PySide6, asyncio, threading, urllib, sqlite3, infrastructure, provider transport, or
+        # deterministic command-path imports.
+        base = os.path.join("src", "finsight", "application", "ai")
+        bad = []
+        for fn in ("ask_fin.py", "ask_fin_contracts.py", "runtime.py", "retry.py"):
+            for line in open(os.path.join(base, fn), encoding="utf-8"):
+                s = line.strip()
+                if s.startswith("import ") or s.startswith("from "):
+                    for tok in ("pyside6", "asyncio", "threading", "urllib", "sqlite3",
+                                "infrastructure", "ollama", "providers.", "repositories"):
+                        if tok in s.lower():
+                            bad.append((fn, tok))
+        self.assertEqual(bad, [])
+
     def test_ai_operations_do_not_mutate_deterministic_state(self):
         tmp, container, ai = make()
         seed_review(container, tmp, "2026-07")

@@ -11,6 +11,16 @@ from finsight.application.ai.validation import ResponseValidator
 from finsight.application.ai.citations import (
     CitationVerifier, grounding_confidence, assemble_ai_answer,
 )
+from finsight.application.ai.runtime import AiProviderRuntime, ProviderExecution
+from finsight.application.ai.retry import RetryPolicy, Sleeper
+from finsight.application.ai.ask_fin import (
+    AskFinService, AiContextSources, AiPipeline, AiOrchestrationInfra,
+)
+from finsight.application.ai.ask_fin_contracts import (
+    AskFinRequest, AskFinResult, AskFinStatus, AskFinStage, AiAuthorizationContext,
+    AiExecutionMetadata,
+)
+from finsight.application.ai.ports import AiAuthorizationPolicy, AiProviderPort
 from finsight.application.ai.contracts import (
     AiAnswer, CitationIndex, CitationNamespace, CitationReference, GroundingConfidence,
     ResponseValidationLimits, ValidatedResponse, CITATION_FORMAT_VERSION,
@@ -27,6 +37,10 @@ __all__ = [
     "ResponseValidator", "CitationVerifier", "grounding_confidence", "assemble_ai_answer",
     "AiAnswer", "CitationIndex", "CitationNamespace", "CitationReference", "GroundingConfidence",
     "ResponseValidationLimits", "ValidatedResponse", "CITATION_FORMAT_VERSION",
+    "AiProviderRuntime", "ProviderExecution", "RetryPolicy", "Sleeper",
+    "AskFinService", "AiContextSources", "AiPipeline", "AiOrchestrationInfra",
+    "AskFinRequest", "AskFinResult", "AskFinStatus", "AskFinStage", "AiAuthorizationContext",
+    "AiExecutionMetadata", "AiAuthorizationPolicy", "AiProviderPort",
     "DEFAULT_RETENTION_POLICY", "PREFERENCE_DEFAULTS",
     "AiError", "AiScopeError", "ConversationNotFoundError", "MemoryProvenanceError", "MaskingError",
     "ResponseFormatError", "CitationError",
