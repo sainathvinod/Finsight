@@ -223,6 +223,20 @@ def build_ai_explanation_service(container: Container, ai_services: AiServices, 
     return AiExplanationServices(ask_fin=ask_fin, provider_status=status)
 
 
+def build_demo_ai_explanation_service(container: Container, ai_services: AiServices, *,
+                                      settings=None, opener=None, new_id=None) -> AiExplanationServices:
+    """LOCAL/DEMO-ONLY convenience wiring: constructs the fail-closed DevelopmentAiAuthorizationPolicy
+    from settings (FINSIGHT_AI_DEMO_AUTHORIZED) and delegates to build_ai_explanation_service. This is
+    NOT production consent and is never called by build_query_services — a caller must opt in
+    explicitly. Production stays fail-closed unless an authorization policy is supplied directly."""
+    from finsight.infrastructure.ai.authorization import DevelopmentAiAuthorizationPolicy
+    from finsight.infrastructure.ai.config import load_ai_runtime_settings
+    settings = settings or load_ai_runtime_settings()
+    authorization = DevelopmentAiAuthorizationPolicy.from_settings(settings)
+    return build_ai_explanation_service(container, ai_services, authorization=authorization,
+                                        settings=settings, opener=opener, new_id=new_id)
+
+
 def build_query_services(db_path: str, clock=None) -> "AppServices":
     """Composition root for the desktop UI: wires the read-only query services and the review
     workflow command service (which drives the shared TransitionEngine). A production SystemClock

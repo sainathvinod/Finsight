@@ -22,6 +22,8 @@ _DEFAULT_RETRY_FORMAT = 1
 _DEFAULT_RETRY_TIMEOUT = 0
 _DEFAULT_RETRY_DELAY = 0.0
 _SUPPORTED_PROVIDERS = ("none", "ollama")
+_BOOL_TRUE = ("1", "true", "yes", "on")
+_BOOL_FALSE = ("", "0", "false", "no", "off")
 
 
 class AiConfigError(ValueError):
@@ -31,12 +33,17 @@ class AiConfigError(ValueError):
 
 @dataclass(frozen=True)
 class AiRuntimeSettings:
-    """Fully-resolved, validated AI runtime configuration. Immutable; safe to log/inspect (no secrets)."""
+    """Fully-resolved, validated AI runtime configuration. Immutable; safe to log/inspect (no secrets).
+
+    ``demo_authorized`` reflects the LOCAL/DEMO-ONLY development gate (FINSIGHT_AI_DEMO_AUTHORIZED). It
+    is NOT production consent and has no effect unless a DevelopmentAiAuthorizationPolicy is explicitly
+    wired from it; provider availability never implies authorization."""
     provider: str                                  # "none" | "ollama"
     provider_config: ProviderConfiguration
     status_timeout_seconds: float
     retry_policy: RetryPolicy
     validation_limits: ResponseValidationLimits
+    demo_authorized: bool = False
 
 
 def _positive_float(env, key, default) -> float:
@@ -104,6 +111,20 @@ def _opt_nonneg_int(env, key):
     return value
 
 
+def _bool_flag(env, key, default=False) -> bool:
+    """Explicit, deterministic boolean parse. Accepts 1/true/yes/on and 0/false/no/off/'' (case-
+    insensitive); any other value is rejected fail-fast (never silently authorized or denied)."""
+    raw = env.get(key)
+    if raw is None:
+        return default
+    normalized = raw.strip().lower()
+    if normalized in _BOOL_TRUE:
+        return True
+    if normalized in _BOOL_FALSE:
+        return False
+    raise AiConfigError("%s must be one of %s / %s" % (key, _BOOL_TRUE, _BOOL_FALSE[1:]))
+
+
 def _validate_base_url(url: str) -> str:
     # Minimal, urllib-free validation: an http(s) scheme and a non-empty host.
     if not (url.startswith("http://") or url.startswith("https://")):
@@ -149,6 +170,8 @@ def load_ai_runtime_settings(env=None) -> AiRuntimeSettings:
         max_citations=_opt_nonneg_int(env, "FINSIGHT_AI_MAX_CITATIONS"),
         max_citation_key_chars=_opt_nonneg_int(env, "FINSIGHT_AI_MAX_CITATION_KEY_CHARS"))
 
+    demo_authorized = _bool_flag(env, "FINSIGHT_AI_DEMO_AUTHORIZED", default=False)
+
     return AiRuntimeSettings(provider=provider, provider_config=provider_config,
                              status_timeout_seconds=status_timeout, retry_policy=retry_policy,
-                             validation_limits=validation_limits)
+                             validation_limits=validation_limits, demo_authorized=demo_authorized)
