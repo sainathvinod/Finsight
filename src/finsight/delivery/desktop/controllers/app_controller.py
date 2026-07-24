@@ -6,10 +6,14 @@ from finsight.application.read_models.views import (
 )
 from finsight.application.workflow import UploadResult, ValidationResult, AnalysisResult, ExportResult
 from finsight.application.review_session import ReviewSession
+from finsight.application.ai.ask_fin_contracts import AskFinRequest
 from finsight.delivery.desktop.async_worker import run_async
 from finsight.diagnostics import get_logger
 
 _log = get_logger("ui.controller")
+
+# Single-user local desktop convention (no authentication/user-management in this application).
+DEFAULT_USER_ID = "local-user"
 
 
 class AppController(QObject):
@@ -23,11 +27,16 @@ class AppController(QObject):
     workflowChanged = Signal(str)       # a transition occurred for cycle_id
     processingChanged = Signal(bool)    # processing started (True) / finished (False)
 
-    def __init__(self, services, parent=None):
+    def __init__(self, services, parent=None, ask_fin_backend=None):
         super().__init__(parent)
         self._s = services
         self._active: Optional[str] = None
         self._session: Optional[ReviewSession] = None
+        # Ask Fin backend runs the whole AskFinService pipeline OFF the UI thread on a worker-local
+        # SQLite connection (injected; None disables Ask Fin). The controller never constructs a
+        # provider or touches the AI stack directly.
+        self._ask_fin = ask_fin_backend
+        self._user_id = DEFAULT_USER_ID
 
     # --- active review + owned session ---
     @property
@@ -142,3 +151,27 @@ class AppController(QObject):
         result = self._s.workflow.export(self._session_for(cycle_id))
         self.workflowChanged.emit(cycle_id)
         return result
+
+    # --- Ask Fin (explanation-only; the whole pipeline runs off the UI thread) ---
+    def ask_fin_available(self) -> bool:
+        return self._ask_fin is not None
+
+    def ask_fin_provider_status_async(self, on_result: Callable, on_error: Callable) -> None:
+        """Fetch bounded provider status off the UI thread (DB-free)."""
+        if self._ask_fin is None:
+            on_error(RuntimeError("ask_fin_unavailable"))
+            return
+        run_async(self._ask_fin.provider_status, on_result, on_error)
+
+    def ask_fin_explain_async(self, question: str, on_result: Callable, on_error: Callable, *,
+                              audience: Optional[str] = None,
+                              answer_detail: Optional[str] = None) -> None:
+        """Run the full AskFinService pipeline off the UI thread for the CURRENT review only. The
+        caller supplies only the question + optional formatting overrides; grounding/memory/history
+        are never injected here."""
+        if self._ask_fin is None:
+            on_error(RuntimeError("ask_fin_unavailable"))
+            return
+        request = AskFinRequest(user_id=self._user_id, cycle_id=self._active or "", question=question,
+                                audience=audience, answer_detail=answer_detail)
+        run_async(lambda: self._ask_fin.explain(request), on_result, on_error)

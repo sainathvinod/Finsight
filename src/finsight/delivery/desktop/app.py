@@ -8,7 +8,7 @@ from typing import Optional
 
 from PySide6.QtWidgets import QApplication
 
-from finsight.app import build_query_services
+from finsight.app import build_query_services, build_ask_fin_backend
 from finsight.delivery.desktop.main_window import MainWindow
 from finsight.delivery.desktop.theme import build_qss
 from finsight.diagnostics import configure_logging, get_logger, app_support_dir
@@ -46,9 +46,14 @@ def run(db_path: Optional[str] = None, argv: Optional[list] = None) -> int:
     qapp.setApplicationDisplayName("FinSight")
     qapp.setStyleSheet(build_qss())
 
-    services = build_query_services(resolve_db_path(db_path))
+    db = resolve_db_path(db_path)
+    services = build_query_services(db)
+    # Ask Fin backend runs the whole pipeline off the UI thread on a worker-local SQLite connection.
+    # Authorization is the fail-closed development/demo policy (FINSIGHT_AI_DEMO_AUTHORIZED) — NOT
+    # production consent; provider selection follows FINSIGHT_AI_PROVIDER.
+    ask_fin_backend = build_ask_fin_backend(db)
     from finsight.delivery.desktop.controllers import AppController
-    window = MainWindow(AppController(services))
+    window = MainWindow(AppController(services, ask_fin_backend=ask_fin_backend))
     window.show()
     return qapp.exec()
 

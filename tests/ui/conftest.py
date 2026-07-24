@@ -34,8 +34,9 @@ def window_factory(qtbot):
     from finsight.delivery.desktop.main_window import MainWindow
     from finsight.delivery.desktop.controllers import AppController
 
-    def make(db_path):
-        window = MainWindow(AppController(build_query_services(db_path)))
+    def make(db_path, ask_fin_backend=None):
+        window = MainWindow(AppController(build_query_services(db_path),
+                                          ask_fin_backend=ask_fin_backend))
         qtbot.addWidget(window)
         return window
 

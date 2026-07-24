@@ -3,12 +3,13 @@ from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel,
                                QStackedWidget)
 from finsight.delivery.desktop.components import NavItem
-from finsight.delivery.desktop.views import ReviewsView, FindingsView, AuditView, WorkflowView
+from finsight.delivery.desktop.views import (
+    ReviewsView, FindingsView, AuditView, WorkflowView, AskFinView)
 from finsight.delivery.desktop.theme import tokens as t
 
 # (nav key, label) in order; index aligns with the workspace stack.
 _NAV = [("reviews", "Reviews"), ("workspace", "Review Workspace"),
-        ("findings", "Findings"), ("audit", "Audit")]
+        ("findings", "Findings"), ("audit", "Audit"), ("askfin", "Ask Fin")]
 
 
 class MainWindow(QMainWindow):
@@ -39,7 +40,8 @@ class MainWindow(QMainWindow):
         self._workspace = WorkflowView(controller)
         self._findings = FindingsView(controller)
         self._audit = AuditView(controller)
-        for v in (self._reviews, self._workspace, self._findings, self._audit):
+        self._askfin = AskFinView(controller)
+        for v in (self._reviews, self._workspace, self._findings, self._audit, self._askfin):
             self._stack.addWidget(v)
         right.addWidget(self._stack, 1)
         right_wrap = QWidget()
@@ -121,7 +123,7 @@ class MainWindow(QMainWindow):
 
     def view(self, key: str):
         return {"reviews": self._reviews, "workspace": self._workspace,
-                "findings": self._findings, "audit": self._audit}[key]
+                "findings": self._findings, "audit": self._audit, "askfin": self._askfin}[key]
 
     def _on_new_review(self) -> None:
         self._c.begin_new_review()

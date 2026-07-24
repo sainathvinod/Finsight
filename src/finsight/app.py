@@ -172,6 +172,21 @@ class AiExplanationServices:
     provider_status: "ProviderStatus"
 
 
+def _select_ai_providers(settings, opener):
+    """Choose (active, fallback, provider_status) from provider selection. Status needs no database.
+    provider=none → Null/Null/provider_disabled; provider=ollama → Ollama when generation-available,
+    else Null; fallback is always NullProvider (per-call degrade lives in AiProviderRuntime)."""
+    from finsight.application.ai.contracts import ProviderStatus
+    from finsight.infrastructure.ai.providers.null import NullProvider
+    if settings.provider == "ollama":
+        from finsight.infrastructure.ai.providers.ollama import OllamaProvider
+        ollama = OllamaProvider(settings.provider_config, status_timeout=settings.status_timeout_seconds,
+                                enabled=True, opener=opener)
+        status = ollama.status()
+        return (ollama if status.generation_available else NullProvider()), NullProvider(), status
+    return NullProvider(), NullProvider(), ProviderStatus(True, False, "provider_disabled")
+
+
 def build_ai_explanation_service(container: Container, ai_services: AiServices, *, authorization,
                                  settings=None, sleeper=None, monotonic=None, opener=None,
                                  new_id=None) -> AiExplanationServices:
@@ -182,30 +197,20 @@ def build_ai_explanation_service(container: Container, ai_services: AiServices, 
     from finsight.application.ai.ask_fin import (
         AskFinService, AiContextSources, AiPipeline, AiOrchestrationInfra)
     from finsight.application.ai.citations import CitationVerifier
-    from finsight.application.ai.contracts import ProviderStatus
     from finsight.application.ai.masking import MaskingService
     from finsight.application.ai.prompt.budget import ContextBudget
     from finsight.application.ai.prompt.builder import PromptBuilder
     from finsight.application.ai.runtime import AiProviderRuntime
     from finsight.application.ai.validation import ResponseValidator
     from finsight.infrastructure.ai.config import load_ai_runtime_settings
-    from finsight.infrastructure.ai.providers.null import NullProvider
     from finsight.infrastructure.timing import RealSleeper, monotonic as real_monotonic
 
     settings = settings or load_ai_runtime_settings()
     nid = new_id or (lambda: uuid.uuid4().hex)
 
     # Provider/runtime selection — provider availability and authorization stay independent.
-    if settings.provider == "ollama":
-        from finsight.infrastructure.ai.providers.ollama import OllamaProvider
-        ollama = OllamaProvider(settings.provider_config, status_timeout=settings.status_timeout_seconds,
-                                enabled=True, opener=opener)
-        status = ollama.status()
-        active = ollama if status.generation_available else NullProvider()
-    else:
-        active = NullProvider()
-        status = ProviderStatus(operational=True, generation_available=False, reason="provider_disabled")
-    runtime = AiProviderRuntime(active, NullProvider(), settings.provider_config)
+    active, fallback, status = _select_ai_providers(settings, opener)
+    runtime = AiProviderRuntime(active, fallback, settings.provider_config)
 
     ask_fin = AskFinService(
         authorization=authorization,
@@ -235,6 +240,60 @@ def build_demo_ai_explanation_service(container: Container, ai_services: AiServi
     authorization = DevelopmentAiAuthorizationPolicy.from_settings(settings)
     return build_ai_explanation_service(container, ai_services, authorization=authorization,
                                         settings=settings, opener=opener, new_id=new_id)
+
+
+class WorkerLocalAskFinBackend:
+    """Off-UI-thread Ask Fin backend (Phase 4C.7). Each call builds a FRESH Dal — its own SQLite
+    connection created ON THE CALLING (worker) thread — plus the demo AI stack over it, runs, and
+    CLOSES the connection. This preserves SQLite's default thread affinity: no connection is ever
+    shared across threads. WAL (already enabled) lets this coexist with the UI thread's Dal. The
+    caller (AppController) runs these via run_async and enforces one active request at a time.
+
+    Provider status needs no database, so it builds only the provider (bounded status timeout)."""
+
+    def __init__(self, db_path: str, *, settings=None, opener=None, clock_factory=None):
+        self._db_path = db_path
+        self._settings = settings
+        self._opener = opener
+        self._clock_factory = clock_factory
+
+    def _resolved_settings(self):
+        if self._settings is not None:
+            return self._settings
+        from finsight.infrastructure.ai.config import load_ai_runtime_settings
+        return load_ai_runtime_settings()
+
+    def _clock(self):
+        if self._clock_factory is not None:
+            return self._clock_factory()
+        from finsight.infrastructure.clock import SystemClock
+        return SystemClock()
+
+    def provider_status(self):
+        """Bounded provider status, DB-free. Runs on the calling (worker) thread."""
+        _active, _fallback, status = _select_ai_providers(self._resolved_settings(), self._opener)
+        return status
+
+    def explain(self, request):
+        """Build a worker-local Dal + demo AI stack on THIS thread, run the full pipeline, close."""
+        container = build_app(self._db_path, self._clock())
+        try:
+            ai = build_ai_services(container)
+            explanation = build_demo_ai_explanation_service(
+                container, ai, settings=self._resolved_settings(), opener=self._opener)
+            return explanation.ask_fin.explain(request)
+        finally:
+            try:
+                container.dal.conn.close()          # close the worker-local connection on its thread
+            except Exception:
+                pass
+
+
+def build_ask_fin_backend(db_path: str, *, settings=None, opener=None,
+                          clock_factory=None) -> WorkerLocalAskFinBackend:
+    """Composition helper: the Ask Fin backend the desktop controller runs off the UI thread."""
+    return WorkerLocalAskFinBackend(db_path, settings=settings, opener=opener,
+                                    clock_factory=clock_factory)
 
 
 def build_query_services(db_path: str, clock=None) -> "AppServices":
