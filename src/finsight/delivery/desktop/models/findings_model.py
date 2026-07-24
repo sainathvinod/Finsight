@@ -5,7 +5,9 @@ from PySide6.QtGui import QColor
 from finsight.application.read_models.views import FindingView
 from finsight.delivery.desktop.components.severity import severity_text, severity_color
 
-_COLS = ["Finding ID", "Account", "Rule", "Type", "Severity", "State", "Period"]
+# Reviewer-facing columns (Phase 5.2): severity first, internal rule/type moved to the inspector.
+_COLS = ["Severity", "Account", "Finding", "Period", "State"]
+_SEVERITY_COL = 0
 
 
 class FindingsTableModel(QAbstractTableModel):
@@ -42,11 +44,10 @@ class FindingsTableModel(QAbstractTableModel):
         f = self._rows[index.row()]
         col = index.column()
         if role == Qt.ItemDataRole.DisplayRole:
-            return [f.id, f.account, f.rule_id, f.finding_type,
-                    severity_text(f.severity), f.state, f.period][col]
+            return [severity_text(f.severity), f.account, f.id, f.period, f.state][col]
         # Secondary color reinforcement on the Severity column only; text already conveys it.
-        if role == Qt.ItemDataRole.ForegroundRole and col == 4:
+        if role == Qt.ItemDataRole.ForegroundRole and col == _SEVERITY_COL:
             return QColor(severity_color(f.severity))
-        if role == Qt.ItemDataRole.ToolTipRole and col == 4:
+        if role == Qt.ItemDataRole.ToolTipRole and col == _SEVERITY_COL:
             return f"Severity: {f.severity}"
         return None

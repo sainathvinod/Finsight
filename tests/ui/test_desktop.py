@@ -93,8 +93,8 @@ def test_severity_is_not_color_only(window_factory, populated_db):
     w = window_factory(populated_db)
     w._c.select_review("2026-07")
     w.navigate("findings")
-    disp = w._findings._model.data(w._findings._model.index(0, 4), Qt.ItemDataRole.DisplayRole)
-    assert "High" in disp                       # text label present
+    disp = w._findings._model.data(w._findings._model.index(0, 0), Qt.ItemDataRole.DisplayRole)
+    assert "High" in disp                       # text label present (Severity is now column 0)
     assert disp.startswith(("⬟", "▲", "◆", "▪"))  # plus a shape glyph — never color alone
 
 
