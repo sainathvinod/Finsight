@@ -176,5 +176,54 @@ class TestPromptBuilder(unittest.TestCase):
         self.assertIn("(/CONVERSATION_DATA)", req.conversation_block)
 
 
+class TestCitationIndex(unittest.TestCase):
+    def _mem(self):
+        return [ReviewMemoryEntry("mem1", "u", "2026-07", MemoryType.HUMAN_AUTHORED, "note", "a",
+                                  "2026-07-01T00:00:00Z", "2026-07-01T00:00:00Z")]
+
+    def test_all_namespaces_present_for_full_grounding(self):
+        g = _grounding([_finding("F-crit", "6100", "Critical")])
+        idx = PromptBuilder(ContextBudget()).build(grounding=g, question="q",
+                                                   memory=self._mem()).citation_index
+        self.assertEqual(idx.valid_keys, frozenset({
+            "finding:F-crit", "run:run123", "prov:fp-ged",
+            "audit:EXPORTED@2026-07-01T00:00:00Z", "memory:mem1",
+        }))
+        self.assertEqual(idx.omitted_finding_ids, frozenset())
+        self.assertEqual(idx.format_version, "v1")
+
+    def test_omitted_findings_excluded_from_valid_keys(self):
+        builder = PromptBuilder(ContextBudget(max_findings=1))
+        g = _grounding([_finding("F-crit", "6100", "Critical"), _finding("F-low", "6200", "Low")])
+        idx = builder.build(grounding=g, question="q").citation_index
+        self.assertIn("finding:F-crit", idx.valid_keys)
+        self.assertNotIn("finding:F-low", idx.valid_keys)
+        self.assertEqual(idx.omitted_finding_ids, frozenset({"F-low"}))
+
+    def test_zero_finding_budget_omits_all(self):
+        builder = PromptBuilder(ContextBudget(max_findings=0))
+        g = _grounding([_finding("F-crit", "6100", "Critical"), _finding("F-low", "6200", "Low")])
+        idx = builder.build(grounding=g, question="q").citation_index
+        self.assertNotIn("finding:F-crit", idx.valid_keys)
+        self.assertNotIn("finding:F-low", idx.valid_keys)
+        self.assertEqual(idx.omitted_finding_ids, frozenset({"F-crit", "F-low"}))
+
+    def test_dropped_sections_excluded(self):
+        g = _grounding([_finding("F1", "6100", "High")])
+        idx = PromptBuilder(ContextBudget(max_memory_entries=0, max_provenance_items=0,
+                                          max_audit_events=0)).build(
+            grounding=g, question="q", memory=self._mem()).citation_index
+        self.assertNotIn("memory:mem1", idx.valid_keys)
+        self.assertNotIn("prov:fp-ged", idx.valid_keys)
+        self.assertNotIn("audit:EXPORTED@2026-07-01T00:00:00Z", idx.valid_keys)
+        self.assertIn("finding:F1", idx.valid_keys)      # findings unaffected by those budgets
+
+    def test_index_deterministic(self):
+        g = _grounding([_finding("F1", "6100", "High")])
+        b = PromptBuilder(ContextBudget())
+        self.assertEqual(b.build(grounding=g, question="q").citation_index,
+                         b.build(grounding=g, question="q").citation_index)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List, Optional, Sequence
 
-from finsight.application.ai.contracts import PromptRequest
+from finsight.application.ai.contracts import CitationIndex, PromptRequest
 from finsight.application.ai.prompt.budget import ContextBudget, TruncationReport
 from finsight.application.ai.prompt.schema import OUTPUT_SCHEMA_VERSION, output_schema
 from finsight.application.ai.prompt.system_prompt import SYSTEM_PROMPT_VERSION, system_prompt
@@ -36,6 +36,7 @@ _SEVERITY_RANK = {s.label: s.rank for s in Severity}
 class PromptBuildResult:
     request: PromptRequest
     truncation: TruncationReport
+    citation_index: CitationIndex     # sole authority for what was citable in THIS built turn
 
 
 def _sev_rank(label: str) -> int:
@@ -84,6 +85,10 @@ class PromptBuilder:
               answer_detail: Optional[str] = None) -> PromptBuildResult:
         lines: List[str] = []
         f_omitted = 0
+        # Canonical citable keys collected AS THEY ARE RENDERED, so the index exactly follows what the
+        # prompt actually contains as citable context (omitted/dropped items are never added).
+        citable_keys: List[str] = []
+        omitted_finding_ids: List[str] = []
 
         r = grounding.review
         if r is not None:
@@ -101,6 +106,7 @@ class PromptBuilder:
             lines.append("RULE RUN [run:%s]: ruleset=%s, config=%s, fingerprint=%s, findings=%d"
                          % (rr.run_id, rr.ruleset_version, rr.config_version, rr.input_fingerprint,
                             rr.finding_count))
+            citable_keys.append("run:%s" % rr.run_id)
 
         # review memory (human-controlled), most-recent kept
         mem_sorted = sorted(memory, key=lambda e: (e.created_ts, e.memory_id))
@@ -112,6 +118,7 @@ class PromptBuilder:
                 if e.memory_type == MemoryType.SYSTEM_DERIVED and (e.source_type or e.source_id):
                     line += " (source=%s/%s)" % (e.source_type, e.source_id)
                 lines.append(line)
+                citable_keys.append("memory:%s" % e.memory_id)
         else:
             lines.append("- (none)")
 
@@ -126,9 +133,11 @@ class PromptBuilder:
                 if limit is not None and i >= limit:
                     lines.append("- [omitted-finding:%s] unavailable for answering or citation" % f.id)
                     f_omitted += 1
+                    omitted_finding_ids.append(f.id)     # non-citable; NEVER added to valid keys
                     continue
                 lines.append("- [finding:%s] account=%s rule=%s severity=%s type=%s period=%s state=%s"
                              % (f.id, f.account, f.rule_id, f.severity, f.finding_type, f.period, f.state))
+                citable_keys.append("finding:%s" % f.id)
                 ev = "; ".join("%s=%s" % (k, v) for k, v in sorted(f.evidence.items()))
                 lines.append("    evidence: %s" % (ev if ev else "(none)"))
                 lines.append("    sources: %s" % ("; ".join(f.source_refs) if f.source_refs else "(none)"))
@@ -143,6 +152,7 @@ class PromptBuilder:
             for p in kept_p:
                 lines.append("- [prov:%s] doc_type=%s name=%s period=%s"
                              % (p.fingerprint, p.doc_type, p.name, p.period))
+                citable_keys.append("prov:%s" % p.fingerprint)
         else:
             lines.append("- (none)")
 
@@ -153,6 +163,7 @@ class PromptBuilder:
         if kept_a:
             for e in kept_a:
                 lines.append("- [audit:%s@%s] actor=%s" % (e.action, e.ts, e.actor))
+                citable_keys.append("audit:%s@%s" % (e.action, e.ts))
         else:
             lines.append("- (none)")
 
@@ -169,6 +180,8 @@ class PromptBuilder:
 
         report = TruncationReport(findings_omitted=f_omitted, conversation_dropped=c_drop,
                                   memory_dropped=m_drop, provenance_dropped=p_drop, audit_dropped=a_drop)
+        citation_index = CitationIndex(valid_keys=frozenset(citable_keys),
+                                       omitted_finding_ids=frozenset(omitted_finding_ids))
         request = PromptRequest(
             system_prompt=self._render_system(audience, answer_detail),
             context_block=context_block,
@@ -178,7 +191,7 @@ class PromptBuilder:
             prompt_version=self._sys_ver,           # prompt version tracks the system-prompt version
             schema_version=self._schema_ver,
         )
-        return PromptBuildResult(request, report)
+        return PromptBuildResult(request, report, citation_index)
 
     def _render_system(self, audience: Optional[str], answer_detail: Optional[str]) -> str:
         text = system_prompt(self._sys_ver)

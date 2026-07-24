@@ -4,10 +4,15 @@ from typing import Any, Optional
 
 
 class AiError(Exception):
-    def __init__(self, message: str, detail: Optional[Any] = None):
+    # Retry eligibility is a property of the error TYPE (default: not retryable). The future
+    # orchestrator reads `.retryable` and owns the retry count — validation/verification never do.
+    retryable: bool = False
+
+    def __init__(self, message: str, detail: Optional[Any] = None, code: Optional[str] = None):
         super().__init__(message)
         self.message = message
         self.detail = detail
+        self.code = code            # machine-readable, NON-SENSITIVE reason; never raw output/content
 
 
 class ConversationNotFoundError(AiError):
@@ -57,13 +62,18 @@ class ProviderUnavailableError(ProviderError):
 
 class ProviderTimeoutError(ProviderError):
     """The AI provider did not respond within the configured timeout (provider stage)."""
+    retryable = True                # bounded retry configured elsewhere; loop owned by orchestrator
 
 
 class ResponseFormatError(AiError):
     """The provider response was malformed or violated the required output schema
-    (response-validation stage)."""
+    (response-validation stage). Retryable: a single reformat attempt may succeed (count owned by the
+    future orchestrator). Raised only by ResponseValidator; carries a non-sensitive `code` only."""
+    retryable = True
 
 
 class CitationError(AiError):
-    """The response cited references that do not resolve to deterministic grounding
-    (citation-verification stage)."""
+    """The response cited references that do not resolve to this turn's deterministic context
+    (citation-verification stage). NON-retryable in v1: the same deterministic context will not change
+    on retry. Raised only by CitationVerifier; carries a non-sensitive `code` only."""
+    retryable = False

@@ -19,6 +19,20 @@ class TestErrorModel(unittest.TestCase):
         self.assertEqual(err.message, "boom")
         self.assertEqual(err.detail, {"k": 1})
 
+    def test_error_carries_optional_code(self):
+        err = e.ResponseFormatError("bad", code="invalid_json")
+        self.assertEqual(err.code, "invalid_json")
+        self.assertIsNone(e.MaskingError("x").code)     # code defaults to None, backward compatible
+
+    def test_retryability_classification(self):
+        # Phase 4C.4: retry eligibility is a property of the error TYPE.
+        self.assertTrue(e.ResponseFormatError("x").retryable)
+        self.assertTrue(e.ProviderTimeoutError("x").retryable)
+        self.assertFalse(e.CitationError("x").retryable)
+        for cls in (e.AiAuthorizationError, e.AiScopeError, e.GroundingUnavailableError,
+                    e.MaskingError, e.ProviderUnavailableError):
+            self.assertFalse(cls("x").retryable, cls.__name__)
+
 
 if __name__ == "__main__":
     unittest.main()

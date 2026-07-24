@@ -58,6 +58,21 @@ class TestAiArchitecture(unittest.TestCase):
                                 bad.append((fn, tok))
         self.assertEqual(bad, [])
 
+    def test_response_layer_is_pure(self):
+        # Phase 4C.4: ResponseValidator and CitationVerifier are provider-independent and side-effect
+        # free — no provider, infrastructure, UI, DB, HTTP, PromptBuilder, or orchestration imports.
+        base = os.path.join("src", "finsight", "application", "ai")
+        bad = []
+        for fn in ("validation.py", "citations.py"):
+            for line in open(os.path.join(base, fn), encoding="utf-8"):
+                s = line.strip()
+                if s.startswith("import ") or s.startswith("from "):
+                    for tok in ("infrastructure", "provider", "PySide6", "sqlite3", "urllib",
+                                "repositories", "prompt.builder", "askfin"):
+                        if tok in s.lower():
+                            bad.append((fn, tok))
+        self.assertEqual(bad, [])
+
     def test_ai_operations_do_not_mutate_deterministic_state(self):
         tmp, container, ai = make()
         seed_review(container, tmp, "2026-07")
