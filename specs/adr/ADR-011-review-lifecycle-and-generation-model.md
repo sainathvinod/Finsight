@@ -51,3 +51,29 @@ The original §3 left analytical progression ambiguous: a cycle at EXPORTED coul
 - **Re-verification-after-export sequence** (canonical; no hidden backward transition): Gen1 EXPORTED/current → source changes (divergent banner; Gen1 still current) → re-bind (intake_stage SOURCE_BOUND) → re-process (PROCESSED) → **re-verify creates Gen2 (VERIFIED, current); Gen1 → EXPORTED, superseded (frozen)** → analyze/summarize/export Gen2. The derived `cycles.state` re-points from "Exported (Gen1)" to "Verified (Gen2)" at re-verification — a consequence of an explicit, audited generation-creation + supersession, with **no** generation moving backward.
 
 Impact: §3 "Generation" and the tier for `cycles.state` are refined as above; all other invariants (human-owned transitions, no auto-supersession, AI explains only, findings⇒run⇒fingerprint) are unchanged. ADR-012 (reconstruction per candidate + per generation), ADR-015 (export currentness derived from the supersession relation) are amended accordingly.
+
+## 8. Amendment — Generation Basis & Promotion Model (Phase 6.3B, 2026-07-25)
+§7 still conflated two concepts (a *verified source version* and an *analysis/result set*), and superseded the prior generation at verification (before results existed). Corrected model (authoritative):
+
+**Generation = one immutable RESULT LINEAGE** (exactly one rule run, its findings, its exports). A generation is created explicitly and human-triggered, by one `creation_reason`:
+- `INITIAL_VERIFICATION` — first human verification of a source.
+- `SOURCE_REVERIFICATION` — the verified source changed; a **new human verification** occurred.
+- `EXTRACTOR_REVERIFICATION` — the extractor changed such that the verified dataset must be re-certified; a **new human verification** occurred.
+- `RULESET_REANALYSIS` / `CONFIG_REANALYSIS` — the **same** verified source is re-analyzed under a new ruleset/config; **no new human verification occurs**.
+
+**Verification-basis (honesty rule).** Every generation records its verification basis:
+`verified_fingerprint`, `verification_actor`, `verified_at`, `verification_basis_generation_id` (nullable), `based_on_generation_id` (lineage parent, nullable), `creation_reason`, `created_by`, `created_at`, `extractor_version`.
+- Re-verification reasons: verification metadata is **fresh** (new actor/time); `verification_basis_generation_id = NULL`.
+- Re-analysis reasons: verification metadata is **inherited** from the basis generation (same `verified_fingerprint`, **original** actor/time, same `extractor_version`); `verification_basis_generation_id` = the basis. The generation **must never claim a new verification occurred**; audit records "re-analysis initiated (R1→R2 / cfg-1→cfg-2)", not "verification performed". UI/reports show the original verifier + a distinct "re-analyzed by `created_by` on `created_at`" line.
+- **Version-field placement:** `verified_fingerprint` + `extractor_version` are **verification-basis** properties → on the **generation** (inherited for re-analysis). `ruleset_version` + `config_version` + `input_fingerprint` are **analysis** properties → on the **rule_run** (each generation has exactly one run). They are not duplicated onto the generation.
+
+**Working vs Published (trust rule).** The cycle carries two pointers:
+- `published_generation_id` — the latest **promoted, trusted** result (Dashboard, reports, Ask Fin default).
+- `working_generation_id` — the latest **explicitly initiated** work (may equal published, or be a newer in-progress generation).
+A newly created generation is **working, not published**. **The prior published generation remains current until an explicit human PROMOTION** succeeds. Promotion is **eligible only once the working generation is `ANALYZED`** (has a rule run + findings) — never a `VERIFIED`-only generation. **Promotion point = explicit human promotion gated ≥ ANALYZED**, justified by financial-review practice: a published result must be (1) trustworthy — deterministic findings must exist; and (2) replaced only by a human decision — you never silently swap the numbers leadership relies on; export is a downstream artifact, not the definition of "current trusted results". **Exception:** the **first** generation of a review (no prior published) **auto-publishes at ANALYZED** — there is no prior trusted result to protect and a promotion step would be empty ceremony.
+
+**Supersession is atomic at promotion.** Superseding the prior published generation happens **only inside the successful promotion transaction** (append-only supersession record `prior→successor` with `reason`; move `published_generation_id`; audit). If generation creation, reconstruction, analysis, findings persistence, or export fail, **promotion never runs and the prior published generation is untouched**. This removes the §7 hazard of a completed generation being superseded before its replacement is complete. A working generation may be **abandoned** (generation-level disposition) before promotion without ever affecting the published one.
+
+**Ask Fin grounding.** Ask Fin grounds on the **published** generation by default; if none exists, it states there are no analyzed results to explain (never grounds a `VERIFIED`-only generation). The user may explicitly ground on the **working** generation only when it is `ANALYZED+`. One answer grounds on exactly one generation, stated in the answer — never mixed generations.
+
+This supersedes §7 where they differ (single "current" pointer → split working/published; supersession-at-verification → supersession-at-promotion). All other §7 invariants stand.
