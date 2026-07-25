@@ -1,0 +1,27 @@
+# ADR-015 — Immutable Export and Report Identity
+
+- **Status:** Accepted · **Date:** 2026-07-25 · records the export-identity architecture (Phase 6.3)
+- **Deciders:** Technical Lead / Software Architect (decided); product owner (approved report immutability and generation visibility)
+- **Feature/plan:** Review lifecycle / reporting. Defines the immutable export manifest and how generation identity appears across the product. Preserves ADR-003 (determinism), ADR-005 (audit). Implements ADR-011; consumes ADR-012 fingerprints.
+
+## 1. Status
+Accepted. Establishes that every export is an immutable, fully-identified artifact and that generation identity is consistently visible across screens.
+
+## 2. Context
+Exports and leadership summaries may be shared outside FinSight. A distributed financial artifact must forever mean what it said when generated; a later generation must never retroactively change it. Reviewers must always know **which generation** grounds what they see.
+
+## 3. Decision
+- **Exports are immutable** (decision 11). Each export is a snapshot of one generation, recorded in an `export_artifacts` record and never overwritten. A later generation produces a **new** export that **supersedes** the prior one; the prior export remains valid history, labeled superseded (never mutated or deleted).
+- **Export manifest — every export must identify:** review/cycle id; human-readable review period; **generation id + sequence_number**; **verified-source fingerprint**; rule **run id**; **ruleset version**; **configuration version**; **extractor version**; export **timestamp**; export **fingerprint** (content hash of the package); and **current/superseded status at creation**. The manifest is embedded in the export content and its identity persisted in `export_artifacts`.
+- **Report philosophy (facts only, ADR-011/6.2):** reports state what was analyzed, against which fingerprint, under which versions, whether the current bound source matches, and whether the findings belong to the current or a superseded generation. Reports never speculate, assign blame, or infer causality; a superseded report is labeled with a reference to its successor.
+- **Generation visibility (restrained):** Overview identifies the **current** generation; Findings identifies the generation being displayed and labels superseded ones; Ask Fin states which generation grounds its answer (grounding is generation-scoped); Audit events identify generation-changing actions; exports carry the full manifest. **Raw fingerprints stay secondary** (details/tooltips), surfaced prominently only for recovery/divergence — screens are not overloaded with hashes.
+
+## 4. Consequences
+**Positive:** shared artifacts are permanent, self-describing, and reproducible; every screen agrees on which generation is authoritative; supersession is transparent and non-destructive.
+**Negative / limitation:** export artifacts and superseded generations accumulate (retention by design); the UI must consistently render generation identity (a modest, shared presentation concern).
+
+## 5. Verification
+Verified by the Phase 6.3 test matrix: export-manifest consistency; prior-export immutability across supersession; generation visibility on Overview/Findings/Ask Fin/Audit/exports; no later generation overwrites a prior export.
+
+## 6. Traceability
+Implements ADR-011; consumes ADR-012 (fingerprints/generation). Preserves ADR-003 (determinism) and ADR-005 (audit). Records product decisions 11–14. Export retention aligns with ADR-014.
