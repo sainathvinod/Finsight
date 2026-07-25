@@ -152,6 +152,23 @@ class TransitionEngine:
         self.cycle_lifecycle_repo.set_working_generation(cid, gen_id)   # working, NOT published
         return gen_id
 
+    def _advance_current_generation(self, cid, new_state, publish=False):
+        """Progress the CURRENT (working) generation's analytical_state in lockstep with the workflow
+        (ADR-011 §7), so cycles.state — written by transition() to the same target — stays a faithful
+        DERIVED MIRROR of the generation (no duplicate analytical truth). At ANALYZED the FIRST
+        generation auto-publishes (ADR-011 §8). Only the WORKING generation is touched (which, once
+        published, equals the published pointer), so this stays interpretation-neutral w.r.t. the
+        working/published derived-mirror question — which is a RED CARD and never reached without a
+        second generation (re-verification, R2-deferred)."""
+        if self.review_generation_repo is None or self.cycle_lifecycle_repo is None:
+            return
+        working = self.review_generation_repo.working_generation(cid)
+        if working is None:
+            return   # legacy/backfilled or generation-less review — nothing to advance
+        self.review_generation_repo.advance_analytical_state(working.generation_id, new_state)
+        if publish and self.review_generation_repo.published_generation(cid) is None:
+            self.cycle_lifecycle_repo.set_published_generation(cid, working.generation_id)  # first-gen auto-publish
+
     def do_analyzed(self, cycle, ctx):
         cid = cycle.cycle_id
 
@@ -166,6 +183,7 @@ class TransitionEngine:
                                  "severity": f.severity, "type": f.finding_type})
             ctx["findings"] = findings
             ctx["run"] = run
+            self._advance_current_generation(cid, AnalyticalState.ANALYZED, publish=True)
         self.transition(cycle, CycleState.ANALYZED, body)
 
     def do_summarized(self, cycle, ctx):
@@ -177,6 +195,7 @@ class TransitionEngine:
             summary = self.reporting.summary(cycle, fdicts, run)
             self.audit_event(cid, "summarize", {"status": summary["status_label"], "findings": summary["finding_count"]})
             ctx["summary"] = summary
+            self._advance_current_generation(cid, AnalyticalState.SUMMARIZED)
         self.transition(cycle, CycleState.SUMMARIZED, body)
 
     def do_exported(self, cycle, ctx):
@@ -188,6 +207,7 @@ class TransitionEngine:
             export = self.export.build(cycle, summary, run, data_as_of=self.clock.now())
             self.audit_event(cid, "export", {"period": export["period"]})
             ctx["export"] = export
+            self._advance_current_generation(cid, AnalyticalState.EXPORTED)
         self.transition(cycle, CycleState.EXPORTED, body)
 
     # ---- batch recompute + drive (used by Orchestrator) ----

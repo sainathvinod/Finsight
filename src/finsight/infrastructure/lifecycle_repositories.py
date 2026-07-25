@@ -135,6 +135,22 @@ class ReviewGenerationRepoSqlite:
             (cycle_id,)).fetchone()
         return int(r[0]) + 1
 
+    def advance_analytical_state(self, generation_id: str, new_state: AnalyticalState) -> None:
+        """Forward-only progression of a CURRENT generation's analytical stage (ADR-011 §7:
+        analytical_state is mutable only while the generation is current, forward progress; frozen at
+        supersession). Rejects any backward move. The generation is the sole analytical authority; the
+        caller keeps cycles.state in sync as the derived mirror."""
+        current = self.get(generation_id)
+        if current is None:
+            raise LifecycleConstraintError("no generation %r to advance" % generation_id)
+        order = {s: i for i, s in enumerate(AnalyticalState)}
+        if order[new_state] < order[current.analytical_state]:
+            raise LifecycleConstraintError(
+                "analytical_state may only move forward (%s -> %s refused)"
+                % (current.analytical_state.value, new_state.value))
+        self.dal.conn.execute("UPDATE review_generations SET analytical_state=? WHERE generation_id=?",
+                              (new_state.value, generation_id))
+
     def working_generation(self, cycle_id: str) -> Optional[ReviewGeneration]:
         return self._pointer(cycle_id, "working_generation_id")
 
