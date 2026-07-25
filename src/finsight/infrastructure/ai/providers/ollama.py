@@ -26,6 +26,20 @@ def _default_opener(req, timeout):
     return urllib.request.urlopen(req, timeout=timeout)   # pragma: no cover - real network seam
 
 
+# Defense-in-depth confidentiality guard (also enforced at config load): Ask Fin is LOCAL-ONLY, so
+# this adapter refuses to open any non-loopback endpoint — review data can never leave the machine.
+_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+
+
+def _is_loopback(base_url: str) -> bool:
+    authority = base_url.split("://", 1)[-1].split("/", 1)[0]
+    if authority.startswith("["):                         # bracketed IPv6, e.g. [::1]:11434
+        host = authority[1:authority.index("]")] if "]" in authority else authority[1:]
+    else:
+        host = authority.rsplit(":", 1)[0] if ":" in authority else authority
+    return host in _LOOPBACK_HOSTS
+
+
 class OllamaProvider:
     """AiProviderPort adapter for a local/remote Ollama server. `enabled` reflects whether provider
     selection chose ollama; when False the adapter reports provider_disabled and never calls out. The
@@ -106,6 +120,9 @@ class OllamaProvider:
 
     # -------- transport (urllib), returns parsed envelope or raises a typed provider error --------
     def _request(self, method: str, path: str, payload, timeout):
+        if not _is_loopback(self._config.base_url):        # never call out to a non-loopback endpoint
+            raise ProviderUnavailableError("Ask Fin is local-only: the Ollama endpoint must be a "
+                                           "loopback address", code="non_loopback_endpoint")
         url = self._config.base_url.rstrip("/") + path
         data = json.dumps(payload).encode("utf-8") if payload is not None else None
         headers = {"Content-Type": "application/json"} if data is not None else {}

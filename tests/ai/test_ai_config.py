@@ -32,18 +32,18 @@ class TestDefaults(unittest.TestCase):
 
 class TestOverridesAndFallback(unittest.TestCase):
     def test_finsight_env_overrides(self):
-        s = _load(FINSIGHT_AI_PROVIDER="ollama", FINSIGHT_OLLAMA_BASE_URL="http://host:9",
+        s = _load(FINSIGHT_AI_PROVIDER="ollama", FINSIGHT_OLLAMA_BASE_URL="http://127.0.0.1:9",
                   FINSIGHT_OLLAMA_MODEL="m2", FINSIGHT_AI_REQUEST_TIMEOUT="45",
                   FINSIGHT_AI_MAX_OUTPUT_TOKENS="128", FINSIGHT_AI_MAX_CITATIONS="5")
-        self.assertEqual(s.provider_config.base_url, "http://host:9")
+        self.assertEqual(s.provider_config.base_url, "http://127.0.0.1:9")
         self.assertEqual(s.provider_config.model, "m2")
         self.assertEqual(s.provider_config.request_timeout_seconds, 45.0)
         self.assertEqual(s.provider_config.max_output_tokens, 128)
         self.assertEqual(s.validation_limits.max_citations, 5)
 
     def test_bare_ollama_fallback(self):
-        s = _load(FINSIGHT_AI_PROVIDER="ollama", OLLAMA_BASE_URL="http://bare:1", OLLAMA_MODEL="bm")
-        self.assertEqual(s.provider_config.base_url, "http://bare:1")
+        s = _load(FINSIGHT_AI_PROVIDER="ollama", OLLAMA_BASE_URL="http://localhost:1", OLLAMA_MODEL="bm")
+        self.assertEqual(s.provider_config.base_url, "http://localhost:1")
         self.assertEqual(s.provider_config.model, "bm")
 
     def test_finsight_precedence_over_bare(self):

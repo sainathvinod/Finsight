@@ -33,23 +33,32 @@ _GROUNDING_TOOLTIP = ("This reflects the availability and completeness of determ
                       "not model certainty or guaranteed factual correctness.")
 
 # Provider-status reason → user-friendly, non-sensitive text (no URLs, no transport internals).
+# Local-AI status headline per provider state (Ask Fin uses ONLY a local Ollama — nothing leaves the
+# machine). Labels match the approved availability states.
 _PROVIDER_TEXT = {
-    "ok": "AI provider ready",
-    "provider_disabled": "AI generation is turned off",
-    "model_missing": "Configured AI model is not installed",
-    "unreachable": "AI provider is not reachable",
-    "status_timeout": "AI provider did not respond in time",
-    "malformed_status_response": "AI provider status is unavailable",
+    "ok": "Local AI ready",
+    "provider_disabled": "Local AI is disabled",
+    "model_missing": "Required model not installed",
+    "unreachable": "Ollama is not running",
+    "status_timeout": "Ollama is not responding",
+    "malformed_status_response": "Local AI status unavailable",
 }
-# Concise availability guidance per provider state (no environment-variable commands for reviewers).
+# Concrete, in-app setup guidance per state. Ask Fin is local + private; the steps only enable a local
+# Ollama and explicit local authorization — never any external/cloud service.
+_LOCAL_SETUP = ("Ask Fin runs a LOCAL AI (Ollama) on this machine — your review data never leaves it. "
+                "To enable it:\n"
+                "   1.  Install Ollama and start it on this computer (ollama serve).\n"
+                "   2.  Install the model:   ollama pull llama3.2:3b\n"
+                "   3.  Relaunch FinSight with:   FINSIGHT_AI_PROVIDER=ollama   FINSIGHT_AI_DEMO_AUTHORIZED=true")
 _PROVIDER_GUIDANCE = {
     "ok": "",
-    "provider_disabled": "Ask Fin is disabled for this session. Local development access must be "
-                         "enabled before launching FinSight.",
-    "model_missing": "The configured AI model is not installed for the local AI service.",
-    "unreachable": "The AI provider could not be reached. Ensure the local AI service is running.",
-    "status_timeout": "The AI provider did not respond in time. It may be starting up.",
-    "malformed_status_response": "The AI provider status could not be read.",
+    "provider_disabled": _LOCAL_SETUP,
+    "model_missing": "The configured local model is not installed. Install it, then relaunch:\n"
+                     "   ollama pull llama3.2:3b",
+    "unreachable": "The local Ollama service could not be reached on this machine. Start it "
+                   "(ollama serve), then reopen Ask Fin.",
+    "status_timeout": "The local Ollama service did not respond in time — it may still be starting up.",
+    "malformed_status_response": "The local AI status could not be read.",
 }
 
 # Non-sensitive error_code → user-friendly message. Unknown codes fall back to a safe generic message.
@@ -116,14 +125,21 @@ class AskFinView(QWidget):
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(t.SP_3)
 
+        # Local-AI status card: a clear headline + concrete in-app setup steps when unavailable.
+        self._status_card = QWidget()
+        self._status_card.setProperty("role", "card")
+        card_lay = QVBoxLayout(self._status_card)
+        card_lay.setContentsMargins(t.SP_3, t.SP_3, t.SP_3, t.SP_3)
+        card_lay.setSpacing(t.SP_1)
         self._provider_status = QLabel("")
-        self._provider_status.setProperty("role", "context")
-        lay.addWidget(self._provider_status)
+        self._provider_status.setProperty("role", "cardValue")
+        card_lay.addWidget(self._provider_status)
         self._guidance = QLabel("")
-        self._guidance.setProperty("role", "context")
+        self._guidance.setProperty("role", "cardDetail")
         self._guidance.setWordWrap(True)
         self._guidance.setVisible(False)
-        lay.addWidget(self._guidance)
+        card_lay.addWidget(self._guidance)
+        lay.addWidget(self._status_card)
 
         self._question = QPlainTextEdit()
         self._question.setPlaceholderText("Ask a question about this review…")
@@ -262,8 +278,9 @@ class AskFinView(QWidget):
         self._guidance.setVisible(bool(guidance))
 
     def _on_provider_status_error(self, _exc) -> None:
-        self._provider_status.setText("AI provider status unavailable")
-        self._guidance.setText("The AI provider status could not be read.")
+        self._provider_status.setText("Local AI status unavailable")
+        self._guidance.setText(_LOCAL_SETUP)
+        self._guidance.setVisible(True)
         self._guidance.setVisible(True)
 
     # --- control state ---

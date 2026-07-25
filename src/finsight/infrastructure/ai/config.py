@@ -125,13 +125,33 @@ def _bool_flag(env, key, default=False) -> bool:
     raise AiConfigError("%s must be one of %s / %s" % (key, _BOOL_TRUE, _BOOL_FALSE[1:]))
 
 
+# CONFIDENTIALITY (ADR-013/ADR-009, DEC-022 "AI enhances, never defines"): Ask Fin's only generative
+# provider is a LOCAL Ollama. The endpoint MUST be a loopback address so review data never leaves the
+# machine — no cloud/remote inference is ever contacted. This is enforced here (fail-fast at config
+# load), not merely documented.
+_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+
+
+def _host_of(authority: str) -> str:
+    """Extract the host from an authority (host[:port]); handles bracketed IPv6 (`[::1]:11434`).
+    urllib-free (this module deliberately keeps urllib confined to the Ollama adapter)."""
+    if authority.startswith("["):                      # IPv6 literal, e.g. [::1]:11434
+        return authority[1:authority.index("]")] if "]" in authority else authority[1:]
+    return authority.rsplit(":", 1)[0] if ":" in authority else authority
+
+
 def _validate_base_url(url: str) -> str:
-    # Minimal, urllib-free validation: an http(s) scheme and a non-empty host.
+    # http(s) scheme + a LOOPBACK host only. Remote/cloud endpoints are rejected fail-fast.
     if not (url.startswith("http://") or url.startswith("https://")):
         raise AiConfigError("FINSIGHT_OLLAMA_BASE_URL must start with http:// or https://")
-    host = url.split("://", 1)[1]
-    if not host or host.startswith("/"):
+    authority = url.split("://", 1)[1].split("/", 1)[0]   # host[:port] before any path
+    if not authority:
         raise AiConfigError("FINSIGHT_OLLAMA_BASE_URL must include a host")
+    host = _host_of(authority)
+    if host not in _LOOPBACK_HOSTS:
+        raise AiConfigError(
+            "FINSIGHT_OLLAMA_BASE_URL must be a LOOPBACK address (localhost, 127.0.0.1, or ::1) — "
+            "Ask Fin is local-only; remote/cloud AI endpoints are not permitted (confidentiality)")
     return url
 
 
