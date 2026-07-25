@@ -64,8 +64,9 @@ def test_full_monthly_review_end_to_end(window_factory, empty_db, tmp_path, qtbo
     w.navigate("overview"); w.navigate("dashboard")
     assert any(r.cycle_id == "2026-05" for r in c.reviews_with_status())
     w.navigate("audit")
-    actions = [e.action for e in c.audit_timeline("2026-05")]
-    assert {"setup", "verify", "analyze", "export"}.issubset(set(actions)) or "analyze" in actions
+    actions = set(e.action for e in c.audit_timeline("2026-05"))
+    # events emitted by this point (export/summarize happen below); strict subset, no weak fallback
+    assert {"setup", "upload_ged", "verify", "analyze"}.issubset(actions)
 
     # 8b. Summary + 9. export produces usable content with an immutable manifest.
     c.summarize("2026-05")

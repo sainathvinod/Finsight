@@ -51,11 +51,15 @@ python -m zipapp build/zipapp -o dist/finsight.pyz -p "/usr/bin/env python3" \
 - **Headless smoke:** `FINSIGHT_SMOKE=1` launches, renders one event cycle, and exits 0 — used by the
   packaging tests to verify a clean start without a display.
 
-## Verification performed
+## Verification performed (at R1 completion)
 
-- Full automated suite green (707 tests) incl. an end-to-end UI walkthrough and packaging smoke tests.
+These are point-in-time results recorded when this document was written; re-run the suite to reconfirm.
+
+- Full automated suite green (700+ tests) incl. an end-to-end UI walkthrough and packaging smoke tests
+  (`pytest -q` with `QT_QPA_PLATFORM=offscreen`).
 - Clean-environment install: a fresh venv, `pip install` of the wheel + PySide6, launched `finsight`
   from a neutral directory — created its DB (migrations to v3) and exited cleanly.
+- Both `dist/finsight.pyz` and the installed `finsight` launcher started headless and exited 0.
 - Second-instance refusal, restart/recovery, abandon/resume, and `provider=none` all verified.
 
 ## Not included in R1 (deferred / R2)
