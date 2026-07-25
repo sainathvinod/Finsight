@@ -59,7 +59,12 @@ class FindingRepoSqlite:
     # FindingsCommandPort.add + FindingsQueryPort.list  (ADR-007)
     def __init__(self, dal): self.dal = dal
     def add(self, f):
-        self.dal.conn.execute("INSERT OR REPLACE INTO findings VALUES(?,?,?,?,?,?,?,?,?,?)",
+        # Column-qualified so additive lifecycle columns (generation_id, migration 0003) don't shift
+        # positional binds. generation_id is intentionally left to its default (NULL) here — the
+        # deterministic write path is NOT generation-aware in this phase (Phase 6.4b).
+        self.dal.conn.execute(
+            "INSERT OR REPLACE INTO findings(id,cycle_id,rule_id,severity,period,account,finding_type,"
+            "evidence,source_refs,state) VALUES(?,?,?,?,?,?,?,?,?,?)",
             (f.id, f.cycle_id, f.rule_id, f.severity, f.period, f.account, f.finding_type,
              json.dumps(f.evidence, sort_keys=True), json.dumps(f.source_refs), f.state))
     def list(self, cycle_id) -> List[Dict[str, Any]]:
@@ -84,7 +89,12 @@ class FindingRepoSqlite:
 class RuleRunRepoSqlite:
     def __init__(self, dal): self.dal = dal
     def save(self, run):
-        self.dal.conn.execute("INSERT OR REPLACE INTO rule_runs VALUES(?,?,?,?,?,?)",
+        # Column-qualified so the additive generation_id column (migration 0003) doesn't shift
+        # positional binds. generation_id stays NULL here — the analysis write path is not
+        # generation-aware in this phase (Phase 6.4b).
+        self.dal.conn.execute(
+            "INSERT OR REPLACE INTO rule_runs(run_id,cycle_id,ruleset_version,config_version,"
+            "input_fingerprint,finding_count) VALUES(?,?,?,?,?,?)",
             (run["run_id"], run.get("cycle_id"), run["ruleset_version"], run["config_version"],
              run["input_fingerprint"], run["finding_count"]))
     def get_by_cycle(self, cycle_id) -> Optional[Dict[str, Any]]:
