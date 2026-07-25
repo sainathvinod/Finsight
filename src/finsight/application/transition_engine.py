@@ -7,7 +7,7 @@ from __future__ import annotations
 from typing import Any, Dict
 from finsight.domain.review_cycle import CycleState, has_reached
 from finsight.domain.lifecycle import (
-    SourceBinding, IntakeStage, ReviewGeneration, AnalyticalState, CreationReason,
+    SourceBinding, IntakeStage, ReviewGeneration, AnalyticalState, CreationReason, ExportArtifact,
 )
 from finsight.application import intake as INTAKE
 from finsight.application.analysis import verified_dataset_fingerprint
@@ -19,7 +19,8 @@ _log = get_logger("transition")
 class TransitionEngine:
     def __init__(self, cycle_repo, ingested_repo, run_repo, finding_repo, audit, uow, hasher,
                  pipeline, verification, analysis, reporting, export, clock, actor="local-user",
-                 source_binding_repo=None, cycle_lifecycle_repo=None, review_generation_repo=None):
+                 source_binding_repo=None, cycle_lifecycle_repo=None, review_generation_repo=None,
+                 export_artifact_repo=None):
         self.cycle_repo = cycle_repo
         self.ingested_repo = ingested_repo
         self.run_repo = run_repo
@@ -41,6 +42,8 @@ class TransitionEngine:
         # Phase 6.4cA: verification persists its complete verification basis by creating the WORKING
         # generation at analytical_state=VERIFIED (INITIAL_VERIFICATION). Optional/None in direct tests.
         self.review_generation_repo = review_generation_repo
+        # R1-M3: immutable export identity (ADR-015). Optional; None in direct-construction tests.
+        self.export_artifact_repo = export_artifact_repo
 
     # ---- primitives ----
     def audit_event(self, cycle_id: str, action: str, detail: Dict[str, Any]) -> None:
@@ -218,11 +221,48 @@ class TransitionEngine:
         def body():
             run = self.run_repo.get_by_cycle(cid) or {}
             summary = ctx.get("summary") or self.reporting.summary(cycle, self.finding_repo.list(cid), run)
-            export = self.export.build(cycle, summary, run, data_as_of=self.clock.now())
+            gen = self._current_generation(cid)
+            manifest = self._export_manifest(cid, cycle, gen, run) if gen else None
+            export = self.export.build(cycle, summary, run, data_as_of=self.clock.now(), manifest=manifest)
             self.audit_event(cid, "export", {"period": export["period"]})
             ctx["export"] = export
             self._advance_current_generation(cid, AnalyticalState.EXPORTED)
+            self._persist_export_artifact(cid, gen, run, export)
         self.transition(cycle, CycleState.EXPORTED, body)
+
+    def _current_generation(self, cid):
+        if self.review_generation_repo is None:
+            return None
+        return (self.review_generation_repo.published_generation(cid)
+                or self.review_generation_repo.working_generation(cid))
+
+    def _export_manifest(self, cid, cycle, gen, run):
+        """ADR-015 §3 manifest, embedded in the export content: identifies the exact generation, run,
+        versions, and verified basis that produced the export. R1 is single-generation, so status is
+        always 'current' (no supersession). The 'verified-source fingerprint' is the generation's
+        verified-DATASET fingerprint (ADR-015 §3, architect-confirmed)."""
+        return {"cycle_id": cid, "period": cycle.month + " " + cycle.year,
+                "generation_id": gen.generation_id, "sequence_number": gen.sequence_number,
+                "verified_source_fingerprint": gen.verified_fingerprint,
+                "extractor_version": gen.extractor_version, "creation_reason": gen.creation_reason.value,
+                "run_id": run.get("run_id"), "ruleset_version": run.get("ruleset_version"),
+                "config_version": run.get("config_version"), "input_fingerprint": run.get("input_fingerprint"),
+                "status": "current", "exported_at": self.clock.now()}
+
+    def _persist_export_artifact(self, cid, gen, run, export):
+        """Persist an IMMUTABLE export identity record (ADR-015 §3). Append-only (migration 0003 blocks
+        update/delete); one export per generation in R1. Idempotent: skipped if already recorded, so a
+        resume never duplicates it. Requires the run to be generation-linked (R1-M2) so the export
+        cycle/generation/run agreement trigger passes."""
+        if self.export_artifact_repo is None or gen is None or not run.get("run_id"):
+            return
+        export_id = "exp-" + gen.generation_id
+        if self.export_artifact_repo.get(export_id) is not None:
+            return
+        self.export_artifact_repo.insert(ExportArtifact(
+            export_id=export_id, cycle_id=cid, generation_id=gen.generation_id, run_id=run["run_id"],
+            export_path="%s-%s.json" % (cid, gen.generation_id), export_fingerprint=self.export.fingerprint(export),
+            created_at=self.clock.now(), actor=self.actor))
 
     # ---- batch recompute + drive (used by Orchestrator) ----
     def new_ctx(self, ged_path, budget_path) -> Dict[str, Any]:
