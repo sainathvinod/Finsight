@@ -281,7 +281,6 @@ class AskFinView(QWidget):
         self._provider_status.setText("Local AI status unavailable")
         self._guidance.setText(_LOCAL_SETUP)
         self._guidance.setVisible(True)
-        self._guidance.setVisible(True)
 
     # --- control state ---
     def _sync_controls_enabled(self) -> None:
