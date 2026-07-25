@@ -34,3 +34,6 @@ Verified by the Phase 6.3 test matrix: switch-with-active-intake, restart at eve
 
 ## 6. Traceability
 Implements ADR-011; preserves ADR-003 (determinism) and ADR-006 (verified dataset). Source binding + working-set are additive to the ADR-004 SQLite store; no deterministic tables change. Anchors decisions 13–15.
+
+## 7. Amendment — Candidate vs Generation (Phase 6.3A, 2026-07-25)
+Per ADR-011 §7, reconstruction operates at two levels: (a) the **current candidate** for the cycle's `intake_stage` (re-extract the currently bound source to reach PROCESSED, awaiting verification), and (b) a **generation's verified dataset** (rebuild from the source whose fingerprint equals that generation's `verified_fingerprint`). The "verified fingerprint" referenced in §3 is the **current generation's**. A source change while a generation is EXPORTED puts the review into `source-divergent`; re-verification of the re-processed candidate creates the next generation (never mutates the prior). Legacy cycles whose generation metadata is incomplete (no usable rule-run fingerprint) cannot be reconstructed/re-verified confidently and are labeled "legacy metadata incomplete" (findings retained as history).

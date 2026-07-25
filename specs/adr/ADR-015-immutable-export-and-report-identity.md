@@ -25,3 +25,6 @@ Verified by the Phase 6.3 test matrix: export-manifest consistency; prior-export
 
 ## 6. Traceability
 Implements ADR-011; consumes ADR-012 (fingerprints/generation). Preserves ADR-003 (determinism) and ADR-005 (audit). Records product decisions 11–14. Export retention aligns with ADR-014.
+
+## 7. Amendment — Currentness Derivation (Phase 6.3A, 2026-07-25)
+Per ADR-011 §7, an export belongs to a generation whose analytical_state is EXPORTED. The manifest's "current/superseded status at creation" is a snapshot; **live** currentness is derived from the append-only supersession relation (not by rewriting the export artifact). When a later generation supersedes, the prior `export_artifacts` row is marked superseded via the supersession record and the cycle's current-generation pointer — the export **file/manifest is never rewritten**. The review-level status shown alongside an export is derived from the current generation (ADR-011 §7). Legacy exports lacking full version/fingerprint metadata are labeled honestly ("legacy metadata incomplete"), never fabricated.
