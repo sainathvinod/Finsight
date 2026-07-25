@@ -1,6 +1,20 @@
+# Implements:
+#   Feature: F-01-01 — Monthly Review Cycle Workspace (incl. abandonment/inactivity, DEC-035)
+#   ADRs: ADR-014 (abandonment + inactivity reminders); ADR-011 §9 (published = trusted status)
+#         ADR-013 (Ollama-independent core)
+#   UI surface: Reviews (home) screen.
+#
+# Product purpose:
+#   Lists persisted reviews and lets a reviewer select/open one. Surfaces each selected review's
+#   lifecycle: a deterministic 30/60-day inactivity reminder and an explicit, reversible
+#   abandon / resume action.
+#
+# Trust / lifecycle constraints:
+#   - Abandonment is explicit + non-destructive (routed through the controller/service); the reminder
+#     is informational and NEVER changes review state automatically. No AI dependency.
 from __future__ import annotations
 from PySide6.QtCore import Signal, QModelIndex
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QStackedWidget, QPushButton
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QStackedWidget, QPushButton, QLabel
 from finsight.delivery.desktop.components import SectionHeader, DataTable
 from finsight.delivery.desktop.components.first_run import build_first_run_card, FIRST_RUN_LEAD
 from finsight.delivery.desktop.models import ReviewsTableModel
@@ -9,7 +23,8 @@ from finsight.delivery.desktop.theme import tokens as t
 
 class ReviewsView(QWidget):
     """Home: list persisted reviews, or a first-run welcome when the database is empty. Selecting a
-    row sets the active review; opening navigates to the review. 'Create review' starts the workflow."""
+    row sets the active review; opening navigates to the review. 'Create review' starts the workflow.
+    A lifecycle bar shows the selected review's inactivity reminder + abandon/resume (ADR-014)."""
 
     reviewActivated = Signal(str)   # cycle_id when a review is opened
     newReviewRequested = Signal()   # user asked to create a new review
@@ -41,7 +56,45 @@ class ReviewsView(QWidget):
         self._stack.addWidget(first_run)
         root.addWidget(self._stack, 1)
 
+        # Lifecycle bar (ADR-014): inactivity reminder + explicit abandon/resume for the selected review.
+        self._lifecycle_row = QHBoxLayout()
+        self._lifecycle_msg = QLabel("")
+        self._lifecycle_msg.setProperty("role", "kvVal")
+        self._lifecycle_msg.setWordWrap(True)
+        self._lifecycle_row.addWidget(self._lifecycle_msg, 1)
+        self._lifecycle_btn = QPushButton("")
+        self._lifecycle_btn.setProperty("role", "secondary")
+        self._lifecycle_btn.clicked.connect(self._on_lifecycle_action)
+        self._lifecycle_row.addWidget(self._lifecycle_btn)
+        root.addLayout(self._lifecycle_row)
+
+        controller.reviewDispositionChanged.connect(lambda _c: self._refresh_lifecycle())
         self.refresh()
+
+    def _refresh_lifecycle(self) -> None:
+        cid = self.selected_review_id()
+        if not cid:
+            self._lifecycle_msg.setText("")
+            self._lifecycle_btn.setText("")
+            self._lifecycle_btn.setVisible(False)
+            return
+        status = self._c.review_lifecycle_status(cid)
+        abandoned = status.disposition.value == "Abandoned"
+        # Message: abandoned state is explicit; otherwise the (possibly empty) inactivity reminder.
+        self._lifecycle_msg.setText("This review is abandoned. Resume it to continue."
+                                    if abandoned else status.message)
+        self._lifecycle_btn.setText("Resume review" if abandoned else "Mark abandoned")
+        self._lifecycle_btn.setVisible(True)
+
+    def _on_lifecycle_action(self) -> None:
+        cid = self.selected_review_id()
+        if not cid:
+            return
+        status = self._c.review_lifecycle_status(cid)
+        if status.disposition.value == "Abandoned":
+            self._c.resume_abandoned_review(cid)
+        else:
+            self._c.abandon_review(cid)     # explicit, audited, non-destructive; reversible
 
     def refresh(self) -> None:
         rows = self._c.reviews_with_status()
@@ -59,8 +112,10 @@ class ReviewsView(QWidget):
         # here never silently changes the active review.
         target = self._row_for_cycle(active) if active else 0
         if target is None:
+            self._refresh_lifecycle()
             return                              # active review not in the list — leave it unchanged
         self._table.selectRow(target)           # currentRowChanged -> _sync_selection (no-op if active)
+        self._refresh_lifecycle()
 
     def _row_for_cycle(self, cycle_id):
         if not cycle_id:
@@ -90,9 +145,18 @@ class ReviewsView(QWidget):
     def primary_action_text(self) -> str:
         return self._first_run_btn.text()
 
+    def lifecycle_message(self) -> str:
+        """The lifecycle bar text for the selected review (inactivity reminder or abandoned notice)."""
+        return self._lifecycle_msg.text()
+
+    def lifecycle_action_text(self) -> str:
+        """'Mark abandoned' / 'Resume review' / '' — the abandon/resume affordance label."""
+        return self._lifecycle_btn.text()
+
     def _on_current_changed(self, current: QModelIndex, _prev: QModelIndex) -> None:
         if current.isValid():
             self._sync_selection(current.row())
+            self._refresh_lifecycle()
 
     def _sync_selection(self, row: int) -> None:
         item = self._model.review_at(row)
