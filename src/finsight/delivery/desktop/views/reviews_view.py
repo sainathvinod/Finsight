@@ -45,12 +45,44 @@ class ReviewsView(QWidget):
 
     def refresh(self) -> None:
         rows = self._c.reviews_with_status()
+        active = self._c.active_review_id
+        # Rebuilding the model must not emit a destructive active-review change (Phase 6.4a).
+        sm = self._table.selectionModel()
+        sm.blockSignals(True)
         self._model.set_rows(rows)
+        sm.blockSignals(False)
         self._stack.setCurrentIndex(0 if rows else 1)   # table, else first-run welcome
-        if rows:
-            self._table.selectRow(0)  # emits currentRowChanged -> sets active review
+        if not rows:
+            return
+        # Reselect the ACTIVE review by cycle_id (not row 0). Only default to the first row when no
+        # review is active. Selecting the active review is a no-op in the controller, so navigating
+        # here never silently changes the active review.
+        target = self._row_for_cycle(active) if active else 0
+        if target is None:
+            return                              # active review not in the list — leave it unchanged
+        self._table.selectRow(target)           # currentRowChanged -> _sync_selection (no-op if active)
+
+    def _row_for_cycle(self, cycle_id):
+        if not cycle_id:
+            return None
+        for r in range(self._model.rowCount()):
+            item = self._model.review_at(r)
+            if item is not None and item.cycle_id == cycle_id:
+                return r
+        return None
 
     # --- public seams ---
+    def selected_review_id(self):
+        idx = self._table.currentIndex()
+        item = self._model.review_at(idx.row()) if idx.isValid() else None
+        return item.cycle_id if item is not None else None
+
+    def refresh_preserves_active_review(self) -> bool:
+        """True iff the current table selection matches the controller's active review (or there is
+        no active review). Used to verify navigation is non-destructive."""
+        active = self._c.active_review_id
+        return active is None or self.selected_review_id() == active
+
     def first_run_message(self) -> str:
         """The welcome guidance shown on an empty database ('' when reviews exist)."""
         return FIRST_RUN_LEAD if self._stack.currentIndex() == 1 else ""

@@ -5,7 +5,7 @@ from finsight.application.read_models.views import (
     ReviewStatusView, FindingView, AuditEventView, SummaryView,
 )
 from finsight.application.workflow import UploadResult, ValidationResult, AnalysisResult, ExportResult
-from finsight.application.review_session import ReviewSession
+from finsight.application.review_working_set import ReviewWorkingSetManager
 from finsight.application.ai.ask_fin_contracts import AskFinRequest
 from finsight.delivery.desktop.async_worker import run_async
 from finsight.diagnostics import get_logger
@@ -18,9 +18,10 @@ DEFAULT_USER_ID = "local-user"
 
 class AppController(QObject):
     """Coordinates the UI with the read-only query services and the stateless review workflow
-    command service. The controller OWNS the active ReviewSession (transient working context); the
-    UI never touches repositories, SQL, the rules engine, or the database, and performs no
-    financial logic."""
+    command service. The controller owns the ACTIVE-REVIEW POINTER and a ReviewWorkingSetManager
+    (transient working data keyed by cycle_id); switching reviews never destroys another review's
+    working data (Phase 6.4a). The UI never touches repositories, SQL, the rules engine, or the
+    database, and performs no financial logic."""
 
     activeReviewChanged = Signal(str)   # cycle_id, or "" when cleared
     reviewsChanged = Signal()           # a review was created
@@ -31,38 +32,52 @@ class AppController(QObject):
         super().__init__(parent)
         self._s = services
         self._active: Optional[str] = None
-        self._session: Optional[ReviewSession] = None
+        # Transient working data per cycle (Phase 6.4a). In-process only; NOT persisted, NOT
+        # reconstructed here (that is Phase 6.4c). Each cycle keeps its own working set.
+        self._working = ReviewWorkingSetManager()
         # Ask Fin backend runs the whole AskFinService pipeline OFF the UI thread on a worker-local
         # SQLite connection (injected; None disables Ask Fin). The controller never constructs a
         # provider or touches the AI stack directly.
         self._ask_fin = ask_fin_backend
         self._user_id = DEFAULT_USER_ID
 
-    # --- active review + owned session ---
+    # --- active review pointer + cycle-keyed working sets ---
     @property
     def active_review_id(self) -> Optional[str]:
         return self._active
 
-    def _session_for(self, cycle_id: str) -> ReviewSession:
-        if self._session is None or self._session.cycle_id != cycle_id:
-            self._session = ReviewSession(cycle_id)
-            self._active = cycle_id
-        return self._session
+    def _session_for(self, cycle_id: str):
+        """The workflow session (controlled mutable working data) for a cycle. Preserved across
+        review switches; obtaining it never changes the active review or resets another cycle."""
+        return self._working.get_or_create(cycle_id).session
 
     def select_review(self, cycle_id: str) -> None:
         if cycle_id == self._active:
-            return
+            return                                  # re-selecting the active review is a no-op
         self._active = cycle_id
-        self._session = ReviewSession(cycle_id) if cycle_id else None
+        if cycle_id:
+            self._working.get_or_create(cycle_id)   # ensure a working set; never resets others
         self.activeReviewChanged.emit(cycle_id or "")
 
     def clear_review(self) -> None:
+        # Clears only the active-review pointer; working sets are preserved (a later re-select
+        # returns the same data; a new review gets its own set).
         self._active = None
-        self._session = None
         self.activeReviewChanged.emit("")
 
     def begin_new_review(self) -> None:
         self.clear_review()
+
+    # --- Phase 6.4a test seams ---
+    def working_set_cycle_ids(self) -> List[str]:
+        return self._working.cycle_ids()
+
+    def has_working_set(self, cycle_id: str) -> bool:
+        return self._working.get(cycle_id) is not None
+
+    def working_set_identity(self, cycle_id: str) -> Optional[int]:
+        ws = self._working.get(cycle_id)
+        return id(ws) if ws is not None else None
 
     # --- read-only queries ---
     def reviews_with_status(self) -> List[ReviewStatusView]:
@@ -91,8 +106,8 @@ class AppController(QObject):
 
     # --- Phase 5.4: verification preview, account labels, readiness (session-scoped where noted) ---
     def verification_preview(self, cycle_id: str):
-        s = self._session
-        return self._s.workflow.verification_preview(s) if (s and s.cycle_id == cycle_id) else None
+        ws = self._working.get(cycle_id)
+        return self._s.workflow.verification_preview(ws.session) if ws else None
 
     def review_readiness(self, cycle_id: str):
         """Deterministic readiness derived from persisted state, enriched by the session snapshot."""
@@ -101,18 +116,18 @@ class AppController(QObject):
                                self.validation_snapshot(cycle_id))
 
     def has_session_context(self, cycle_id: str) -> bool:
-        s = self._session
-        return bool(s and s.cycle_id == cycle_id and s.has_files())
+        ws = self._working.get(cycle_id)
+        return bool(ws and ws.has_files())
 
     def validation_snapshot(self, cycle_id: str):
-        s = self._session
-        return self._s.workflow.validation_snapshot(s) if (s and s.cycle_id == cycle_id) else None
+        ws = self._working.get(cycle_id)
+        return self._s.workflow.validation_snapshot(ws.session) if ws else None
 
     # --- workflow commands (may raise finsight.application.errors.FinsightAppError) ---
     def create_review(self, cycle_id: str, month: str, year: str):
         cycle = self._s.workflow.create_review(cycle_id, month, year)
         self._active = cycle.cycle_id
-        self._session = ReviewSession(cycle.cycle_id)
+        self._working.get_or_create(cycle.cycle_id)   # distinct working set for the new cycle
         self.activeReviewChanged.emit(cycle.cycle_id)
         self.reviewsChanged.emit()
         self.workflowChanged.emit(cycle.cycle_id)
