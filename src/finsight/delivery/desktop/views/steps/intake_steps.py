@@ -6,11 +6,11 @@ from finsight.delivery.desktop.components.form_row import FormRow
 from finsight.delivery.desktop.views.steps.base import StepPanel
 from finsight.delivery.desktop import presentation as pres
 from finsight.application.errors import FinsightAppError
+from finsight.application.source_format import QT_FILE_FILTER as _WORKBOOKS, ACCEPTED_LABEL
 from finsight.delivery.desktop.theme import tokens as t
 
 _MONTHS = ["January", "February", "March", "April", "May", "June",
            "July", "August", "September", "October", "November", "December"]
-_WORKBOOKS = "Workbooks (*.xlsx *.xls);;All files (*)"
 
 # Approved Release-1 sources (backend-supported) and honestly-deferred future types (FR-004/NFR-045).
 _DEFERRED_SOURCES = "Invoices, resource sheets, contracts/SOWs, and rate cards are planned and not yet accepted."
@@ -112,9 +112,9 @@ class UploadPanel(StepPanel):
         self._ged = None
         self._bud = None
         self._ged_field = QLineEdit(); self._ged_field.setReadOnly(True)
-        self._ged_field.setPlaceholderText("Accepted: .xlsx, .xls")
+        self._ged_field.setPlaceholderText(ACCEPTED_LABEL)
         self._bud_field = QLineEdit(); self._bud_field.setReadOnly(True)
-        self._bud_field.setPlaceholderText("Accepted: .xlsx, .xls")
+        self._bud_field.setPlaceholderText(ACCEPTED_LABEL)
         ged_btn = QPushButton("Choose GED…"); ged_btn.setProperty("role", "secondary")
         bud_btn = QPushButton("Choose Budget…"); bud_btn.setProperty("role", "secondary")
         ged_row = QWidget(); gl = QHBoxLayout(ged_row); gl.setContentsMargins(0, 0, 0, 0); gl.setSpacing(t.SP_2)

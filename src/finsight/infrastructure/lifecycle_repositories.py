@@ -37,6 +37,8 @@ class SourceBindingRepoSqlite:
         self.dal = dal
 
     def upsert(self, b: SourceBinding) -> None:
+        """Low-level unguarded write (INSERT or REPLACE identity+path). Prefer bind() on the workflow
+        paths so a trusted source identity can never be silently overwritten."""
         with _as_constraint_error():
             self.dal.conn.execute(
                 "INSERT INTO source_bindings(cycle_id,document_type,last_known_path,source_fingerprint,"
@@ -46,6 +48,20 @@ class SourceBindingRepoSqlite:
                 "selected_at=excluded.selected_at, actor=excluded.actor",
                 (b.cycle_id, b.document_type, b.last_known_path, b.source_fingerprint, b.selected_at,
                  b.actor))
+
+    def bind(self, b: SourceBinding) -> None:
+        """Guarded binding write with explicit semantics (Phase 6.4cA):
+        - INITIAL_BIND: no existing binding -> record path + identity.
+        - PATH_REBIND: existing binding with the SAME source_fingerprint -> update the path hint only.
+        - SOURCE_CHANGE: existing binding with a DIFFERENT fingerprint -> REFUSED. A changed source
+          must never become current through a generic write; it requires explicit re-verification.
+        A trusted source identity (verified/analyzed review) is thus never silently replaced."""
+        existing = self.get(b.cycle_id, b.document_type)
+        if existing is not None and existing.source_fingerprint != b.source_fingerprint:
+            raise LifecycleConstraintError(
+                "refusing to overwrite the trusted source identity of %s/%s (changed source requires "
+                "explicit re-verification)" % (b.cycle_id, b.document_type))
+        self.upsert(b)
 
     def get(self, cycle_id: str, document_type: str) -> Optional[SourceBinding]:
         r = self.dal.conn.execute(

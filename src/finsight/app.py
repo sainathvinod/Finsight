@@ -5,7 +5,7 @@ from typing import Any, Dict, TYPE_CHECKING
 from finsight.infrastructure.persistence import (Dal, SqliteUnitOfWork, ReviewCycleRepoSqlite,
     IngestedFileRepoSqlite, FindingRepoSqlite, RuleRunRepoSqlite, ConfigRepoSqlite)
 from finsight.infrastructure.lifecycle_repositories import (
-    SourceBindingRepoSqlite, CycleLifecycleRepoSqlite)
+    SourceBindingRepoSqlite, CycleLifecycleRepoSqlite, ReviewGenerationRepoSqlite)
 from finsight.infrastructure.audit import AuditStoreSqlite
 from finsight.infrastructure.readers import ExcelReader
 from finsight.infrastructure.files import FileHasher
@@ -84,6 +84,7 @@ def build_app(db_path: str, clock, reader=None) -> Container:
     config_repo = ConfigRepoSqlite(dal)
     source_binding_repo = SourceBindingRepoSqlite(dal)       # Phase 6.4c reconstruction hint + identity
     cycle_lifecycle_repo = CycleLifecycleRepoSqlite(dal)     # intake_stage on the current candidate
+    review_generation_repo = ReviewGenerationRepoSqlite(dal)  # Phase 6.4cA: verification basis at VERIFIED
     audit = AuditStoreSqlite(dal, clock)
     hasher = FileHasher()
     reader = reader or ExcelReader()
@@ -106,7 +107,8 @@ def build_app(db_path: str, clock, reader=None) -> Container:
     orch = Orchestrator(cycle_repo, ingested_repo, run_repo, finding_repo, audit, uow, hasher,
                         pipeline, verification, analysis, reporting, export, clock,
                         source_binding_repo=source_binding_repo,
-                        cycle_lifecycle_repo=cycle_lifecycle_repo)
+                        cycle_lifecycle_repo=cycle_lifecycle_repo,
+                        review_generation_repo=review_generation_repo)
     return Container(dal=dal, uow=uow, orch=orch, cycle_repo=cycle_repo, ingested_repo=ingested_repo,
                      run_repo=run_repo, finding_repo=finding_repo, config_repo=config_repo,
                      audit=audit, config=active, clock=clock, source_binding_repo=source_binding_repo,

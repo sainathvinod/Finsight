@@ -10,6 +10,7 @@ from finsight.delivery.desktop.views.steps import (
 )
 from finsight.delivery.desktop.theme import tokens as t
 from finsight.domain.review_cycle import has_reached, CycleState
+from finsight.application.source_format import QT_FILE_FILTER
 
 _VALIDATION_STEP = 2
 _VERIFICATION_STEP = 4
@@ -138,7 +139,7 @@ class WorkflowView(QWidget):
             return
         # Filenames only reach the banner; the OS dialog handles paths — nothing else displays them.
         path, _ = QFileDialog.getOpenFileName(self, "Locate %s source" % document_type, "",
-                                              "Excel workbook (*.xlsx)")
+                                              QT_FILE_FILTER)
         if not path:
             return
         result = self._c.rebind_source(cid, document_type, path)

@@ -108,7 +108,7 @@ class AppController(QObject):
         # failed reconstruction carries no session, so a valid cached working set is never replaced.
         if result.usable_session is not None:
             self._working.install(cycle_id, result.usable_session)
-        self._s.recovery.record_divergence(cycle_id, result.status)   # persisted, idempotent
+        self._s.recovery.record_divergence(cycle_id, result)   # persisted, per-pair idempotent
         self._record_recovery(cycle_id, result)
         return result
 

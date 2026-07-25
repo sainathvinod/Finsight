@@ -6,8 +6,11 @@
 from __future__ import annotations
 from typing import Any, Dict
 from finsight.domain.review_cycle import CycleState, has_reached
-from finsight.domain.lifecycle import SourceBinding, IntakeStage
+from finsight.domain.lifecycle import (
+    SourceBinding, IntakeStage, ReviewGeneration, AnalyticalState, CreationReason,
+)
 from finsight.application import intake as INTAKE
+from finsight.application.analysis import verified_dataset_fingerprint
 from finsight.diagnostics import get_logger
 
 _log = get_logger("transition")
@@ -16,7 +19,7 @@ _log = get_logger("transition")
 class TransitionEngine:
     def __init__(self, cycle_repo, ingested_repo, run_repo, finding_repo, audit, uow, hasher,
                  pipeline, verification, analysis, reporting, export, clock, actor="local-user",
-                 source_binding_repo=None, cycle_lifecycle_repo=None):
+                 source_binding_repo=None, cycle_lifecycle_repo=None, review_generation_repo=None):
         self.cycle_repo = cycle_repo
         self.ingested_repo = ingested_repo
         self.run_repo = run_repo
@@ -35,6 +38,9 @@ class TransitionEngine:
         # tests). Source binding = the reconstruction hint (path) + source identity (fingerprint).
         self.source_binding_repo = source_binding_repo
         self.cycle_lifecycle_repo = cycle_lifecycle_repo
+        # Phase 6.4cA: verification persists its complete verification basis by creating the WORKING
+        # generation at analytical_state=VERIFIED (INITIAL_VERIFICATION). Optional/None in direct tests.
+        self.review_generation_repo = review_generation_repo
 
     # ---- primitives ----
     def audit_event(self, cycle_id: str, action: str, detail: Dict[str, Any]) -> None:
@@ -84,7 +90,8 @@ class TransitionEngine:
                 for f in ctx["provenance"]:
                     path = paths.get(f.doc_type)
                     if path:
-                        self.source_binding_repo.upsert(SourceBinding(
+                        # Guarded write: initial bind here; never overwrites a trusted identity.
+                        self.source_binding_repo.bind(SourceBinding(
                             cid, f.doc_type, path, f.fingerprint, self.clock.now(), self.actor))
             if self.cycle_lifecycle_repo is not None:
                 self.cycle_lifecycle_repo.set_intake_stage(cid, IntakeStage.SOURCE_BOUND)
@@ -108,7 +115,42 @@ class TransitionEngine:
 
     def do_verified(self, cycle, ctx):
         cid = cycle.cycle_id
-        self.transition(cycle, CycleState.VERIFIED, lambda: self.audit_event(cid, "verify", {"approved": True}))
+
+        def body():
+            gen_id = self._create_initial_verification_generation(cid, ctx)
+            detail = {"approved": True}
+            if gen_id is not None:
+                detail.update({"generation_id": gen_id, "creation_reason": "INITIAL_VERIFICATION"})
+            self.audit_event(cid, "verify", detail)
+        self.transition(cycle, CycleState.VERIFIED, body)
+
+    def _create_initial_verification_generation(self, cid, ctx):
+        """Persist the verification basis (Phase 6.4cA): create the WORKING generation at VERIFIED with
+        the verified-DATASET fingerprint + extractor version + human actor/timestamp, and point the
+        cycle's working generation at it. INITIAL_VERIFICATION only (first generation of the review);
+        SOURCE_/EXTRACTOR_REVERIFICATION belong to the deferred explicit re-verification flow. Runs
+        INSIDE the do_verified transaction, so it is atomic with the state advance + audit.
+
+        Returns the new generation_id, or None when generation persistence is not wired (direct tests)
+        or a generation already exists (legacy/backfilled review — verification basis unchanged)."""
+        if self.review_generation_repo is None or self.cycle_lifecycle_repo is None:
+            return None
+        if ctx.get("vds") is None:
+            return None
+        if self.review_generation_repo.list_for_cycle(cid):
+            return None                                  # not the first generation -> deferred flow
+        vfp = verified_dataset_fingerprint(ctx["vds"])
+        now = self.clock.now()
+        seq = self.review_generation_repo.next_sequence_number(cid)
+        gen_id = "%s-gen-%d" % (cid, seq)
+        self.review_generation_repo.insert(ReviewGeneration(
+            generation_id=gen_id, cycle_id=cid, sequence_number=seq,
+            analytical_state=AnalyticalState.VERIFIED, creation_reason=CreationReason.INITIAL_VERIFICATION,
+            based_on_generation_id=None, verification_basis_generation_id=None,
+            verified_fingerprint=vfp, extractor_version=getattr(self.pipeline, "extractor_version", None),
+            verification_actor=self.actor, verified_at=now, created_by=self.actor, created_at=now))
+        self.cycle_lifecycle_repo.set_working_generation(cid, gen_id)   # working, NOT published
+        return gen_id
 
     def do_analyzed(self, cycle, ctx):
         cid = cycle.cycle_id

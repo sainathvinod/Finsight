@@ -20,9 +20,9 @@ from finsight.domain.review_cycle import CycleState, has_reached
 from finsight.application.review_session import ReviewSession
 from finsight.application.analysis import verified_dataset_fingerprint
 from finsight.application.pipeline import EXTRACTOR_VERSION
+from finsight.application.source_format import is_supported as _is_supported_source
 
 REQUIRED_DOCS = ("GED", "BUDGET")
-SUPPORTED_EXTENSIONS = (".xlsx",)
 
 
 class RecoveryStatus(str, Enum):
@@ -70,6 +70,8 @@ class RecoveryResult:
     filename: Optional[str] = None                        # basename only, never a full path
     recorded_fingerprint_short: Optional[str] = None      # first 12 chars, for a Details view only
     current_fingerprint_short: Optional[str] = None
+    recorded_fingerprint: Optional[str] = field(default=None, repr=False)   # full — audit identity only
+    current_fingerprint: Optional[str] = field(default=None, repr=False)    # full — audit identity only
     session: Optional[object] = field(default=None, repr=False)   # candidate working set (OK only)
 
     @property
@@ -210,7 +212,7 @@ class ReviewReconstructionService:
         if binding is None:
             return self._missing_binding(cycle_id, None, [document_type])
         fname = os.path.basename(new_path)
-        if os.path.splitext(new_path)[1].lower() not in SUPPORTED_EXTENSIONS:
+        if not _is_supported_source(new_path):       # shared authoritative format policy
             return self._unsupported(cycle_id, document_type, fname)
         try:
             probe = self._e.hasher.probe(new_path)
@@ -223,19 +225,28 @@ class ReviewReconstructionService:
         return self._changed_source(cycle_id, document_type, fname, binding.source_fingerprint,
                                     probe["sha256"])
 
-    # ---------- UI thread: idempotent divergence audit (permanent, not flooded) ----------
-    def record_divergence(self, cycle_id: str, status: RecoveryStatus) -> bool:
-        """Record a permanent 'source_divergence_detected' audit fact exactly once per cycle. Repeated
-        navigation/refresh (which re-detects the same divergence) must NOT append duplicate events.
-        Idempotency is persisted (checks the audit trail), so it holds across restarts too. Returns
-        True only when a new event was appended."""
-        if status not in DIVERGENCE_STATUSES:
+    # ---------- UI thread: divergence audit, idempotent PER FINGERPRINT PAIR ----------
+    def record_divergence(self, cycle_id: str, result: "RecoveryResult") -> bool:
+        """Record a permanent 'source_divergence_detected' audit fact, idempotent per
+        (document_type, recorded_fingerprint, observed_fingerprint). Re-detecting the SAME unresolved
+        divergence (navigation/refresh) appends nothing; a NEW transition (e.g. F2→F3, or a divergence
+        in the other document) appends a distinct event. Idempotency is persisted (checks the audit
+        trail), so it holds across restarts. Returns True only when a new event was appended."""
+        if result.status not in DIVERGENCE_STATUSES:
             return False
+        doc = result.document_type or "verified_dataset"
+        recorded = result.recorded_fingerprint or ""
+        observed = result.current_fingerprint or ""
         for e in self._e.audit.events(cycle_id):
             if e.get("action") == "source_divergence_detected":
-                return False                                    # already recorded — do not flood
+                d = e.get("detail") or {}
+                if (d.get("document_type") == doc and d.get("recorded_fingerprint") == recorded
+                        and d.get("observed_fingerprint") == observed):
+                    return False                                # same unresolved pair — do not flood
         with self._e.uow.atomic():
-            self._e.audit_event(cycle_id, "source_divergence_detected", {"kind": status.value})
+            self._e.audit_event(cycle_id, "source_divergence_detected",
+                                {"kind": result.status.value, "document_type": doc,
+                                 "recorded_fingerprint": recorded, "observed_fingerprint": observed})
         return True
 
     # ---------- UI thread: the only durable write — path-hint re-bind + audit, atomic ----------
@@ -249,7 +260,9 @@ class ReviewReconstructionService:
             return classified                                   # never rebind a divergent/invalid file
         binding = self._bindings.get(cycle_id, document_type)
         with self._e.uow.atomic():
-            self._bindings.upsert(SourceBinding(
+            # Guarded path-rebind: bind() carries the SAME fingerprint, so only the path hint changes;
+            # a different fingerprint would be refused (it can never reach here — classify guards it).
+            self._bindings.bind(SourceBinding(
                 cycle_id, document_type, new_path, binding.source_fingerprint,
                 self._e.clock.now(), self._e.actor))
             self._e.audit_event(cycle_id, "source_rebound",
@@ -310,7 +323,8 @@ class ReviewReconstructionService:
             "The changed source cannot be analyzed as current without re-verification.",
             "Re-verify the changed source to analyze it, or restore the verified file.",
             document_type=doc, filename=fname,
-            recorded_fingerprint_short=_short(recorded), current_fingerprint_short=_short(current))
+            recorded_fingerprint_short=_short(recorded), current_fingerprint_short=_short(current),
+            recorded_fingerprint=recorded, current_fingerprint=current)
 
     def _moved_candidate(self, cid, doc, new_path, fname, fingerprint, rebound=False) -> RecoveryResult:
         what = ("The %s source was re-bound to its new location (identity unchanged)." % doc
@@ -344,4 +358,5 @@ class ReviewReconstructionService:
             "This review cannot be analyzed as current without explicit re-verification.",
             "Re-process and re-verify the source under the current software to continue.",
             recorded_fingerprint_short=_short(inputs.recorded_verified_fingerprint),
-            current_fingerprint_short=_short(computed))
+            current_fingerprint_short=_short(computed),
+            recorded_fingerprint=inputs.recorded_verified_fingerprint, current_fingerprint=computed)
