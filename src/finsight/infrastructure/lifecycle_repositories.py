@@ -1,3 +1,19 @@
+# Implements:
+#   ADRs: ADR-004 (SQLite DAL); ADR-011 §3/§7/§8 (generation model, forward progression);
+#         ADR-012 §3 (source binding); ADR-014; ADR-015
+#
+# Product purpose:
+#   SQLite adapters for the lifecycle persistence ports — source bindings (guarded identity writes),
+#   review generations (insert + forward-only analytical progression + working/published pointers),
+#   supersessions (append-only), export artifacts (append-only), cycle lifecycle pointers.
+#
+# Trust / lifecycle constraints:
+#   - Methods execute but DO NOT commit — the application composes writes in one shared UnitOfWork.
+#   - bind() refuses overwriting a trusted source fingerprint (SOURCE_CHANGE requires re-verification).
+#   - advance_analytical_state() is forward-only (ADR-011 §7: mutable only while current).
+#   - The generation is the analytical authority; cycles.state is a derived mirror (ADR-011 §9).
+#   - No AI dependency; independent of Ollama.
+#
 # SQLite adapters for the lifecycle persistence ports (ADR-011/012/014/015). Phase 6.4b.
 #
 # Convention (matches the rest of the DAL): repository methods execute statements but DO NOT commit —
@@ -22,6 +38,35 @@ from finsight.domain.lifecycle import (
 
 class LifecycleConstraintError(RuntimeError):
     """A lifecycle persistence invariant was violated (repository pre-check or DB constraint/trigger)."""
+
+
+def detect_state_generation_divergence(dal):
+    """Integrity DIAGNOSTIC (Phase 6.4cB, architect-directed DIAGNOSTIC-ONLY): find cycles whose
+    derived mirror `cycles.state` has advanced BEYOND its authoritative working generation's
+    analytical_state — an anomaly that could only arise from the never-released Phase 6.4cA code.
+
+    Implements:
+        ADRs: ADR-011 §7/§9 (generation is authoritative; cycles.state is a derived mirror)
+
+    Why (detection, never repair):
+        A VERIFIED-frozen generation has no rule run / findings / export; advancing it forward to match
+        the mirror would FABRICATE analytical facts (forbidden — ADR-011 invariants). The safe direction
+        is to recompute the mirror DOWN from the generation, which the running app already does. So this
+        only REPORTS divergence (for human inspection); it performs no write and ships no repair
+        migration (the affected data is unreachable in any supported DB — ADR-013 single-user local).
+
+    Returns a list of (cycle_id, cycle_state, generation_analytical_state) for any diverged cycle.
+    """
+    from finsight.domain.review_cycle import state_rank
+    rows = dal.conn.execute(
+        "SELECT c.cycle_id, c.state, g.analytical_state FROM cycles c "
+        "JOIN review_generations g ON g.generation_id = c.working_generation_id").fetchall()
+    diverged = []
+    for cid, cstate, astate in rows:
+        # analytical_state (e.g. 'ANALYZED') maps to the same-named CycleState ('Analyzed').
+        if state_rank(cstate) > state_rank(astate.capitalize()):
+            diverged.append((cid, cstate, astate))
+    return diverged
 
 
 @contextmanager

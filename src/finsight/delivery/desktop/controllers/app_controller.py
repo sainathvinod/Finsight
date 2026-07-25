@@ -1,3 +1,18 @@
+# Implements:
+#   ADRs: ADR-002 (delivery layering — UI depends only on composed services, never repositories/SQL);
+#         ADR-011 §7/§9 (active-review pointer, working vs published); ADR-012 §3 (recovery);
+#         ADR-013 (Ollama-independent core, AI optional)
+#
+# Product purpose / UI surface:
+#   The desktop controller coordinating every workflow screen with the read-only query services and
+#   the stateless review workflow command service. Owns the ACTIVE-REVIEW pointer + the cycle-keyed
+#   ReviewWorkingSetManager, and drives off-UI-thread processing, reconstruction, and Ask Fin.
+#
+# Trust / lifecycle constraints:
+#   - The UI never touches repositories, SQL, the rules engine, or the database; performs no financial
+#     logic. Reconstruction/analysis run off the UI thread; installs are build-then-swap.
+#   - Ask Fin is optional and runs off-thread; the deterministic workflow works with no AI provider.
+#   - Recovery divergence is audited once per (document, fingerprint pair); no path/hash reaches AI.
 from __future__ import annotations
 from typing import Callable, List, Optional
 from PySide6.QtCore import QObject, Signal

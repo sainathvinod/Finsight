@@ -1,3 +1,20 @@
+# Implements:
+#   ADRs: ADR-006 (review-cycle progression drives step availability); ADR-011 §7/§9 (workflow
+#         progress = working generation); ADR-012 §3 (recovery surface); ADR-013 (AI optional)
+#
+# Product purpose / UI surface:
+#   The interactive nine-step review workspace (Setup → Upload → Validation → Processing →
+#   Verification → Analysis → Findings → Summary → Export) with a step rail, per-step panels, and a
+#   recovery banner. Step availability follows the persisted CycleState; each panel calls the workflow
+#   command service (the view never fakes a transition).
+#
+# Trust / lifecycle constraints:
+#   - Reflects the WORKING generation's workflow progress; trusted published surfaces live elsewhere
+#     (Dashboard/Overview/Findings use the published generation — ADR-011 §9).
+#   - Auto-resumes only pre-analysis reviews needing a working set; analyzed+ results view from
+#     persisted state without reconstruction. Recovery/loading/failure states shown via the banner.
+#   - Locate dialog uses the shared source-format policy; no full paths leave the OS dialog.
+#   - Independent of Ollama.
 from __future__ import annotations
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QLabel
 from PySide6.QtWidgets import QStackedWidget, QFileDialog

@@ -77,3 +77,16 @@ A newly created generation is **working, not published**. **The prior published 
 **Ask Fin grounding.** Ask Fin grounds on the **published** generation by default; if none exists, it states there are no analyzed results to explain (never grounds a `VERIFIED`-only generation). The user may explicitly ground on the **working** generation only when it is `ANALYZED+`. One answer grounds on exactly one generation, stated in the answer — never mixed generations.
 
 This supersedes §7 where they differ (single "current" pointer → split working/published; supersession-at-verification → supersession-at-promotion). All other §7 invariants stand.
+
+## 9. Amendment — Derived-Mirror vs Trusted-Output Resolution (Phase 6.4cB clarification, authoritative)
+Phase 6.4cB surfaced a genuine §7-vs-§8 ambiguity (independent architect RED CARD): §7's canonical example re-points `cycles.state` to "Verified (Gen2)" at re-verification (mirror → **working**), while §8/ADR-015 §7 make "current" for reports/exports the **published** generation; §8's "supersedes §7 where they differ" enumerated only two items and never restated what the derived mirror reflects. The following product+architecture decision is **authoritative and closes the ambiguity**:
+
+**When `working_generation_id` and `published_generation_id` differ:**
+- **`cycles.state` reflects the WORKING generation's workflow progress** (the reviewer's in-progress activity).
+- **Trusted product outputs — Dashboard trusted metrics, reports, exports, and Ask Fin — use the PUBLISHED generation until explicit promotion.**
+- **Workflow progress and trusted-output status are distinct concepts.** A working generation may show that review work is in progress while published financial results remain unchanged.
+- **UI surfaces must clearly distinguish "work in progress" (working) from "published trusted results."**
+- **No working data may silently replace or contaminate published output.**
+- **Promotion is the only operation that changes the trusted published generation.**
+
+This **supersedes** §7's canonical example where it re-points the mirror to the working generation for the trusted-output surfaces, and **clarifies** §8's working/published split. All other §7/§8 invariants stand. For a **single-generation** review (the R1 common case — second-generation source replacement / re-verification is **R2**, DEC-023) `working == published` after the first-generation auto-publish at ANALYZED, so the mirror and trusted output coincide and this amendment is a no-op. This decision must not be reopened or reinterpreted during implementation.

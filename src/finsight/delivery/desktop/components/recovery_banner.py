@@ -1,3 +1,16 @@
+# Implements:
+#   ADRs: ADR-012 §3 (recovery states); ADR-013 (Ollama-independent core)
+#
+# Product purpose / UI surface:
+#   Workflow workspace banner. Renders one precise review-recovery state (source available / missing /
+#   moved / changed / unreadable / unsupported / verified-data mismatch / legacy) with a four-part
+#   honest message and a "Locate…" affordance where re-selecting the source helps.
+#
+# Trust / privacy constraints:
+#   - Presentation only: displays the application-computed RecoveryMessage; never decides recovery.
+#   - Shows FILENAMES only, never full local paths; short fingerprint id under a Details tooltip only.
+#   - Nothing here is sent to Ask Fin, AI journals, or exports. Independent of Ollama.
+#
 # Phase 6.4c — review recovery banner. Renders a single, precise recovery state above the workflow.
 # Presentation only: it displays the application-computed RecoveryMessage (what happened / what
 # remains valid / what cannot continue / what to do). It shows FILENAMES, never full local paths, and

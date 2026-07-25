@@ -1,3 +1,20 @@
+# Implements:
+#   ADRs: ADR-011 §3 (data tiers: reconstructed/transient), §7 (candidate reconstruction);
+#         ADR-012 §3 (cycle-keyed ReviewWorkingSetManager)
+#
+# Product purpose:
+#   Holds each review's transient, RECONSTRUCTED working data (selected paths, normalized rows,
+#   verified dataset, readiness) keyed by cycle_id for the process lifetime, so switching reviews
+#   never destroys another review's in-progress work, and a resumed review's working set can be
+#   installed atomically (build-then-swap) after a validated reconstruction.
+#
+# Trust / lifecycle constraints:
+#   - Transient tier: in-memory only, NEVER persisted. No Qt, no infrastructure, no SQLite, no AI.
+#   - Operates on the WORKING generation's reconstructed data; it is never a source of trusted
+#     published output (Dashboard/reports/exports use the published generation — ADR-011 §9).
+#   - Cross-cycle isolation: install() rejects a session whose cycle_id differs.
+#   - Independent of Ollama.
+#
 # Phase 6.4a/6.4c — cycle-keyed working sets (application layer). The transient, RECONSTRUCTED tier of
 # review data (selected paths, normalized rows, verified dataset, readiness) is held per cycle in
 # memory for the process lifetime — NOT a single mutable slot, and NOT persisted. Phase 6.4c adds

@@ -1,3 +1,17 @@
+# Implements:
+#   ADRs: ADR-011 §3/§8 (generation model), ADR-012 §3 (source binding), ADR-014 (abandonment),
+#         ADR-015 (export identity)
+#
+# Product purpose:
+#   Application-facing persistence PORTS for the review lifecycle (source bindings, generations,
+#   supersessions, export artifacts, cycle lifecycle pointers). Protocol interfaces the application
+#   depends on; infrastructure supplies the SQLite adapters via composition.
+#
+# Trust / lifecycle constraints:
+#   - Pure: no sqlite3, no PySide6, no AI. Declares persistence PRIMITIVES only — NO business
+#     workflow (promotion/supersession/creation) which later application services compose atomically.
+#   - Independent of Ollama.
+#
 # Application-facing lifecycle persistence PORTS (ADR-011/012/014/015). Protocol interfaces only —
 # the application depends on these, infrastructure (infrastructure/lifecycle_repositories.py) provides
 # the SQLite adapters via composition. Pure: no sqlite3, no PySide6, no AI, no I/O.

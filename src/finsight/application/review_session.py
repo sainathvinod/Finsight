@@ -1,3 +1,15 @@
+# Implements:
+#   ADRs: ADR-011 §3 (transient tier); ADR-006 (review cycle / verified dataset)
+#
+# Product purpose:
+#   The caller-owned, review-scoped working context for the interactive workflow — the transient
+#   recompute state (selected paths, provenance, extracted rows, verified dataset) the stateless
+#   ReviewWorkflowService operates on between steps.
+#
+# Trust / lifecycle constraints:
+#   - Transient: NOT persisted, holds no repositories/DB connection, no PySide6 types.
+#   - One session belongs to exactly one review (cycle_id). Independent of Ollama.
+#
 # A caller-owned, review-scoped working context for the interactive workflow. It carries the
 # transient recompute state (selected paths, provenance, extracted data, verified dataset) that the
 # step-oriented ReviewWorkflowService needs between steps. It is NOT persisted, holds NO repositories
