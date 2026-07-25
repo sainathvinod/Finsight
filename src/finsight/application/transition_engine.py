@@ -183,8 +183,22 @@ class TransitionEngine:
                                  "severity": f.severity, "type": f.finding_type})
             ctx["findings"] = findings
             ctx["run"] = run
+            self._link_generation_lineage(cid, run["run_id"])   # run + findings -> current generation
             self._advance_current_generation(cid, AnalyticalState.ANALYZED, publish=True)
         self.transition(cycle, CycleState.ANALYZED, body)
+
+    def _link_generation_lineage(self, cid, run_id):
+        """R1-M2 (ADR-011 §3/§8): bind the rule run and the cycle's findings to the current (working)
+        generation, so every result belongs to exactly one generation lineage. Run first, then findings
+        (the migration 0003 finding⇒run trigger requires the run to already carry the generation).
+        No-op for legacy/generation-less reviews (nothing to link)."""
+        if self.review_generation_repo is None:
+            return
+        working = self.review_generation_repo.working_generation(cid)
+        if working is None:
+            return
+        self.run_repo.set_generation(run_id, working.generation_id)
+        self.finding_repo.set_generation_for_cycle(cid, working.generation_id)
 
     def do_summarized(self, cycle, ctx):
         cid = cycle.cycle_id

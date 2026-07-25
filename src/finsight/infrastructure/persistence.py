@@ -75,6 +75,12 @@ class FindingRepoSqlite:
             out.append({"id": r[0], "rule_id": r[1], "severity": r[2], "account": r[3],
                         "finding_type": r[4], "evidence": json.loads(r[5]), "source_refs": json.loads(r[6])})
         return out
+    def set_generation_for_cycle(self, cycle_id, generation_id):
+        # R1-M2 lineage linkage (ADR-011 §3: findings belong to exactly one generation). Attaches the
+        # cycle's not-yet-attached findings to their generation. The run must already carry this
+        # generation (migration 0003 finding⇒run trigger); the caller orders that write first.
+        self.dal.conn.execute("UPDATE findings SET generation_id=? WHERE cycle_id=? AND generation_id IS NULL",
+                              (generation_id, cycle_id))
     def list_views(self, cycle_id) -> List[Dict[str, Any]]:  # read-only; adds period + state for the UI
         rows = self.dal.conn.execute(
             "SELECT id,rule_id,severity,period,account,finding_type,evidence,source_refs,state "
@@ -97,6 +103,10 @@ class RuleRunRepoSqlite:
             "input_fingerprint,finding_count) VALUES(?,?,?,?,?,?)",
             (run["run_id"], run.get("cycle_id"), run["ruleset_version"], run["config_version"],
              run["input_fingerprint"], run["finding_count"]))
+    def set_generation(self, run_id, generation_id):
+        # R1-M2 lineage linkage (ADR-011 §3/§8: each generation has exactly one rule run). Attaches the
+        # run to its generation. The partial unique index (migration 0003) enforces one-run-per-generation.
+        self.dal.conn.execute("UPDATE rule_runs SET generation_id=? WHERE run_id=?", (generation_id, run_id))
     def get_by_cycle(self, cycle_id) -> Optional[Dict[str, Any]]:
         r = self.dal.conn.execute("SELECT run_id,ruleset_version,config_version,input_fingerprint,finding_count "
             "FROM rule_runs WHERE cycle_id=? ORDER BY run_id LIMIT 1", (cycle_id,)).fetchone()
