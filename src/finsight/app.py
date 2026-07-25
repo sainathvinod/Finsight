@@ -314,6 +314,15 @@ def build_ask_fin_backend(db_path: str, *, settings=None, opener=None,
                                     clock_factory=clock_factory)
 
 
+def acquire_single_instance(db_path: str):
+    """Composition-root helper (ADR-013 §3): acquire the advisory single-instance lock for a database.
+    Returns the HELD SingleInstanceLock, or None when another live instance already holds it (the caller
+    must then refuse to open the database). Delivery calls this instead of importing infrastructure."""
+    from finsight.infrastructure.single_instance import SingleInstanceLock
+    lock = SingleInstanceLock(db_path + ".lock")
+    return lock if lock.acquire() else None
+
+
 def build_query_services(db_path: str, clock=None) -> "AppServices":
     """Composition root for the desktop UI: wires the read-only query services and the review
     workflow command service (which drives the shared TransitionEngine). A production SystemClock
