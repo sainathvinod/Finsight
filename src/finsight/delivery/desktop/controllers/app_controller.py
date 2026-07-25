@@ -46,6 +46,7 @@ class AppController(QObject):
     workflowChanged = Signal(str)       # a transition occurred for cycle_id
     processingChanged = Signal(bool)    # processing started (True) / finished (False)
     reviewRecoveryChanged = Signal(str) # cycle_id whose recovery status changed (Phase 6.4c)
+    reviewDispositionChanged = Signal(str)  # cycle_id abandoned/resumed (R1-M4, ADR-014/DEC-035)
 
     def __init__(self, services, parent=None, ask_fin_backend=None):
         super().__init__(parent)
@@ -200,6 +201,21 @@ class AppController(QObject):
         self._record_recovery(cycle_id, result)
         self.reviewRecoveryChanged.emit(cycle_id)
         return result
+
+    # --- R1-M4: review abandonment + inactivity (ADR-014 / DEC-035; explicit, audited, reversible) ---
+    def abandon_review(self, cycle_id: str) -> None:
+        self._s.abandonment.abandon(cycle_id)
+        self.reviewDispositionChanged.emit(cycle_id)
+        self.reviewsChanged.emit()
+
+    def resume_abandoned_review(self, cycle_id: str) -> None:
+        self._s.abandonment.resume(cycle_id)
+        self.reviewDispositionChanged.emit(cycle_id)
+        self.reviewsChanged.emit()
+
+    def review_lifecycle_status(self, cycle_id: str):
+        """(disposition, inactive_days, InactivityLevel, message) — deterministic; no AI."""
+        return self._s.abandonment.status(cycle_id)
 
     # --- read-only queries ---
     def reviews_with_status(self) -> List[ReviewStatusView]:

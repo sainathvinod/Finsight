@@ -62,7 +62,7 @@ E-09 (AI Assistance, R2) and E-11/E-12/E-13 (future releases) are deliberately *
 
 ### F-01-01 — Monthly Review Cycle Workspace
 - **Classification:** Capability, R1 · **Status:** Approved
-Create/name a monthly review cycle; see its status at all times (loaded → verified → analyzed → reported) with outstanding items; pause and resume across days and restarts. *Traces:* FR-006, FR-081; NFR-006.
+Create/name a monthly review cycle; see its status at all times (loaded → verified → analyzed → reported) with outstanding items; pause and resume across days and restarts. **Scope extended (DEC-035, R1):** explicit, audited, non-destructive, reversible **abandonment** (`Active | Abandoned` disposition, orthogonal to analytical state) and deterministic **30/60-day inactivity reminders** (informational, non-blocking; no automatic expiry/archival/state change). *Traces:* FR-006, FR-081; NFR-006; ADR-014, DEC-035; FR-108 (non-destructive retention).
 
 ### F-01-02 — File Upload & Acceptance
 - **Classification:** Capability, R1 · **Status:** Approved
@@ -228,7 +228,7 @@ The **shared, uniformly-labeled export capability** — one implementation of fo
 
 ### F-08-01 — Audit Event Capture Contract
 - **Classification:** **Enabler**, R1 · **Status:** Approved
-The event taxonomy and interface every component uses: ingestion, verification, corrections, rule runs, config changes, AI interactions, consents, reports, exports — attributed, timestamped, fingerprinted; multi-month retention (FR-108) lives in its storage behavior. *Depended on by:* DoD clause 1 across every epic. **Guardrail:** event schema versioned from day one (v1, evolvable); taxonomy derived strictly from FR-084–089, nothing speculative. In the walking skeleton from story one.
+The event taxonomy and interface every component uses: ingestion, verification, corrections, rule runs, config changes, AI interactions, consents, reports, exports — attributed, timestamped, fingerprinted; multi-month retention (FR-108) lives in its storage behavior. **Taxonomy extended (DEC-035, R1):** `review_abandoned` / `review_resumed` lifecycle events (append-only, attributed, timestamped) per ADR-014. *Depended on by:* DoD clause 1 across every epic. **Guardrail:** event schema versioned from day one (v1, evolvable); taxonomy derived strictly from FR-084–089 (plus ADR-014/DEC-035 for the abandonment lifecycle events), nothing speculative. In the walking skeleton from story one.
 
 ### F-08-02 — Audit Trail Explorer
 - **Classification:** Capability, R1 · **Status:** Approved

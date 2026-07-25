@@ -24,6 +24,7 @@ if TYPE_CHECKING:  # type-only imports for the service-container annotations (ke
         ReviewQueryService, FindingsQueryService, AuditQueryService, SummaryQueryService)
     from finsight.application.workflow import ReviewWorkflowService
     from finsight.application.reconstruction import ReviewReconstructionService
+    from finsight.application.abandonment import AbandonmentService
     from finsight.application.ai import (
         ConversationService, ReviewMemoryService, PreferencesService, GroundingQueryService)
     from finsight.application.ai.ask_fin import AskFinService
@@ -141,6 +142,7 @@ class AppServices:
     summary: "SummaryQueryService"
     workflow: "ReviewWorkflowService"
     recovery: "ReviewReconstructionService"
+    abandonment: "AbandonmentService"
     ai: "AiServices"
 
 
@@ -321,6 +323,7 @@ def build_query_services(db_path: str, clock=None) -> "AppServices":
         ReviewQueryService, FindingsQueryService, AuditQueryService, SummaryQueryService)
     from finsight.application.workflow import ReviewWorkflowService
     from finsight.application.reconstruction import ReviewReconstructionService
+    from finsight.application.abandonment import AbandonmentService
     from finsight.infrastructure.lifecycle_repositories import ReviewGenerationRepoSqlite
     container = build_app(db_path, clock or SystemClock())
     reporting = ReportingService()
@@ -332,5 +335,7 @@ def build_query_services(db_path: str, clock=None) -> "AppServices":
         workflow=ReviewWorkflowService(container.orch.engine),
         recovery=ReviewReconstructionService(container.orch.engine, container.source_binding_repo,
                                              ReviewGenerationRepoSqlite(container.dal)),
+        abandonment=AbandonmentService(container.cycle_repo, container.cycle_lifecycle_repo,
+                                       container.audit, container.uow, container.clock),
         ai=build_ai_services(container),
     )
