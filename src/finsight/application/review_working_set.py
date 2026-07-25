@@ -1,8 +1,9 @@
-# Phase 6.4a — cycle-keyed working sets (application layer). Foundation for ADR-011/012: the
-# transient, RECONSTRUCTED tier of review data (selected paths, normalized rows, verified dataset,
-# readiness) is held per cycle in memory for the process lifetime — NOT a single mutable slot, and
-# NOT persisted. This phase does not reconstruct or persist anything; it only stops one review's
-# working data from being destroyed when the active review changes in-process.
+# Phase 6.4a/6.4c — cycle-keyed working sets (application layer). The transient, RECONSTRUCTED tier of
+# review data (selected paths, normalized rows, verified dataset, readiness) is held per cycle in
+# memory for the process lifetime — NOT a single mutable slot, and NOT persisted. Phase 6.4c adds
+# BUILD-THEN-SWAP installation of a reconstructed session: a candidate is built + fully validated by
+# the reconstruction service off-thread, then installed here atomically. A failed reconstruction never
+# reaches install(), so a valid cached working set is never replaced by partial/broken data.
 #
 # No Qt, no infrastructure, no SQLite, no AI. Immutable cycle identity + controlled mutable working
 # data (the existing ReviewSession.ctx), keeping the workflow service's contract unchanged.
@@ -27,6 +28,14 @@ class ReviewWorkingSet:
     def has_files(self) -> bool:
         return self.session.has_files()
 
+    def install_session(self, session: ReviewSession) -> None:
+        """Atomically swap in a fully-built reconstructed session. Guards cycle identity so one
+        cycle's reconstruction can never be installed into another (cross-cycle isolation)."""
+        if session.cycle_id != self._cycle_id:
+            raise ValueError("refusing to install a session for %r into working set %r"
+                             % (session.cycle_id, self._cycle_id))
+        self.session = session
+
 
 class ReviewWorkingSetManager:
     """Holds working sets keyed by cycle_id for the process lifetime. Switching the active review
@@ -45,6 +54,19 @@ class ReviewWorkingSetManager:
 
     def get(self, cycle_id: str) -> Optional[ReviewWorkingSet]:
         return self._by_cycle.get(cycle_id)
+
+    def has_working_data(self, cycle_id: str) -> bool:
+        """True iff this cycle already has a usable in-memory working set (cache hit) — the reconstruct
+        step can be skipped. Scoped strictly to cycle_id (no cross-cycle read)."""
+        ws = self._by_cycle.get(cycle_id)
+        return bool(ws and ws.has_files())
+
+    def install(self, cycle_id: str, session: ReviewSession) -> ReviewWorkingSet:
+        """Install a reconstructed session for exactly one cycle (build-then-swap). Only ever called
+        with a fully-validated candidate, so it never installs partial state."""
+        ws = self.get_or_create(cycle_id)
+        ws.install_session(session)
+        return ws
 
     def invalidate(self, cycle_id: str) -> None:
         self._by_cycle.pop(cycle_id, None)

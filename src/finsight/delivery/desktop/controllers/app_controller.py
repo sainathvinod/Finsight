@@ -6,6 +6,9 @@ from finsight.application.read_models.views import (
 )
 from finsight.application.workflow import UploadResult, ValidationResult, AnalysisResult, ExportResult
 from finsight.application.review_working_set import ReviewWorkingSetManager
+from finsight.application.reconstruction import (
+    RecoveryStatus, ready_from_cache, no_source_required as _no_source)
+from finsight.domain.review_cycle import has_reached, CycleState
 from finsight.application.ai.ask_fin_contracts import AskFinRequest
 from finsight.delivery.desktop.async_worker import run_async
 from finsight.diagnostics import get_logger
@@ -27,14 +30,19 @@ class AppController(QObject):
     reviewsChanged = Signal()           # a review was created
     workflowChanged = Signal(str)       # a transition occurred for cycle_id
     processingChanged = Signal(bool)    # processing started (True) / finished (False)
+    reviewRecoveryChanged = Signal(str) # cycle_id whose recovery status changed (Phase 6.4c)
 
     def __init__(self, services, parent=None, ask_fin_backend=None):
         super().__init__(parent)
         self._s = services
         self._active: Optional[str] = None
-        # Transient working data per cycle (Phase 6.4a). In-process only; NOT persisted, NOT
-        # reconstructed here (that is Phase 6.4c). Each cycle keeps its own working set.
+        # Transient working data per cycle (Phase 6.4a), now with fingerprint-verified reconstruction
+        # (Phase 6.4c). In-process only; NOT persisted. Reconstruction reads persisted bindings and
+        # rebuilds off the UI thread; a candidate is installed (build-then-swap) only on success.
         self._working = ReviewWorkingSetManager()
+        self._recovery_state: dict = {}        # cycle_id -> last RecoveryStatus value (in-session)
+        self._last_recovery: dict = {}         # cycle_id -> last RecoveryResult (for the UI banner)
+        self._reconstructing: set = set()      # cycles with an in-flight reconstruction (no double)
         # Ask Fin backend runs the whole AskFinService pipeline OFF the UI thread on a worker-local
         # SQLite connection (injected; None disables Ask Fin). The controller never constructs a
         # provider or touches the AI stack directly.
@@ -78,6 +86,105 @@ class AppController(QObject):
     def working_set_identity(self, cycle_id: str) -> Optional[int]:
         ws = self._working.get(cycle_id)
         return id(ws) if ws is not None else None
+
+    # --- Phase 6.4c: fingerprint-verified reconstruction & recovery ---
+    def recovery_state(self, cycle_id: str) -> Optional[str]:
+        """The last observed RecoveryStatus for a cycle in this session (None until first attempt)."""
+        return self._recovery_state.get(cycle_id)
+
+    def last_recovery(self, cycle_id: str):
+        """The last RecoveryResult for a cycle (carries the presentation-neutral recovery message)."""
+        return self._last_recovery.get(cycle_id)
+
+    def is_reconstructing(self, cycle_id: str) -> bool:
+        return cycle_id in self._reconstructing
+
+    def _record_recovery(self, cycle_id: str, result) -> None:
+        self._recovery_state[cycle_id] = result.status.value
+        self._last_recovery[cycle_id] = result
+
+    def _apply_recovery(self, cycle_id: str, result):
+        # UI thread: install a validated candidate (build-then-swap) and record divergence once. A
+        # failed reconstruction carries no session, so a valid cached working set is never replaced.
+        if result.usable_session is not None:
+            self._working.install(cycle_id, result.usable_session)
+        self._s.recovery.record_divergence(cycle_id, result.status)   # persisted, idempotent
+        self._record_recovery(cycle_id, result)
+        return result
+
+    def reconstruct_sync(self, cycle_id: str):
+        """Load + reconstruct + install on the calling thread. Used by tests and as the building block
+        of the async path. Never mutates workflow/generation state."""
+        if not cycle_id:
+            return None
+        state = self.workflow_state(cycle_id)
+        if state is None:
+            return None
+        if not has_reached(state, CycleState.INTAKE):
+            self._record_recovery(cycle_id, _no_source(cycle_id))
+            return None
+        if self._working.has_working_data(cycle_id):
+            result = ready_from_cache(cycle_id)
+            self._record_recovery(cycle_id, result)
+            return result
+        inputs = self._s.recovery.load_inputs(cycle_id)
+        if inputs is None:
+            return None
+        return self._apply_recovery(cycle_id, self._s.recovery.reconstruct(inputs))
+
+    def reconstruct_async(self, cycle_id: str, on_result: Callable, on_error: Callable) -> None:
+        """Reconstruct off the UI thread. DB reads (load_inputs) + install happen on the UI thread;
+        the expensive fingerprint+extract+verify compute runs on a worker. Prevents double-triggering."""
+        if not cycle_id or cycle_id in self._reconstructing:
+            return
+        state = self.workflow_state(cycle_id)
+        if state is None:
+            on_error(RuntimeError("review_not_found"))
+            return
+        if not has_reached(state, CycleState.INTAKE):
+            self._record_recovery(cycle_id, _no_source(cycle_id))
+            self.reviewRecoveryChanged.emit(cycle_id)
+            return
+        if self._working.has_working_data(cycle_id):
+            result = ready_from_cache(cycle_id)
+            self._record_recovery(cycle_id, result)
+            self.reviewRecoveryChanged.emit(cycle_id)
+            on_result(result)
+            return
+        inputs = self._s.recovery.load_inputs(cycle_id)      # UI-thread DB read
+        if inputs is None:
+            on_error(RuntimeError("review_not_found"))
+            return
+        self._reconstructing.add(cycle_id)
+        self.processingChanged.emit(True)
+
+        def work():
+            return self._s.recovery.reconstruct(inputs)      # worker: DB-free compute
+
+        def done(result):
+            self._reconstructing.discard(cycle_id)
+            self.processingChanged.emit(False)
+            self._apply_recovery(cycle_id, result)           # UI thread: install + divergence audit
+            self.reviewRecoveryChanged.emit(cycle_id)
+            on_result(result)
+
+        def failed(exc):
+            self._reconstructing.discard(cycle_id)
+            self.processingChanged.emit(False)
+            _log.error("reconstruction failed cid=%s: %s", cycle_id, type(exc).__name__, exc_info=exc)
+            on_error(exc)
+
+        run_async(work, done, failed)
+
+    def rebind_source(self, cycle_id: str, document_type: str, new_path: str):
+        """Locate/re-select a moved source. Updates ONLY the path hint on a fingerprint match (never a
+        divergent file), invalidating the stale working set so the next reconstruction rebuilds it."""
+        result = self._s.recovery.apply_rebind(cycle_id, document_type, new_path)
+        if result.status == RecoveryStatus.MOVED_SOURCE_CANDIDATE:
+            self._working.invalidate(cycle_id)               # force rebuild from the new location
+        self._record_recovery(cycle_id, result)
+        self.reviewRecoveryChanged.emit(cycle_id)
+        return result
 
     # --- read-only queries ---
     def reviews_with_status(self) -> List[ReviewStatusView]:

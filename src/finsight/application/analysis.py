@@ -5,12 +5,19 @@ import json
 from finsight.domain.money import money_str
 from finsight.domain.rules import RulesEngine
 
-def _fingerprint(vds) -> str:
+def verified_dataset_fingerprint(vds) -> str:
+    """Deterministic content fingerprint of a VerifiedDataset. This is the analysis INPUT fingerprint
+    persisted on the rule run; reconstruction (Phase 6.4c) recomputes it with THIS same function to
+    prove a rebuilt verified dataset is byte-for-byte equivalent to the certified one."""
     payload = {"ged": {k: money_str(v) for k, v in sorted(vds.ged_actuals.items())},
                "budget": {k: {kk: money_str(vv) for kk, vv in sorted(v.items())}
                           for k, v in sorted(vds.budget.items())}}
     blob = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(blob).hexdigest()
+
+
+def _fingerprint(vds) -> str:   # retained name; the analysis write path is unchanged
+    return verified_dataset_fingerprint(vds)
 
 class AnalysisService:
     def __init__(self, engine: RulesEngine, ruleset_version: str, config_version: str):

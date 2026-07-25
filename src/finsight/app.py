@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from typing import Any, Dict, TYPE_CHECKING
 from finsight.infrastructure.persistence import (Dal, SqliteUnitOfWork, ReviewCycleRepoSqlite,
     IngestedFileRepoSqlite, FindingRepoSqlite, RuleRunRepoSqlite, ConfigRepoSqlite)
+from finsight.infrastructure.lifecycle_repositories import (
+    SourceBindingRepoSqlite, CycleLifecycleRepoSqlite)
 from finsight.infrastructure.audit import AuditStoreSqlite
 from finsight.infrastructure.readers import ExcelReader
 from finsight.infrastructure.files import FileHasher
@@ -20,6 +22,7 @@ if TYPE_CHECKING:  # type-only imports for the service-container annotations (ke
     from finsight.application.read_models.queries import (
         ReviewQueryService, FindingsQueryService, AuditQueryService, SummaryQueryService)
     from finsight.application.workflow import ReviewWorkflowService
+    from finsight.application.reconstruction import ReviewReconstructionService
     from finsight.application.ai import (
         ConversationService, ReviewMemoryService, PreferencesService, GroundingQueryService)
     from finsight.application.ai.ask_fin import AskFinService
@@ -52,6 +55,8 @@ class Container:
     audit: Any
     config: Dict[str, Any]
     clock: Any
+    source_binding_repo: Any = None
+    cycle_lifecycle_repo: Any = None
 
     def __getitem__(self, key: str):
         """DEPRECATED string-key access, retained only for backward compatibility with existing
@@ -77,6 +82,8 @@ def build_app(db_path: str, clock, reader=None) -> Container:
     finding_repo = FindingRepoSqlite(dal)
     run_repo = RuleRunRepoSqlite(dal)
     config_repo = ConfigRepoSqlite(dal)
+    source_binding_repo = SourceBindingRepoSqlite(dal)       # Phase 6.4c reconstruction hint + identity
+    cycle_lifecycle_repo = CycleLifecycleRepoSqlite(dal)     # intake_stage on the current candidate
     audit = AuditStoreSqlite(dal, clock)
     hasher = FileHasher()
     reader = reader or ExcelReader()
@@ -97,10 +104,13 @@ def build_app(db_path: str, clock, reader=None) -> Container:
     reporting = ReportingService()
     export = ExportService()
     orch = Orchestrator(cycle_repo, ingested_repo, run_repo, finding_repo, audit, uow, hasher,
-                        pipeline, verification, analysis, reporting, export, clock)
+                        pipeline, verification, analysis, reporting, export, clock,
+                        source_binding_repo=source_binding_repo,
+                        cycle_lifecycle_repo=cycle_lifecycle_repo)
     return Container(dal=dal, uow=uow, orch=orch, cycle_repo=cycle_repo, ingested_repo=ingested_repo,
                      run_repo=run_repo, finding_repo=finding_repo, config_repo=config_repo,
-                     audit=audit, config=active, clock=clock)
+                     audit=audit, config=active, clock=clock, source_binding_repo=source_binding_repo,
+                     cycle_lifecycle_repo=cycle_lifecycle_repo)
 
 
 @dataclass(frozen=True)
@@ -125,6 +135,7 @@ class AppServices:
     audit: "AuditQueryService"
     summary: "SummaryQueryService"
     workflow: "ReviewWorkflowService"
+    recovery: "ReviewReconstructionService"
     ai: "AiServices"
 
 
@@ -304,6 +315,8 @@ def build_query_services(db_path: str, clock=None) -> "AppServices":
     from finsight.application.read_models.queries import (
         ReviewQueryService, FindingsQueryService, AuditQueryService, SummaryQueryService)
     from finsight.application.workflow import ReviewWorkflowService
+    from finsight.application.reconstruction import ReviewReconstructionService
+    from finsight.infrastructure.lifecycle_repositories import ReviewGenerationRepoSqlite
     container = build_app(db_path, clock or SystemClock())
     reporting = ReportingService()
     return AppServices(
@@ -312,5 +325,7 @@ def build_query_services(db_path: str, clock=None) -> "AppServices":
         audit=AuditQueryService(container.audit),
         summary=SummaryQueryService(container.cycle_repo, container.finding_repo, container.run_repo, reporting),
         workflow=ReviewWorkflowService(container.orch.engine),
+        recovery=ReviewReconstructionService(container.orch.engine, container.source_binding_repo,
+                                             ReviewGenerationRepoSqlite(container.dal)),
         ai=build_ai_services(container),
     )

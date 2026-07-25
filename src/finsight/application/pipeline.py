@@ -4,7 +4,15 @@ from typing import Dict, Any
 from finsight.application import normalization as N
 from finsight.application import validation as V
 
+# Extractor identity (ADR-011 §8 verification-basis property). Bump ONLY when normalization/validation
+# behavior changes such that a previously certified verified dataset would no longer reproduce. Phase
+# 6.4c reconstruction compares this to a generation's recorded extractor_version (when present) to
+# distinguish an extractor-driven verified-data divergence from a source-byte change.
+EXTRACTOR_VERSION = "extractor-v1"
+
 class ExtractionPipeline:
+    extractor_version = EXTRACTOR_VERSION
+
     def __init__(self, reader):
         self._reader = reader  # DocumentReader (infrastructure)
 

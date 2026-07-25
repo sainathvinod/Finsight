@@ -6,6 +6,7 @@
 from __future__ import annotations
 from typing import Any, Dict
 from finsight.domain.review_cycle import CycleState, has_reached
+from finsight.domain.lifecycle import SourceBinding, IntakeStage
 from finsight.application import intake as INTAKE
 from finsight.diagnostics import get_logger
 
@@ -14,7 +15,8 @@ _log = get_logger("transition")
 
 class TransitionEngine:
     def __init__(self, cycle_repo, ingested_repo, run_repo, finding_repo, audit, uow, hasher,
-                 pipeline, verification, analysis, reporting, export, clock, actor="local-user"):
+                 pipeline, verification, analysis, reporting, export, clock, actor="local-user",
+                 source_binding_repo=None, cycle_lifecycle_repo=None):
         self.cycle_repo = cycle_repo
         self.ingested_repo = ingested_repo
         self.run_repo = run_repo
@@ -29,6 +31,10 @@ class TransitionEngine:
         self.export = export
         self.clock = clock
         self.actor = actor
+        # Phase 6.4c lifecycle persistence (optional; wired by composition, None in direct-construction
+        # tests). Source binding = the reconstruction hint (path) + source identity (fingerprint).
+        self.source_binding_repo = source_binding_repo
+        self.cycle_lifecycle_repo = cycle_lifecycle_repo
 
     # ---- primitives ----
     def audit_event(self, cycle_id: str, action: str, detail: Dict[str, Any]) -> None:
@@ -65,10 +71,23 @@ class TransitionEngine:
     # ---- individual transitions (public; the shared rules) ----
     def do_intake(self, cycle, ctx):
         cid = cycle.cycle_id
+        paths = ctx.get("paths") or {}
 
         def body():
             for f in ctx["provenance"]:
                 self.ingested_repo.save(f)
+            # Persist the source binding (reconstruction hint + identity) atomically with provenance +
+            # audit. Only after successful fingerprinting/acceptance, and only when a path is known.
+            # The path is a hint; the fingerprint is the source identity (ADR-012). Bytes are never
+            # stored. The upload_ged/upload_budget events ARE the "source bound" audit facts.
+            if self.source_binding_repo is not None:
+                for f in ctx["provenance"]:
+                    path = paths.get(f.doc_type)
+                    if path:
+                        self.source_binding_repo.upsert(SourceBinding(
+                            cid, f.doc_type, path, f.fingerprint, self.clock.now(), self.actor))
+            if self.cycle_lifecycle_repo is not None:
+                self.cycle_lifecycle_repo.set_intake_stage(cid, IntakeStage.SOURCE_BOUND)
             for f in ctx["provenance"]:
                 self.audit_event(cid, "upload_ged" if f.doc_type == "GED" else "upload_budget",
                                  {"name": f.name, "fingerprint": f.fingerprint, "period": f.period})
@@ -83,6 +102,8 @@ class TransitionEngine:
             self.audit_event(cid, "extract", {"ged_valid": len(ex.get("ged_valid", [])),
                              "quarantined": len(ex.get("ged_quarantined", [])) + len(ex.get("budget_quarantined", [])),
                              "rejected": bool(ctx["rejected"])})
+            if self.cycle_lifecycle_repo is not None:   # candidate now processed (ADR-011 §7 intake)
+                self.cycle_lifecycle_repo.set_intake_stage(cid, IntakeStage.PROCESSED)
         self.transition(cycle, CycleState.PROCESSED, body)
 
     def do_verified(self, cycle, ctx):
