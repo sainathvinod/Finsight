@@ -14,17 +14,20 @@ SRC = os.path.join(os.path.dirname(__file__), "..", "..", "src", "finsight")
 # (Milestone 7) confirms identifiers for the remaining feature views. New/materially-modified
 # trust-critical modules are added here as they are authored.
 PRINCIPAL = [
-    "app.py",
+    "app.py", "__main__.py",
     "application/transition_engine.py", "application/orchestrator.py", "application/workflow.py",
     "application/reconstruction.py", "application/review_working_set.py", "application/review_session.py",
     "application/source_format.py", "application/verification.py", "application/analysis.py",
-    "application/pipeline.py", "application/lifecycle_ports.py",
+    "application/pipeline.py", "application/lifecycle_ports.py", "application/abandonment.py",
+    "application/export.py",
     "domain/lifecycle.py",
     "infrastructure/persistence.py", "infrastructure/lifecycle_repositories.py",
+    "infrastructure/single_instance.py",
     "infrastructure/migrations/m0001_baseline.py", "infrastructure/migrations/m0002_ai_platform.py",
     "infrastructure/migrations/m0003_review_lifecycle.py",
+    "delivery/desktop/app.py",
     "delivery/desktop/controllers/app_controller.py",
-    "delivery/desktop/views/workflow_view.py",
+    "delivery/desktop/views/workflow_view.py", "delivery/desktop/views/reviews_view.py",
     "delivery/desktop/components/recovery_banner.py",
 ]
 
@@ -34,9 +37,11 @@ PRINCIPAL = [
 # bounded backfill upgrades them with PO-confirmed identifiers (do not churn stable files for prose).
 NEW_STANDARD = {
     "application/review_working_set.py", "application/review_session.py",
-    "application/lifecycle_ports.py", "infrastructure/lifecycle_repositories.py",
+    "application/lifecycle_ports.py", "application/abandonment.py", "application/export.py",
+    "infrastructure/lifecycle_repositories.py", "infrastructure/single_instance.py",
+    "delivery/desktop/app.py",
     "delivery/desktop/controllers/app_controller.py", "delivery/desktop/views/workflow_view.py",
-    "delivery/desktop/components/recovery_banner.py",
+    "delivery/desktop/views/reviews_view.py", "delivery/desktop/components/recovery_banner.py",
 }
 
 

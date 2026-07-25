@@ -1,10 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "finsight"
-version = "0.0.1"
+version = "1.0.0"
+description = "FinSight — deterministic monthly financial-review desktop application (Release 1)."
 # Intentional floor: pytest 9.x / coverage 7.15.x require >=3.10, and 3.9 is EOL (2025-10).
 # Recommended build interpreter: 3.12. Single source of truth for pins: build/versions.json.
 requires-python = ">=3.10"
 dependencies = ["openpyxl==3.1.5"]
+
+# Launch command created on install: `finsight` (needs the [desktop] extra for PySide6).
+[project.scripts]
+finsight = "finsight.delivery.desktop.app:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [project.optional-dependencies]
 # Pinned intentionally; verified installable under Python 3.11. Mirrors requirements-dev.txt.

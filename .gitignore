@@ -61,3 +61,11 @@ dist/
 logs/
 test-output/
 test-results.txt
+
+# zipapp packaging staging
+build/zipapp/
+build/lib/
+build/bdist.*/
+build/zipapp/
+*.egg-info/
+src/finsight.egg-info/

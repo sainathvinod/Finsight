@@ -1,6 +1,18 @@
-# FinSight desktop entrypoint. Creates the QApplication, configures logging, applies the theme,
-# wires the read-only query + workflow services through the composition root, and shows the main
-# window. Contains no business logic, SQL, or repository construction.
+# Implements:
+#   Feature: F-01-01 — Monthly Review Cycle Workspace (application shell/launch)
+#   ADRs: ADR-002 (delivery layering — UI wires services, no SQL/repos); ADR-013 §3 (single-instance);
+#         ADR-013 (Ollama-optional core)
+#
+# Product purpose / UI surface:
+#   The FinSight desktop entry point (`finsight` console script / `python -m finsight`). Creates the
+#   QApplication, configures logging + theme, acquires the single-instance lock, wires the query +
+#   workflow + recovery + abandonment services through the composition root, and shows the main window.
+#
+# Trust / lifecycle constraints:
+#   - No business logic, SQL, or repository construction here; delivery depends only on finsight.app.
+#   - A second instance on the same database is refused WITHOUT opening it (ADR-013 §3). The database
+#     lives in the per-user app-support dir (not the CWD). FINSIGHT_SMOKE launches+exits for packaging
+#     verification. Deterministic core + Ask Fin degrade honestly with no AI provider.
 from __future__ import annotations
 import os
 import sys
@@ -66,11 +78,17 @@ def run(db_path: Optional[str] = None, argv: Optional[list] = None) -> int:
 def _refuse_second_instance(db: str) -> None:
     msg = ("FinSight is already running for this database.\n\nClose the other FinSight window and try "
            "again. Your data was not opened or changed.")
+    print(msg, file=sys.stderr)                # always emit (logs/console); never lost
+    # Show a modal dialog only when there is an interactive display. In headless/offscreen/smoke runs a
+    # modal would block with no one to dismiss it, so we skip it there.
+    headless = os.environ.get("FINSIGHT_SMOKE") or os.environ.get("QT_QPA_PLATFORM") == "offscreen"
+    if headless:
+        return
     try:
         from PySide6.QtWidgets import QMessageBox
         QMessageBox.warning(None, "FinSight is already running", msg)
-    except Exception:                          # headless / no display — fall back to stderr
-        print(msg, file=sys.stderr)
+    except Exception:
+        pass
 
 
 def _run_window(qapp, db, services) -> int:
@@ -81,6 +99,12 @@ def _run_window(qapp, db, services) -> int:
     from finsight.delivery.desktop.controllers import AppController
     window = MainWindow(AppController(services, ask_fin_backend=ask_fin_backend))
     window.show()
+    # Packaging/clean-environment launch smoke: start, render one event cycle, then exit cleanly.
+    # Proves the packaged app launches + composes the window without a human at the display.
+    if os.environ.get("FINSIGHT_SMOKE"):
+        from PySide6.QtCore import QTimer
+        _log.info("smoke launch: window shown, exiting cleanly")
+        QTimer.singleShot(0, qapp.quit)
     return qapp.exec()
 
 
