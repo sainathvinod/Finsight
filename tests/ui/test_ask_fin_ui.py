@@ -86,14 +86,14 @@ def test_no_selected_review_disables_submission(window_factory, empty_db):
 
 def test_provider_status_rendered_safely(window_factory, populated_db, qtbot):
     _w, view = _askfin(window_factory, populated_db, FakeBackend(status=ProviderStatus(True, True, "ok")))
-    qtbot.waitUntil(lambda: view.provider_status_text() == "AI provider ready", timeout=3000)
+    qtbot.waitUntil(lambda: view.provider_status_text() == "Local AI ready", timeout=3000)
     # never leak transport internals
     assert "http" not in view.provider_status_text().lower()
 
 def test_provider_status_disabled_wording(window_factory, populated_db, qtbot):
     _w, view = _askfin(window_factory, populated_db,
                        FakeBackend(status=ProviderStatus(True, False, "provider_disabled")))
-    qtbot.waitUntil(lambda: view.provider_status_text() == "AI generation is turned off", timeout=3000)
+    qtbot.waitUntil(lambda: view.provider_status_text() == "Local AI is disabled", timeout=3000)
 
 
 # --- submission ---

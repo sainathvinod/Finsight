@@ -205,7 +205,7 @@ def _askfin(window_factory, populated_db, backend, qtbot):
 def test_guidance_provider_disabled(window_factory, populated_db, qtbot):
     v = _askfin(window_factory, populated_db,
                 FakeBackend(status=ProviderStatus(True, False, "provider_disabled")), qtbot)
-    qtbot.waitUntil(lambda: "enabled before launching" in v.ask_fin_guidance_text(), timeout=3000)
+    qtbot.waitUntil(lambda: "Install Ollama" in v.ask_fin_guidance_text(), timeout=3000)
 
 def test_guidance_unreachable(window_factory, populated_db, qtbot):
     v = _askfin(window_factory, populated_db,
