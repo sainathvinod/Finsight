@@ -40,8 +40,8 @@ def test_empty_database_renders_without_crashing(window_factory, empty_db):
 def test_persisted_reviews_appear(window_factory, populated_db):
     w = window_factory(populated_db)
     w.navigate("reviews")
-    assert w._reviews._model.rowCount() == 1
-    assert w._reviews._model.review_at(0).month == "July"
+    assert len(w._reviews.review_periods()) == 1                 # one persisted review card
+    assert w._reviews.review_periods() == ["July 2026"]
 
 
 def test_selecting_review_updates_context(window_factory, populated_db):

@@ -1,30 +1,120 @@
 # Implements:
-#   Feature: F-01-01 — Monthly Review Cycle Workspace (incl. abandonment/inactivity, DEC-035)
-#   ADRs: ADR-014 (abandonment + inactivity reminders); ADR-011 §9 (published = trusted status)
+#   Feature: F-01-01 — Monthly Review Cycle Workspace (Recent Reviews home; incl. abandonment/inactivity, DEC-035)
+#   Requirements: FR-006, FR-081 (cycle grouping/status); FR-108 (non-destructive)
+#   ADRs: ADR-014 (abandonment + inactivity); ADR-011 §9 (published = trusted status);
 #         ADR-013 (Ollama-independent core)
 #   UI surface: Reviews (home) screen.
 #
 # Product purpose:
-#   Lists persisted reviews and lets a reviewer select/open one. Surfaces each selected review's
-#   lifecycle: a deterministic 30/60-day inactivity reminder and an explicit, reversible
-#   abandon / resume action.
+#   The reviews home: a scannable list of per-review CARDS (period, workflow status + progress, source
+#   readiness, finding count + severity, lifecycle, and the next recommended action) — not a bare
+#   table. Selecting a card sets the active review; Open navigates into it. A first-run welcome shows
+#   when the database is empty. Each card also offers explicit, reversible abandon/resume (ADR-014).
 #
 # Trust / lifecycle constraints:
-#   - Abandonment is explicit + non-destructive (routed through the controller/service); the reminder
-#     is informational and NEVER changes review state automatically. No AI dependency.
+#   - All values come from the real read-only services (reviews/status, findings, lifecycle) — no
+#     manufactured metrics. Navigating here never silently changes the active review (Phase 6.4a):
+#     refresh re-highlights the active review's card by cycle_id and only defaults to the first card
+#     when nothing is active. Abandonment is non-destructive. No AI dependency.
 from __future__ import annotations
-from PySide6.QtCore import Signal, QModelIndex
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QStackedWidget, QPushButton, QLabel
-from finsight.delivery.desktop.components import SectionHeader, DataTable
+from PySide6.QtCore import Signal, Qt
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QStackedWidget, QPushButton, QLabel, QScrollArea, QFrame,
+)
+from finsight.delivery.desktop.components import SectionHeader
 from finsight.delivery.desktop.components.first_run import build_first_run_card, FIRST_RUN_LEAD
-from finsight.delivery.desktop.models import ReviewsTableModel
+from finsight.delivery.desktop.views.workflow_meta import STEPS as WORKFLOW_STEPS, gates
+from finsight.delivery.desktop import presentation as pres
 from finsight.delivery.desktop.theme import tokens as t
+
+# Next recommended action per persisted workflow state (guides the reviewer to what's next).
+_NEXT_ACTION = {
+    "Created": "Upload the GED and Budget Tracker sources.",
+    "Intake": "Process the uploaded sources to check readiness.",
+    "Processed": "Verify the extracted data to certify the source.",
+    "Verified": "Run the deterministic analysis.",
+    "Analyzed": "Generate the leadership summary.",
+    "Summarized": "Export the review package.",
+    "Exported": "Review complete — revisit any step from the Workflow.",
+}
+
+
+class ReviewCard(QFrame):
+    """One review as a rich, clickable card. Emits selected(cid) on click and opened(cid) on Open."""
+
+    selected = Signal(str)
+    opened = Signal(str)
+
+    def __init__(self, cid: str, parent=None):
+        super().__init__(parent)
+        self._cid = cid
+        self.setProperty("role", "reviewCard")
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(t.SP_4, t.SP_3, t.SP_4, t.SP_3)
+        outer.setSpacing(t.SP_2)
+
+        top = QHBoxLayout()
+        top.setSpacing(t.SP_2)
+        self._title = QLabel(""); self._title.setProperty("role", "cardTitle")
+        top.addWidget(self._title)
+        self._status = QLabel(""); self._status.setProperty("role", "statusPill")
+        top.addWidget(self._status)
+        self._disposition = QLabel(""); self._disposition.setProperty("role", "pillAbandoned")
+        self._disposition.setVisible(False)
+        top.addWidget(self._disposition)
+        top.addStretch(1)
+        self._open = QPushButton("Open"); self._open.setProperty("role", "primary")
+        self._open.clicked.connect(lambda: self.opened.emit(self._cid))
+        top.addWidget(self._open)
+        outer.addLayout(top)
+
+        self._metrics = QLabel(""); self._metrics.setProperty("role", "context"); self._metrics.setWordWrap(True)
+        outer.addWidget(self._metrics)
+
+        action_row = QHBoxLayout()
+        self._next = QLabel(""); self._next.setProperty("role", "kvVal"); self._next.setWordWrap(True)
+        action_row.addWidget(self._next, 1)
+        self._lifecycle_btn = QPushButton(""); self._lifecycle_btn.setProperty("role", "secondary")
+        action_row.addWidget(self._lifecycle_btn)
+        outer.addLayout(action_row)
+
+    def cycle_id(self) -> str:
+        return self._cid
+
+    def set_data(self, *, period, state, progress, findings, severity, readiness, next_action,
+                 abandoned, inactivity, active):
+        self._title.setText(period)
+        self._status.setText(pres.state_label(state))
+        self._disposition.setVisible(abandoned)
+        self._disposition.setText("Abandoned")
+        # metrics line: progress · readiness · findings + severity  (+ inactivity when present)
+        parts = [progress, readiness, findings]
+        if severity:
+            parts.append(severity)
+        if inactivity:
+            parts.append(inactivity)
+        self._metrics.setText("   ·   ".join(p for p in parts if p))
+        self._next.setText(("This review is abandoned — resume it to continue."
+                            if abandoned else "Next:  " + next_action))
+        self._lifecycle_btn.setText("Resume review" if abandoned else "Mark abandoned")
+        self.setProperty("role", "reviewCardActive" if active else "reviewCard")
+        self.style().unpolish(self); self.style().polish(self)
+
+    def lifecycle_button(self) -> QPushButton:
+        return self._lifecycle_btn
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.selected.emit(self._cid)
+        super().mousePressEvent(event)
+
+    def mouseDoubleClickEvent(self, event):
+        self.opened.emit(self._cid)
+        super().mouseDoubleClickEvent(event)
 
 
 class ReviewsView(QWidget):
-    """Home: list persisted reviews, or a first-run welcome when the database is empty. Selecting a
-    row sets the active review; opening navigates to the review. 'Create review' starts the workflow.
-    A lifecycle bar shows the selected review's inactivity reminder + abandon/resume (ADR-014)."""
+    """Reviews home: rich per-review cards (or a first-run welcome when the database is empty)."""
 
     reviewActivated = Signal(str)   # cycle_id when a review is opened
     newReviewRequested = Signal()   # user asked to create a new review
@@ -32,139 +122,146 @@ class ReviewsView(QWidget):
     def __init__(self, controller, parent=None):
         super().__init__(parent)
         self._c = controller
-        self._model = ReviewsTableModel()
+        self._selected_cid = None
+        self._cards = {}                       # cycle_id -> ReviewCard
 
         root = QVBoxLayout(self)
         root.setContentsMargins(t.SP_5, t.SP_5, t.SP_5, t.SP_5)
         root.setSpacing(t.SP_3)
         header_row = QHBoxLayout()
-        header_row.addWidget(SectionHeader("Reviews", "Select a review to open it."), 1)
+        header_row.addWidget(SectionHeader("Reviews", "Your monthly reviews — select one to open it."), 1)
         self._new_btn = QPushButton("New review")
-        self._new_btn.setProperty("role", "secondary")
+        self._new_btn.setProperty("role", "primary")
         self._new_btn.clicked.connect(self.newReviewRequested.emit)
         header_row.addWidget(self._new_btn)
         root.addLayout(header_row)
 
         self._stack = QStackedWidget()
-        self._table = DataTable()
-        self._table.setModel(self._model)
-        self._table.doubleClicked.connect(self._on_open)
-        self._table.activated.connect(self._on_open)
-        self._table.selectionModel().currentRowChanged.connect(self._on_current_changed)
-        self._stack.addWidget(self._table)
+        # card list (scrollable)
+        scroll = QScrollArea(); scroll.setWidgetResizable(True)
+        holder = QWidget(); holder.setMaximumWidth(1040)
+        self._list = QVBoxLayout(holder)
+        self._list.setContentsMargins(0, 0, 0, 0)
+        self._list.setSpacing(t.SP_2)
+        self._list.setAlignment(Qt.AlignmentFlag.AlignTop)
+        wrap = QWidget(); wl = QHBoxLayout(wrap); wl.setContentsMargins(0, 0, 0, 0)
+        wl.addWidget(holder); wl.addStretch(1)
+        scroll.setWidget(wrap)
+        self._stack.addWidget(scroll)
         first_run, self._first_run_btn = build_first_run_card(self.newReviewRequested.emit)
         self._stack.addWidget(first_run)
         root.addWidget(self._stack, 1)
 
-        # Lifecycle bar (ADR-014): inactivity reminder + explicit abandon/resume for the selected review.
-        self._lifecycle_row = QHBoxLayout()
-        self._lifecycle_msg = QLabel("")
-        self._lifecycle_msg.setProperty("role", "kvVal")
-        self._lifecycle_msg.setWordWrap(True)
-        self._lifecycle_row.addWidget(self._lifecycle_msg, 1)
-        self._lifecycle_btn = QPushButton("")
-        self._lifecycle_btn.setProperty("role", "secondary")
-        self._lifecycle_btn.clicked.connect(self._on_lifecycle_action)
-        self._lifecycle_row.addWidget(self._lifecycle_btn)
-        root.addLayout(self._lifecycle_row)
-
-        controller.reviewDispositionChanged.connect(lambda _c: self._refresh_lifecycle())
+        controller.reviewDispositionChanged.connect(lambda _c: self.refresh())
         self.refresh()
 
-    def _refresh_lifecycle(self) -> None:
-        cid = self.selected_review_id()
-        if not cid:
-            self._lifecycle_msg.setText("")
-            self._lifecycle_btn.setText("")
-            self._lifecycle_btn.setVisible(False)
-            return
-        status = self._c.review_lifecycle_status(cid)
-        abandoned = status.disposition.value == "Abandoned"
-        # Message: abandoned state is explicit; otherwise the (possibly empty) inactivity reminder.
-        self._lifecycle_msg.setText("This review is abandoned. Resume it to continue."
-                                    if abandoned else status.message)
-        self._lifecycle_btn.setText("Resume review" if abandoned else "Mark abandoned")
-        self._lifecycle_btn.setVisible(True)
-
-    def _on_lifecycle_action(self) -> None:
-        cid = self.selected_review_id()
-        if not cid:
-            return
-        status = self._c.review_lifecycle_status(cid)
-        if status.disposition.value == "Abandoned":
-            self._c.resume_abandoned_review(cid)
-        else:
-            self._c.abandon_review(cid)     # explicit, audited, non-destructive; reversible
+    # --- rendering ---
+    def _clear(self):
+        while self._list.count():
+            item = self._list.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.setParent(None); w.deleteLater()
+        self._cards = {}
 
     def refresh(self) -> None:
         rows = self._c.reviews_with_status()
         active = self._c.active_review_id
-        # Rebuilding the model must not emit a destructive active-review change (Phase 6.4a).
-        sm = self._table.selectionModel()
-        sm.blockSignals(True)
-        self._model.set_rows(rows)
-        sm.blockSignals(False)
-        self._stack.setCurrentIndex(0 if rows else 1)   # table, else first-run welcome
+        self._stack.setCurrentIndex(0 if rows else 1)       # cards, else first-run welcome
+        self._clear()
         if not rows:
+            self._selected_cid = None
             return
-        # Reselect the ACTIVE review by cycle_id (not row 0). Only default to the first row when no
-        # review is active. Selecting the active review is a no-op in the controller, so navigating
-        # here never silently changes the active review.
-        target = self._row_for_cycle(active) if active else 0
-        if target is None:
-            self._refresh_lifecycle()
-            return                              # active review not in the list — leave it unchanged
-        self._table.selectRow(target)           # currentRowChanged -> _sync_selection (no-op if active)
-        self._refresh_lifecycle()
+        # Non-destructive selection (Phase 6.4a): highlight the ACTIVE review; only default-select the
+        # first card when nothing is active — rendering here never changes the active review.
+        if active and any(r.cycle_id == active for r in rows):
+            self._selected_cid = active
+        elif not active:
+            self._c.select_review(rows[0].cycle_id)          # default-select first when none active
+            self._selected_cid = rows[0].cycle_id
+        else:
+            self._selected_cid = active                      # active not in list (rare) — leave unchanged
+        for r in rows:
+            card = ReviewCard(r.cycle_id)
+            card.selected.connect(self._on_select)
+            card.opened.connect(self._on_open_cid)
+            card.lifecycle_button().clicked.connect(lambda _=False, cid=r.cycle_id: self._on_lifecycle(cid))
+            self._cards[r.cycle_id] = card
+            self._list.addWidget(card)
+            self._populate(card, r)
 
-    def _row_for_cycle(self, cycle_id):
-        if not cycle_id:
-            return None
-        for r in range(self._model.rowCount()):
-            item = self._model.review_at(r)
-            if item is not None and item.cycle_id == cycle_id:
-                return r
-        return None
+    def _populate(self, card, r):
+        state = r.state
+        done, _enabled, _current = gates(state)
+        progress = "%d/%d steps" % (sum(1 for d in done if d), len(WORKFLOW_STEPS))
+        findings = self._c.findings(r.cycle_id)
+        crit = sum(1 for f in findings if f.severity == "Critical")
+        high = sum(1 for f in findings if f.severity == "High")
+        sev = ", ".join(p for p in ("%d critical" % crit if crit else "",
+                                    "%d high" % high if high else "") if p)
+        status = self._c.review_lifecycle_status(r.cycle_id)
+        abandoned = status.disposition.value == "Abandoned"
+        readiness = "Source verified" if state in ("Verified", "Analyzed", "Summarized", "Exported") \
+            else ("Source processed" if state == "Processed" else "Awaiting sources")
+        card.set_data(
+            period=pres.period_text(r.month, r.year), state=state, progress=progress,
+            findings=("%d finding(s)" % r.finding_count), severity=sev, readiness=readiness,
+            next_action=_NEXT_ACTION.get(state, ""), abandoned=abandoned,
+            inactivity=(status.message or ""), active=(r.cycle_id == self._selected_cid))
 
-    # --- public seams ---
+    # --- interaction ---
+    def _on_select(self, cid):
+        self._c.select_review(cid)             # controller no-op if already active (non-destructive)
+        self._selected_cid = cid
+        self._reselect()
+
+    def _reselect(self):
+        for cid, card in self._cards.items():
+            card.setProperty("role", "reviewCardActive" if cid == self._selected_cid else "reviewCard")
+            card.style().unpolish(card); card.style().polish(card)
+
+    def _on_open_cid(self, cid):
+        self._c.select_review(cid)
+        self._selected_cid = cid
+        self.reviewActivated.emit(cid)
+
+    def _on_lifecycle(self, cid):
+        status = self._c.review_lifecycle_status(cid)
+        if status.disposition.value == "Abandoned":
+            self._c.resume_abandoned_review(cid)
+        else:
+            self._c.abandon_review(cid)         # explicit, audited, non-destructive; reversible
+
+    # --- public seams (stable API for tests) ---
     def selected_review_id(self):
-        idx = self._table.currentIndex()
-        item = self._model.review_at(idx.row()) if idx.isValid() else None
-        return item.cycle_id if item is not None else None
+        return self._selected_cid
+
+    def review_periods(self):
+        """Human-readable period text shown on each review card (in list order)."""
+        return [card._title.text() for card in self._cards.values()]
 
     def refresh_preserves_active_review(self) -> bool:
-        """True iff the current table selection matches the controller's active review (or there is
-        no active review). Used to verify navigation is non-destructive."""
         active = self._c.active_review_id
-        return active is None or self.selected_review_id() == active
+        return active is None or self._selected_cid == active
 
     def first_run_message(self) -> str:
-        """The welcome guidance shown on an empty database ('' when reviews exist)."""
         return FIRST_RUN_LEAD if self._stack.currentIndex() == 1 else ""
 
     def primary_action_text(self) -> str:
         return self._first_run_btn.text()
 
     def lifecycle_message(self) -> str:
-        """The lifecycle bar text for the selected review (inactivity reminder or abandoned notice)."""
-        return self._lifecycle_msg.text()
+        card = self._cards.get(self._selected_cid)
+        return card._next.text() if card is not None else ""
 
     def lifecycle_action_text(self) -> str:
-        """'Mark abandoned' / 'Resume review' / '' — the abandon/resume affordance label."""
-        return self._lifecycle_btn.text()
+        card = self._cards.get(self._selected_cid)
+        return card.lifecycle_button().text() if card is not None else ""
 
-    def _on_current_changed(self, current: QModelIndex, _prev: QModelIndex) -> None:
-        if current.isValid():
-            self._sync_selection(current.row())
-            self._refresh_lifecycle()
+    def _refresh_lifecycle(self) -> None:      # retained seam; a full refresh re-renders lifecycle state
+        self.refresh()
 
-    def _sync_selection(self, row: int) -> None:
-        item = self._model.review_at(row)
-        if item is not None:
-            self._c.select_review(item.cycle_id)
-
-    def _on_open(self, index: QModelIndex) -> None:
-        item = self._model.review_at(index.row())
-        if item is not None:
-            self._c.select_review(item.cycle_id)
-            self.reviewActivated.emit(item.cycle_id)
+    def _on_open(self, cid_or_index):
+        cid = cid_or_index if isinstance(cid_or_index, str) else self._selected_cid
+        if cid:
+            self._on_open_cid(cid)

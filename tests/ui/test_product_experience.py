@@ -120,7 +120,7 @@ def test_upload_shows_required_sources_and_deferred(window_factory, empty_db):
 def test_overview_is_review_home_on_open(window_factory, populated_db):
     w = window_factory(populated_db)
     rv = w.view("reviews")
-    rv._on_open(rv._model.index(0, 0))                  # open the first review
+    rv._on_open("2026-07")                              # open the review by cycle_id
     assert w.current_view_key() == "overview"           # lands on the dashboard, not a step panel
 
 def test_overview_destination_exists_and_is_wired(window_factory, populated_db):
@@ -183,8 +183,7 @@ def test_verification_blocked_without_data(window_factory, empty_db):
 # ===================== humanized presentation =====================
 def test_reviews_period_is_human(window_factory, populated_db):
     w = window_factory(populated_db)
-    model = w.view("reviews")._model
-    assert model.data(model.index(0, 0)) == "July 2026"   # not "2026-07"
+    assert "July 2026" in w.view("reviews").review_periods()   # not "2026-07"
 
 def test_audit_detail_not_raw_json(window_factory, populated_db):
     from PySide6.QtWidgets import QLabel

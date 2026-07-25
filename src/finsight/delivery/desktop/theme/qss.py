@@ -104,6 +104,32 @@ QLabel[role="cardLabel"] {{ font-size: {t.FS_LABEL}px; font-weight: 600; color: 
 QLabel[role="cardValue"] {{ font-size: {t.FS_TITLE}px; font-weight: 600; color: {t.TEXT_PRIMARY}; }}
 QLabel[role="cardDetail"] {{ font-size: {t.FS_SMALL}px; color: {t.TEXT_SECONDARY}; }}
 
+/* Selectable review card (Reviews home). Hover + selected use the accent, matching nav/table. */
+QWidget[role="reviewCard"] {{
+    background: {t.WHITE};
+    border: 1px solid {t.BORDER};
+    border-radius: {t.RADIUS_MD}px;
+}}
+QWidget[role="reviewCard"]:hover {{ background: {t.BG_SUBTLE}; border-color: {t.BORDER_STRONG}; }}
+QWidget[role="reviewCardActive"] {{
+    background: {t.ACCENT_SUBTLE_BG};
+    border: 1px solid {t.ACCENT};
+    border-radius: {t.RADIUS_MD}px;
+}}
+QLabel[role="cardTitle"] {{ font-size: {t.FS_TITLE}px; font-weight: 600; color: {t.TEXT_PRIMARY}; }}
+QLabel[role="statusPill"] {{
+    font-size: {t.FS_LABEL}px; font-weight: 600; color: {t.TEXT_SECONDARY};
+    background: {t.BG_CHROME}; border: 1px solid {t.BORDER}; border-radius: {t.RADIUS_SM}px; padding: 1px 6px;
+}}
+QLabel[role="pillAttention"] {{
+    font-size: {t.FS_LABEL}px; font-weight: 600; color: {t.STATUS_ATTENTION};
+    background: #FBF3E4; border: 1px solid #EBD9B4; border-radius: {t.RADIUS_SM}px; padding: 1px 6px;
+}}
+QLabel[role="pillAbandoned"] {{
+    font-size: {t.FS_LABEL}px; font-weight: 600; color: {t.TEXT_MUTED};
+    background: {t.BG_CHROME}; border: 1px solid {t.BORDER_STRONG}; border-radius: {t.RADIUS_SM}px; padding: 1px 6px;
+}}
+
 QScrollArea {{ border: none; background: transparent; }}
 QToolTip {{ background: {t.TEXT_PRIMARY}; color: {t.WHITE}; border: none; padding: 3px 6px; }}
 """
