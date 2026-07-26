@@ -58,6 +58,10 @@ def main() -> int:
         assert w_empty.current_view_key() == "welcome", w_empty.current_view_key()
         _grab(w_empty, os.path.join(out_dir, "01-welcome-first-launch.png"))
 
+        # 1b. Create New Review -> dedicated Review-Period step (§5).
+        w_empty.view("welcome").newReviewRequested.emit()
+        _grab(w_empty, os.path.join(out_dir, "01b-create-review-period.png"))
+
         # 2. Returning user: populated DB -> Dashboard home + key screens.
         pop_db = _populated_db(work)
         w = MainWindow(AppController(build_query_services(pop_db)))

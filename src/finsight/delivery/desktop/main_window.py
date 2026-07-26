@@ -65,6 +65,7 @@ class MainWindow(QMainWindow):
         self._dashboard.newReviewRequested.connect(self._on_new_review)
         self._welcome.newReviewRequested.connect(self._on_new_review)
         self._welcome.askFinRequested.connect(lambda: self.navigate("askfin"))
+        self._workspace.backToHomeRequested.connect(self._route_launch)   # first-step Back → Home
         self._c.activeReviewChanged.connect(self._on_active_changed)
         for i, (key, _label) in enumerate(_NAV):
             sc = QShortcut(QKeySequence(f"Ctrl+{i + 1}"), self)

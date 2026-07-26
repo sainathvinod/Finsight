@@ -1,4 +1,5 @@
 from __future__ import annotations
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QComboBox,
                                QSpinBox, QPushButton, QProgressBar, QFileDialog)
 from finsight.delivery.desktop.components import SectionHeader  # noqa: F401 (re-exported convenience)
@@ -15,11 +16,31 @@ _MONTHS = ["January", "February", "March", "April", "May", "June",
 # Approved Release-1 sources (backend-supported) and honestly-deferred future types (FR-004/NFR-045).
 _DEFERRED_SOURCES = "Invoices, resource sheets, contracts/SOWs, and rate cards are planned and not yet accepted."
 
+# Plain explanation of what the review period is and why it matters (§5). No invented rule — the
+# period simply identifies the month a review belongs to (FR-005, F-01-03).
+_PERIOD_EXPLAINER = (
+    "The review period is the month this review belongs to. FinSight uses it to keep each month's "
+    "files and findings separate, to prevent mixing periods, and to list this review on your home "
+    "screen. Choose the month and year your financial data is for."
+)
+
 
 class SetupPanel(StepPanel):
+    """First guided step (§5): create a review by choosing its period. Explains the period, prevents
+    duplicate periods with a live warning + one-click open of the existing review, and offers clear
+    Back (to Home) / Next (Create). The entered month/year are preserved across navigation."""
+
+    backRequested = Signal()
+
     def __init__(self, controller):
-        super().__init__(controller, "Review Setup",
-                         "Create a new review, or continue the one you selected.")
+        super().__init__(controller, "Create Review — Review Period",
+                         "Choose the month this review is for.")
+        # --- period explainer ---
+        self._explainer = QLabel(_PERIOD_EXPLAINER)
+        self._explainer.setProperty("role", "context")
+        self._explainer.setWordWrap(True)
+        self.content.addWidget(self._explainer)
+
         # --- create form ---
         self._form = QWidget()
         fl = QVBoxLayout(self._form)
@@ -37,6 +58,11 @@ class SetupPanel(StepPanel):
         self._period.setProperty("role", "cardValue")
         self._id_hint = QLabel()                          # internal id kept as small secondary detail
         self._id_hint.setProperty("role", "context")
+        self._back = QPushButton("← Back to Home")
+        self._back.setProperty("role", "secondary")
+        self._open_existing = QPushButton("Open existing review")
+        self._open_existing.setProperty("role", "secondary")
+        self._open_existing.setVisible(False)
         self._create = QPushButton("Create review")
         self._create.setProperty("role", "primary")       # the one primary action on this screen
         fl.addWidget(FormRow("Month", self._month))
@@ -44,7 +70,9 @@ class SetupPanel(StepPanel):
         fl.addWidget(FormRow("Review period", self._period))
         fl.addWidget(self._id_hint)
         row = QHBoxLayout()
+        row.addWidget(self._back)
         row.addStretch(1)
+        row.addWidget(self._open_existing)
         row.addWidget(self._create)
         fl.addLayout(row)
         self.content.addWidget(self._form)
@@ -58,6 +86,8 @@ class SetupPanel(StepPanel):
         self._month.currentIndexChanged.connect(self._derive)
         self._year.valueChanged.connect(self._derive)
         self._create.clicked.connect(self._on_create)
+        self._back.clicked.connect(self.backRequested.emit)
+        self._open_existing.clicked.connect(self._on_open_existing)
         self._derive()
 
     def _derived_id(self) -> str:
@@ -66,6 +96,29 @@ class SetupPanel(StepPanel):
     def _derive(self):
         self._period.setText(pres.period_text(self._month.currentText(), str(self._year.value())))
         self._id_hint.setText(f"Internal identifier: {self._derived_id()}")
+        self._check_period()
+
+    def _check_period(self):
+        """Live duplicate guard (§5): if a review already exists for the chosen period, warn clearly
+        and offer to open it instead of creating a colliding one. Runs only while creating (no active
+        review); never overrides a create error just surfaced."""
+        if self.cid():
+            return
+        existing = self._c.review_status(self._derived_id())
+        if existing is not None:
+            self.show_warning(
+                f"A review for {pres.period_text(existing.month, existing.year)} already exists "
+                f"({pres.state_label(existing.state)}). Open it to continue, or choose a different "
+                "month or year.")
+            self._create.setEnabled(False)
+            self._open_existing.setVisible(True)
+        else:
+            self.clear_message()
+            self._create.setEnabled(True)
+            self._open_existing.setVisible(False)
+
+    def _on_open_existing(self):
+        self._c.select_review(self._derived_id())
 
     def _on_create(self):
         self.clear_message()
@@ -97,12 +150,15 @@ class SetupPanel(StepPanel):
                     f"Review “{pres.period_text(status.month, status.year)}” already exists "
                     f"({pres.state_label(status.state)}). Continue with Data Upload, or revisit a "
                     "completed step from the rail.")
+            self._explainer.setVisible(False)
             self._form.setVisible(False)
             self._note.setVisible(True)
         else:
-            self.set_subtitle("Create a new review, or continue the one you selected.")
+            self.set_subtitle("Choose the month this review is for.")
+            self._explainer.setVisible(True)
             self._form.setVisible(True)
             self._note.setVisible(False)
+            self._check_period()                          # re-evaluate duplicate state on (re)entry
 
 
 class UploadPanel(StepPanel):

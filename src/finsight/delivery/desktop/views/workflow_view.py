@@ -16,6 +16,7 @@
 #   - Locate dialog uses the shared source-format policy; no full paths leave the OS dialog.
 #   - Independent of Ollama.
 from __future__ import annotations
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QLabel
 from PySide6.QtWidgets import QStackedWidget, QFileDialog
 from finsight.delivery.desktop.components.step_rail import StepRail
@@ -37,6 +38,8 @@ class WorkflowView(QWidget):
     """The interactive nine-step review workspace: an interactive step rail on the left and the
     step panels on the right. Step availability follows the persisted CycleState; the workflow
     never fakes a transition (each panel calls the workflow command service)."""
+
+    backToHomeRequested = Signal()   # first-step "Back to Home" (§5) — shell decides Welcome vs Dashboard
 
     def __init__(self, controller, parent=None):
         super().__init__(parent)
@@ -80,6 +83,7 @@ class WorkflowView(QWidget):
         outer.addWidget(right, 1)
 
         self._rail.stepActivated.connect(self._on_rail)
+        self._panels[0].backRequested.connect(self.backToHomeRequested.emit)   # Setup "Back to Home"
         controller.activeReviewChanged.connect(lambda _c: self._on_active_changed())
         controller.workflowChanged.connect(lambda _c: self._on_workflow_changed())
         controller.reviewRecoveryChanged.connect(lambda _c: self._refresh_recovery())
