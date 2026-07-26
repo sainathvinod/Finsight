@@ -140,9 +140,13 @@ def test_dashboard_is_launch_home(window_factory, populated_db):
     assert w.current_view_key() == "dashboard"
     assert w.view("dashboard").dashboard_kpis()["total_reviews"] == 1
 
-def test_empty_db_dashboard_shows_first_run(window_factory, empty_db):
+def test_empty_db_opens_dedicated_welcome_screen(window_factory, empty_db):
+    # First-ever launch (no reviews) must open the dedicated Welcome screen, not a blank Dashboard.
     w = window_factory(empty_db)
-    assert w.current_view_key() == "dashboard"
+    assert w.current_view_key() == "welcome"
+    assert w.view("welcome").primary_action_text() == "Create New Review"
+    # The Dashboard itself still carries its first-run empty state when navigated to directly.
+    w.navigate("dashboard")
     assert w.view("dashboard").dashboard_empty_state() == "first_run"
 
 def test_open_review_from_dashboard_sets_active_and_navigates(window_factory, populated_db):

@@ -5,6 +5,7 @@ from PySide6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, Q
 from finsight.delivery.desktop.components import NavItem
 from finsight.delivery.desktop.views import (
     ReviewsView, OverviewView, FindingsView, AuditView, WorkflowView, AskFinView, DashboardView)
+from finsight.delivery.desktop.views.welcome_view import WelcomeView
 from finsight.delivery.desktop.theme import tokens as t
 
 # (nav key, label) in order; index aligns with the workspace stack. "dashboard" is the portfolio
@@ -47,6 +48,9 @@ class MainWindow(QMainWindow):
         for v in (self._dashboard, self._reviews, self._overview, self._workspace, self._findings,
                   self._audit, self._askfin):
             self._stack.addWidget(v)
+        # First-launch Welcome lives outside the nav stack order; shown before any review exists.
+        self._welcome = WelcomeView(controller)
+        self._stack.addWidget(self._welcome)
         right.addWidget(self._stack, 1)
         right_wrap = QWidget()
         right_wrap.setLayout(right)
@@ -59,12 +63,14 @@ class MainWindow(QMainWindow):
         self._overview.openWorkflowRequested.connect(lambda: self.navigate("workspace"))
         self._dashboard.openReviewRequested.connect(self._on_open_from_dashboard)
         self._dashboard.newReviewRequested.connect(self._on_new_review)
+        self._welcome.newReviewRequested.connect(self._on_new_review)
+        self._welcome.askFinRequested.connect(lambda: self.navigate("askfin"))
         self._c.activeReviewChanged.connect(self._on_active_changed)
         for i, (key, _label) in enumerate(_NAV):
             sc = QShortcut(QKeySequence(f"Ctrl+{i + 1}"), self)
             sc.activated.connect(lambda k=key: self.navigate(k))
 
-        self.navigate("dashboard")   # portfolio overview is the launch home
+        self._route_launch()   # first-ever launch -> Welcome; returning users -> Dashboard home
         # ReviewsView selects its first row during construction (before the signal above was
         # connected), so sync the top-bar context to whatever is already active.
         self._on_active_changed(self._c.active_review_id or "")
@@ -124,6 +130,28 @@ class MainWindow(QMainWindow):
             current.refresh()
         self._nav_items[key].setFocus()
 
+    def _route_launch(self) -> None:
+        """First-ever launch (no reviews yet) opens the dedicated Welcome screen; returning users
+        land on the Dashboard portfolio home. A guided product never opens to a blank table."""
+        if self._has_reviews():
+            self.navigate("dashboard")
+        else:
+            self.show_welcome()
+
+    def _has_reviews(self) -> bool:
+        try:
+            return bool(self._c.reviews_with_status())
+        except Exception:
+            return False
+
+    def show_welcome(self) -> None:
+        self._current_key = "welcome"
+        self._stack.setCurrentWidget(self._welcome)
+        for item in self._nav_items.values():
+            item.setChecked(False)
+        self._crumb.setText("Welcome")
+        self._welcome.setFocus()
+
     # --- public seams (stable API for tests and integrators) ---
     def current_view_key(self) -> str:
         return self._current_key
@@ -131,7 +159,7 @@ class MainWindow(QMainWindow):
     def view(self, key: str):
         return {"dashboard": self._dashboard, "reviews": self._reviews, "overview": self._overview,
                 "workspace": self._workspace, "findings": self._findings, "audit": self._audit,
-                "askfin": self._askfin}[key]
+                "askfin": self._askfin, "welcome": self._welcome}[key]
 
     def _on_new_review(self) -> None:
         self._c.begin_new_review()

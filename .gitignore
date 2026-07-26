@@ -62,6 +62,10 @@ logs/
 test-output/
 test-results.txt
 
+# Rendered UI verification screenshots (regenerable via scripts/render_ui.py; the script is the
+# reviewable artifact, the PNGs are large binaries that live at a stable path but are not tracked).
+artifacts/ui-verification/
+
 # zipapp packaging staging
 build/zipapp/
 build/lib/

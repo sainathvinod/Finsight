@@ -16,7 +16,8 @@ def _inspector_text(inspector) -> str:
 def test_shell_launches(window_factory, populated_db):
     w = window_factory(populated_db)
     assert w.windowTitle() == "FinSight"
-    assert w._stack.count() == 7  # Dashboard, Reviews, Overview, Workflow, Findings, Audit, Ask Fin
+    # Dashboard, Reviews, Overview, Workflow, Findings, Audit, Ask Fin + first-launch Welcome
+    assert w._stack.count() == 8
 
 
 def test_navigation_switches(window_factory, populated_db):

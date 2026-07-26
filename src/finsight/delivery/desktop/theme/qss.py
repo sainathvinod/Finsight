@@ -130,6 +130,17 @@ QLabel[role="pillAbandoned"] {{
     background: {t.BG_CHROME}; border: 1px solid {t.BORDER_STRONG}; border-radius: {t.RADIUS_SM}px; padding: 1px 6px;
 }}
 
+/* First-launch welcome hero — large, calm enterprise typography. */
+QLabel[role="heroTitle"] {{ font-size: 30px; font-weight: 700; color: {t.TEXT_PRIMARY}; }}
+QLabel[role="heroLead"] {{ font-size: {t.FS_TITLE}px; color: {t.TEXT_SECONDARY}; }}
+QLabel[role="heroPoint"] {{ font-size: {t.FS_BASE}px; color: {t.TEXT_SECONDARY}; }}
+QPushButton[role="heroPrimary"] {{
+    background: {t.ACCENT}; color: {t.TEXT_ON_ACCENT}; border: 1px solid {t.ACCENT};
+    border-radius: {t.RADIUS_MD}px; padding: 8px 20px; font-size: {t.FS_TITLE}px; font-weight: 600;
+}}
+QPushButton[role="heroPrimary"]:hover {{ background: {t.ACCENT_HOVER}; border-color: {t.ACCENT_HOVER}; }}
+QPushButton[role="heroPrimary"]:focus {{ border: 1px solid {t.FOCUS_RING}; }}
+
 QScrollArea {{ border: none; background: transparent; }}
 QToolTip {{ background: {t.TEXT_PRIMARY}; color: {t.WHITE}; border: none; padding: 3px 6px; }}
 """
