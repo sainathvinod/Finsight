@@ -272,10 +272,11 @@ class AppController(QObject):
         return cycle
 
     def upload(self, cycle_id: str, ged_path: str, budget_path: str,
-               invoice_path: str = None) -> UploadResult:
+               invoice_path: str = None, acknowledged_missing=None) -> UploadResult:
         # invoice_path is optional and captured for provenance/audit only (§6) — never extracted.
+        # acknowledged_missing records the §7 "Continue anyway" decision as an audit fact.
         result = self._s.workflow.upload(self._session_for(cycle_id), ged_path, budget_path,
-                                         invoice_path)
+                                         invoice_path, acknowledged_missing)
         self.workflowChanged.emit(cycle_id)
         return result
 

@@ -10,6 +10,7 @@
 #   controls, and a confidentiality/handling line. Composition only — no storage or business logic;
 #   the panel wires signals to the controller.
 from __future__ import annotations
+import os
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QFrame, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton
 from finsight.delivery.desktop.theme import tokens as t
@@ -91,7 +92,9 @@ class SourceCard(QFrame):
     # --- state ---
     def set_file(self, path: str) -> None:
         self._path = path
-        self._field.setText(path or "")
+        # Show the file NAME only (§6) — the full path is kept internally but not displayed, so no
+        # directory structure leaks into the UI.
+        self._field.setText(os.path.basename(path) if path else "")
         self._choose.setText("Replace…")
         self._remove.setVisible(True)
         self._status.setProperty("role", "context")

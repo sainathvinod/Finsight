@@ -109,6 +109,11 @@ class TransitionEngine:
                 # upload_ged / upload_budget / upload_invoice — the "source bound" audit facts.
                 self.audit_event(cid, "upload_" + f.doc_type.lower(),
                                  {"name": f.name, "fingerprint": f.fingerprint, "period": f.period})
+            # §7: the explicit "Continue anyway" decision to proceed without a source is a material
+            # action — record which sources were knowingly omitted so it is auditable and disclosable.
+            acknowledged = ctx.get("acknowledged_missing") or []
+            if acknowledged:
+                self.audit_event(cid, "missing_source_acknowledged", {"missing": sorted(acknowledged)})
         self.transition(cycle, CycleState.INTAKE, body)
 
     def do_processed(self, cycle, ctx):

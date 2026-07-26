@@ -66,7 +66,17 @@ def main() -> int:
         w_empty._c.create_review("2026-08", "August", "2026")
         w_empty.navigate("workspace")
         w_empty._workspace._apply(1)   # Data Upload step
+        up = w_empty._workspace.panel(1)
         _grab(w_empty, os.path.join(out_dir, "01c-data-upload-three-sources.png"))
+
+        # 1d. Missing-source two-step confirmation (§7): required present, invoice absent.
+        ged = os.path.join(work, "g.xlsx"); bud = os.path.join(work, "b.xlsx")
+        build_synthetic_ged(ged); build_synthetic_budget(bud)
+        up.set_ged(ged); up.set_budget(bud)
+        up._on_upload()                # step 1: first warning naming the missing source
+        _grab(w_empty, os.path.join(out_dir, "01d-missing-source-step1.png"))
+        up._continue1.click()          # step 2: explicit Continue-anyway choice
+        _grab(w_empty, os.path.join(out_dir, "01e-missing-source-step2.png"))
 
         # 2. Returning user: populated DB -> Dashboard home + key screens.
         pop_db = _populated_db(work)

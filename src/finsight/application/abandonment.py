@@ -27,7 +27,8 @@ from finsight.domain.lifecycle import CycleDisposition
 # operational/diagnostic events (reconstruction "resume", navigation, provider status, Ask Fin,
 # divergence checks) so a mere glance or divergence check does not reset the clock.
 MEANINGFUL_ACTIONS = frozenset({
-    "setup", "upload_ged", "upload_budget", "upload_invoice", "source_rebound", "verify", "analyze",
+    "setup", "upload_ged", "upload_budget", "upload_invoice", "missing_source_acknowledged",
+    "source_rebound", "verify", "analyze",
     "summarize", "export", "review_abandoned", "review_resumed",
 })
 

@@ -47,6 +47,13 @@ def test_create_review_via_setup(window_factory, empty_db):
     assert w._workspace.current_step() == 1   # advanced to Data Upload
 
 
+def _invoice(tmp_path):
+    inv = os.path.join(str(tmp_path), "inv.pdf")
+    with open(inv, "wb") as f:
+        f.write(b"%PDF-1.4 x")
+    return inv
+
+
 def test_missing_file_shows_validation_state(window_factory, empty_db, tmp_path):
     w = window_factory(empty_db)
     w.navigate("workspace")
@@ -55,6 +62,7 @@ def test_missing_file_shows_validation_state(window_factory, empty_db, tmp_path)
     upload = w._workspace.panel(1)
     upload.set_ged(os.path.join(str(tmp_path), "does-not-exist.xlsx"))
     upload.set_budget(bud)
+    upload.set_invoice(_invoice(tmp_path))               # all slots filled -> no missing-source prompt
     upload._on_upload()
     assert "missing" in upload.message.text().lower()
     assert w._c.workflow_state("2026-07") == "Created"   # not advanced
@@ -68,6 +76,7 @@ def test_upload_then_process_threaded_advances(window_factory, empty_db, tmp_pat
     upload = w._workspace.panel(1)
     upload.set_ged(ged)
     upload.set_budget(bud)
+    upload.set_invoice(_invoice(tmp_path))               # all slots filled -> direct upload
     upload._on_upload()
     assert w._c.workflow_state("2026-07") == "Intake"
 

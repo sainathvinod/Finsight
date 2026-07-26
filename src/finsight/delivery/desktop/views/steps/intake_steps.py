@@ -203,11 +203,25 @@ class UploadPanel(StepPanel):
         self._inv_card.chooseRequested.connect(self._choose_invoice)
         self._inv_card.removeRequested.connect(lambda: (self._inv_card.clear(), self._sync()))
 
+        # Action area: normal upload (stage 0) plus the §7 two-step missing-source confirmation
+        # (stage 1 = first warning naming missing sources; stage 2 = explicit Continue-anyway choice).
+        self._stage = 0
         self._upload = QPushButton("Upload files"); self._upload.setProperty("role", "primary")
         self._upload.setEnabled(False)
-        row = QHBoxLayout(); row.addStretch(1); row.addWidget(self._upload)
+        self._back1 = QPushButton("Go back and add files"); self._back1.setProperty("role", "secondary")
+        self._continue1 = QPushButton("Continue without them…"); self._continue1.setProperty("role", "secondary")
+        self._remaining = QPushButton("Upload remaining documents"); self._remaining.setProperty("role", "primary")
+        self._anyway = QPushButton("Continue anyway"); self._anyway.setProperty("role", "secondary")
+        row = QHBoxLayout(); row.addStretch(1)
+        for b in (self._upload, self._back1, self._continue1, self._remaining, self._anyway):
+            row.addWidget(b)
         self.content.addLayout(row)
         self._upload.clicked.connect(self._on_upload)
+        self._continue1.clicked.connect(lambda: self._set_stage(2))
+        self._back1.clicked.connect(lambda: self._set_stage(0))
+        self._remaining.clicked.connect(lambda: self._set_stage(0))
+        self._anyway.clicked.connect(lambda: self._do_upload(self._missing_sources()))
+        self._set_stage(0)
 
     def _choose_ged(self):
         path, _ = QFileDialog.getOpenFileName(self, "Select GED workbook", "", _WORKBOOKS)
@@ -225,28 +239,80 @@ class UploadPanel(StepPanel):
             self.set_invoice(path)
 
     def set_ged(self, path):    # also used by tests to inject a selection
-        self._ged_card.set_file(path); self._sync()
+        self._ged_card.set_file(path); self._set_stage(0); self._sync()
 
     def set_budget(self, path):
-        self._bud_card.set_file(path); self._sync()
+        self._bud_card.set_file(path); self._set_stage(0); self._sync()
 
     def set_invoice(self, path):
         self._inv_card.set_file(path)
         self._inv_card.set_status("Captured for the record — invoice analysis is not available this release.")
-        self._sync()
+        self._set_stage(0); self._sync()
 
     def _sync(self):
         self._upload.setEnabled(bool(self._ged_card.path() and self._bud_card.path() and self.cid()))
 
+    # --- §7 missing-source two-step confirmation ---
+    # Capability lost when a source is absent. Only the optional Invoice can be missing here (GED/Budget
+    # are required to enable Upload); the invoice capability is already unavailable this release.
+    _CAPABILITY = {
+        "GED": "expense analysis",
+        "Budget": "budget analysis and budget-vs-GED reconciliation",
+        "Invoice": "invoice review (already unavailable in this release)",
+    }
+
+    def _missing_sources(self):
+        missing = []
+        if not self._ged_card.path():
+            missing.append("GED")
+        if not self._bud_card.path():
+            missing.append("Budget")
+        if not self._inv_card.path():
+            missing.append("Invoice")
+        return missing
+
+    def _set_stage(self, stage):
+        self._stage = stage
+        self._upload.setVisible(stage == 0)
+        self._back1.setVisible(stage == 1)
+        self._continue1.setVisible(stage == 1)
+        self._remaining.setVisible(stage == 2)
+        self._anyway.setVisible(stage == 2)
+        if stage == 0:
+            self.clear_message()
+            return
+        missing = self._missing_sources()
+        caps = "; ".join(self._CAPABILITY.get(m, m) for m in missing)
+        names = ", ".join(missing)
+        if stage == 1:                                    # first warning: name the missing sources
+            self.show_warning(
+                f"You have not added: {names}. Without {'it' if len(missing) == 1 else 'them'}, these "
+                f"are unavailable and will not run: {caps}. FinSight will never imply an unavailable "
+                "analysis ran.")
+        else:                                             # second explicit confirmation
+            self.show_warning(
+                f"Continue without {names}? This choice is recorded in the audit trail and disclosed in "
+                "the report's scope & limitations. You can also go back and add the file(s).")
+
     def _on_upload(self):
         self.clear_message()
+        if self._missing_sources():                       # not all sources provided -> two-step confirm
+            self._set_stage(1)
+            return
+        self._do_upload([])
+
+    def _do_upload(self, acknowledged):
+        self.clear_message()
+        self._set_stage(0)
         try:
             self._c.upload(self.cid(), self._ged_card.path(), self._bud_card.path(),
-                           invoice_path=self._inv_card.path())
+                           invoice_path=self._inv_card.path(),
+                           acknowledged_missing=acknowledged or None)
         except FinsightAppError as e:
             self.show_error(e)
 
     def refresh(self):
+        self._set_stage(0)                                # re-entering the step cancels any confirmation
         self._sync()
         if self.cid() and self._c.workflow_state(self.cid()) not in (None, "Created"):
             self.show_info("Files were recorded for this review. Re-select and upload again to continue "

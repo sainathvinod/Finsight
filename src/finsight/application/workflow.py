@@ -95,7 +95,7 @@ class ReviewWorkflowService:
 
     # ---- Step 2: Data Upload (INTAKE) ----
     def upload(self, session: ReviewSession, ged_path: str, budget_path: str,
-               invoice_path: str = None) -> UploadResult:
+               invoice_path: str = None, acknowledged_missing=None) -> UploadResult:
         cycle = self._require_cycle(session.cycle_id)
         provenance, missing = self._e.build_provenance(cycle, ged_path, budget_path, invoice_path)
         if missing:
@@ -108,6 +108,9 @@ class ReviewWorkflowService:
         if invoice_path:
             paths["INVOICE"] = invoice_path
         session.ctx["paths"] = paths
+        # §7: sources the user explicitly chose to proceed WITHOUT (two-step "Continue anyway"). Recorded
+        # as an audit fact so the decision never disappears (§19) and can be disclosed in report scope.
+        session.ctx["acknowledged_missing"] = list(acknowledged_missing or [])
         try:
             self._e.do_intake(cycle, session.ctx)
         except Exception as e:
