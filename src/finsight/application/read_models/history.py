@@ -26,10 +26,14 @@ class ReviewComparison:
     def change_lines(self) -> List[str]:
         """Plain, factual 'what changed' lines — no manufactured conclusion."""
         d = self.finding_delta
-        direction = "no change in" if d == 0 else ("%d more" % d if d > 0 else "%d fewer" % (-d))
-        lines = ["%s finding(s) than %s (%d vs %d)." % (
-            direction if d == 0 else direction, self.prior_period,
-            self.current_finding_count, self.prior_finding_count)]
+        counts = (self.prior_period, self.current_finding_count, self.prior_finding_count)
+        if d == 0:
+            lead = "The same number of finding(s) as %s (%d vs %d)." % counts
+        elif d > 0:
+            lead = "%d more finding(s) than %s (%d vs %d)." % (d, counts[0], counts[1], counts[2])
+        else:
+            lead = "%d fewer finding(s) than %s (%d vs %d)." % (-d, counts[0], counts[1], counts[2])
+        lines = [lead]
         if self.newly_flagged_accounts:
             lines.append("Newly flagged account(s): " + ", ".join(self.newly_flagged_accounts) + ".")
         if self.resolved_accounts:

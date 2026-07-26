@@ -121,6 +121,27 @@ def main() -> int:
         w_rev.ask_fin_drawer().click_prompt("highest_risk")
         _grab(w_rev, os.path.join(out_dir, "09c-ask-fin-review.png"))
 
+        # 09d. Ask Fin with local review memory — two analyzed months so a comparison + memory exist.
+        mdb = os.path.join(work, "mem.db")
+        cm = AppController(build_query_services(mdb))
+        for i, (cid, month, bump) in enumerate([("2026-06", "June", 0), ("2026-07", "July", 1)]):
+            g = os.path.join(work, f"mg{cid}.xlsx"); b = os.path.join(work, f"mb{cid}.xlsx")
+            build_synthetic_ged(g); build_synthetic_budget(b)
+            cm.create_review(cid, month, "2026"); cm.upload(cid, g, b)
+            cm._s.workflow.process(cm._session_for(cid))
+            if bump:
+                recs, _ = cm.extraction_review(cid); rec = recs[0]
+                ac = list(rec.columns).index("amount")
+                cm.save_correction(cid, "GED", rec.source_refs[0], "amount",
+                                   rec.rows[0][ac], str(int(float(rec.rows[0][ac])) + 1))
+            cm.verify(cid); cm.analyze(cid)
+        cm.select_review("2026-07")
+        w_mem = MainWindow(cm)
+        w_mem.navigate("dashboard")
+        w_mem.toggle_ask_fin()
+        w_mem.ask_fin_drawer().click_prompt("what_changed")
+        _grab(w_mem, os.path.join(out_dir, "09d-ask-fin-memory.png"))
+
         # 10-11. Dark theme + high-contrast (§20) — one setStyleSheet re-themes the whole surface.
         from finsight.delivery.desktop.theme.palettes import make_palette
         w2 = MainWindow(AppController(build_query_services(pop_db)))
