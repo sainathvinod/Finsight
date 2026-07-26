@@ -47,3 +47,8 @@ class PersistenceError(FinsightAppError):
 
 class ExportError(FinsightAppError):
     """Producing or writing the export failed."""
+
+
+class InvalidCorrectionError(FinsightAppError):
+    """A user correction to an extracted value is not valid (unknown field, non-numeric amount, or the
+    review is no longer in a state where corrections are allowed)."""

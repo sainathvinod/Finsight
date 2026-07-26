@@ -11,6 +11,8 @@ from finsight.domain.lifecycle import (
 )
 from finsight.application import intake as INTAKE
 from finsight.application.analysis import verified_dataset_fingerprint
+from finsight.domain.corrections import NUMERIC_FIELDS, CORRECTABLE_FIELDS
+from finsight.domain.money import to_decimal
 from finsight.diagnostics import get_logger
 
 _log = get_logger("transition")
@@ -20,7 +22,7 @@ class TransitionEngine:
     def __init__(self, cycle_repo, ingested_repo, run_repo, finding_repo, audit, uow, hasher,
                  pipeline, verification, analysis, reporting, export, clock, actor="local-user",
                  source_binding_repo=None, cycle_lifecycle_repo=None, review_generation_repo=None,
-                 export_artifact_repo=None):
+                 export_artifact_repo=None, extraction_override_repo=None):
         self.cycle_repo = cycle_repo
         self.ingested_repo = ingested_repo
         self.run_repo = run_repo
@@ -44,6 +46,9 @@ class TransitionEngine:
         self.review_generation_repo = review_generation_repo
         # R1-M3: immutable export identity (ADR-015). Optional; None in direct-construction tests.
         self.export_artifact_repo = export_artifact_repo
+        # Target-product #6: user corrections applied to the verified dataset (FR-028/029). Optional;
+        # None -> no corrections applied (byte-identical to the pre-corrections behavior).
+        self.extraction_override_repo = extraction_override_repo
 
     # ---- primitives ----
     def audit_event(self, cycle_id: str, action: str, detail: Dict[str, Any]) -> None:
@@ -81,8 +86,50 @@ class TransitionEngine:
     def extract(self, ged_path, budget_path):
         return self.pipeline.run(ged_path, budget_path)
 
-    def build_verified(self, cycle_id, extracted, approve):
-        return self.verification.build(cycle_id, extracted, approved=approve)
+    def build_verified(self, cycle_id, extracted, approve, overrides=None):
+        # Apply the user's APPROVED corrections onto the extracted rows before the single VerifiedDataset
+        # factory runs (ADR-006 gate untouched). Because the corrected rows flow through the same factory,
+        # verified_dataset_fingerprint(vds) automatically reflects the corrections — that IS the
+        # re-fingerprint. Applied here so BOTH interactive verify and reconstruction stay consistent.
+        # `overrides` (a pre-fetched effective map) is supplied by worker-thread callers (reconstruction)
+        # so the worker never touches the thread-bound SQLite connection; None -> fetch on this thread.
+        corrected = self._apply_overrides(cycle_id, extracted, overrides)
+        return self.verification.build(cycle_id, corrected, approved=approve)
+
+    def _apply_overrides(self, cycle_id, extracted, overrides=None):
+        """Deterministically overlay the effective (non-reverted) corrections onto the ACCEPTED rows.
+        Numeric fields parse via the same exact-decimal boundary as extraction (to_decimal); the source
+        `source` cell is the join key. Returns a new dict; the input extracted rows are never mutated."""
+        if overrides is None:
+            if self.extraction_override_repo is None:
+                return extracted
+            overrides = self.extraction_override_repo.effective(cycle_id)
+        effective = overrides
+        if not effective:
+            return extracted
+        result = dict(extracted)
+        result["ged_valid"] = self._corrected_rows(extracted.get("ged_valid", []), "GED", effective)
+        result["budget_valid"] = self._corrected_rows(extracted.get("budget_valid", []), "BUDGET", effective)
+        return result
+
+    @staticmethod
+    def _corrected_rows(rows, document_type, effective):
+        out = []
+        for r in rows:                                    # stable source order preserved (determinism)
+            nr = dict(r)
+            src = nr.get("source", "")
+            for field in CORRECTABLE_FIELDS.get(document_type, ()):   # fixed field order (determinism)
+                raw = effective.get((document_type, src, field))
+                if raw is None:
+                    continue
+                if field in NUMERIC_FIELDS:
+                    parsed = to_decimal(raw)
+                    if parsed is not None:
+                        nr[field] = parsed
+                else:
+                    nr[field] = raw
+            out.append(nr)
+        return out
 
     # ---- individual transitions (public; the shared rules) ----
     def do_intake(self, cycle, ctx):

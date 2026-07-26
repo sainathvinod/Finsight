@@ -198,12 +198,13 @@ class ReviewWorkflowService:
         return V.VerificationPreview(available=bool(ex.get("available")),
                                      rejected_reason=session.ctx.get("rejected"), sources=sources)
 
-    def extraction_review(self, session: ReviewSession):
+    def extraction_review(self, session: ReviewSession, overrides=None):
         """ALL extracted records per provided source (target-product §9), for the review-before-verify
-        tables. Returns (records, omitted): `records` has one entry per extracted source with every
-        accepted+quarantined row and its lineage; `omitted` names captured-but-not-extracted sources
-        (e.g. an invoice — captured for the record, never analyzed). None before extraction exists."""
+        tables, with the user's current corrections overlaid. Returns (records, omitted): `records` has
+        one entry per extracted source with every accepted+quarantined row and its lineage; `omitted`
+        names captured-but-not-extracted sources (e.g. an invoice). None before extraction exists."""
         from finsight.application.read_models import verification as V
+        from finsight.domain.corrections import CORRECTABLE_FIELDS
         if session is None or session.ctx.get("extracted") is None:
             return None
         ex = session.ctx["extracted"]
@@ -213,13 +214,24 @@ class ReviewWorkflowService:
             p = prov.get(doc_type)
             return getattr(p, attr) if p else default
 
+        # Effective (non-reverted) corrections, keyed per document: (source_ref, field) -> (cur, orig).
+        by_doc = {"GED": {}, "BUDGET": {}}
+        for o in (overrides or []):
+            if getattr(o, "reverted", False):
+                continue
+            by_doc.setdefault(o.document_type, {})[(o.source_ref, o.field)] = (o.current_value,
+                                                                               o.original_value)
+
         avail = bool(ex.get("available"))
         records = [
-            V.source_records("GED", _p("GED", "name"), _p("GED", "period"), V.ged_columns(),
-                             ex.get("ged_valid", []), ex.get("ged_quarantined", []), avail),
-            V.source_records("Budget Tracker", _p("BUDGET", "name"), _p("BUDGET", "period"),
+            V.source_records("GED", "GED", _p("GED", "name"), _p("GED", "period"), V.ged_columns(),
+                             ex.get("ged_valid", []), ex.get("ged_quarantined", []), avail,
+                             overrides=by_doc.get("GED", {}), editable_fields=CORRECTABLE_FIELDS["GED"]),
+            V.source_records("Budget Tracker", "BUDGET", _p("BUDGET", "name"), _p("BUDGET", "period"),
                              V.budget_columns(), ex.get("budget_valid", []),
-                             ex.get("budget_quarantined", []), avail),
+                             ex.get("budget_quarantined", []), avail,
+                             overrides=by_doc.get("BUDGET", {}),
+                             editable_fields=CORRECTABLE_FIELDS["BUDGET"]),
         ]
         # An invoice, if captured, is NOT extracted (no invoice rules exist — §6/RED CARD). Name it as
         # an omitted source so the review never implies it was analyzed.

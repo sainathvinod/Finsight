@@ -7,6 +7,7 @@ from finsight.infrastructure.persistence import (Dal, SqliteUnitOfWork, ReviewCy
 from finsight.infrastructure.lifecycle_repositories import (
     SourceBindingRepoSqlite, CycleLifecycleRepoSqlite, ReviewGenerationRepoSqlite,
     ExportArtifactRepoSqlite)
+from finsight.infrastructure.corrections_repository import ExtractionOverrideRepoSqlite
 from finsight.infrastructure.audit import AuditStoreSqlite
 from finsight.infrastructure.readers import ExcelReader
 from finsight.infrastructure.files import FileHasher
@@ -59,6 +60,7 @@ class Container:
     clock: Any
     source_binding_repo: Any = None
     cycle_lifecycle_repo: Any = None
+    extraction_override_repo: Any = None
 
     def __getitem__(self, key: str):
         """DEPRECATED string-key access, retained only for backward compatibility with existing
@@ -88,6 +90,7 @@ def build_app(db_path: str, clock, reader=None) -> Container:
     cycle_lifecycle_repo = CycleLifecycleRepoSqlite(dal)     # intake_stage on the current candidate
     review_generation_repo = ReviewGenerationRepoSqlite(dal)  # Phase 6.4cA: verification basis at VERIFIED
     export_artifact_repo = ExportArtifactRepoSqlite(dal)     # R1-M3: immutable export identity (ADR-015)
+    extraction_override_repo = ExtractionOverrideRepoSqlite(dal)  # target-product #6: user corrections
     audit = AuditStoreSqlite(dal, clock)
     hasher = FileHasher()
     reader = reader or ExcelReader()
@@ -112,11 +115,13 @@ def build_app(db_path: str, clock, reader=None) -> Container:
                         source_binding_repo=source_binding_repo,
                         cycle_lifecycle_repo=cycle_lifecycle_repo,
                         review_generation_repo=review_generation_repo,
-                        export_artifact_repo=export_artifact_repo)
+                        export_artifact_repo=export_artifact_repo,
+                        extraction_override_repo=extraction_override_repo)
     return Container(dal=dal, uow=uow, orch=orch, cycle_repo=cycle_repo, ingested_repo=ingested_repo,
                      run_repo=run_repo, finding_repo=finding_repo, config_repo=config_repo,
                      audit=audit, config=active, clock=clock, source_binding_repo=source_binding_repo,
-                     cycle_lifecycle_repo=cycle_lifecycle_repo)
+                     cycle_lifecycle_repo=cycle_lifecycle_repo,
+                     extraction_override_repo=extraction_override_repo)
 
 
 @dataclass(frozen=True)
@@ -143,6 +148,7 @@ class AppServices:
     workflow: "ReviewWorkflowService"
     recovery: "ReviewReconstructionService"
     abandonment: "AbandonmentService"
+    corrections: "CorrectionService"
     ai: "AiServices"
 
 
@@ -333,6 +339,7 @@ def build_query_services(db_path: str, clock=None) -> "AppServices":
     from finsight.application.workflow import ReviewWorkflowService
     from finsight.application.reconstruction import ReviewReconstructionService
     from finsight.application.abandonment import AbandonmentService
+    from finsight.application.corrections import CorrectionService
     from finsight.infrastructure.lifecycle_repositories import ReviewGenerationRepoSqlite
     container = build_app(db_path, clock or SystemClock())
     reporting = ReportingService()
@@ -346,5 +353,7 @@ def build_query_services(db_path: str, clock=None) -> "AppServices":
                                              ReviewGenerationRepoSqlite(container.dal)),
         abandonment=AbandonmentService(container.cycle_repo, container.cycle_lifecycle_repo,
                                        container.audit, container.uow, container.clock),
+        corrections=CorrectionService(container.extraction_override_repo, container.cycle_repo,
+                                      container.audit, container.uow, container.clock),
         ai=build_ai_services(container),
     )

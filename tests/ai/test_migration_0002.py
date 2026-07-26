@@ -22,7 +22,7 @@ class TestMigration0002(unittest.TestCase):
         conn = sqlite3.connect(self._db())
         run_migrations(conn)
         self.assertTrue(AI_TABLES.issubset(self._tables(conn)))
-        self.assertEqual(current_version(conn), 3)   # + lifecycle migration 0003
+        self.assertEqual(current_version(conn), 4)   # + lifecycle 0003 + overrides 0004
 
     def test_upgrade_from_0001_preserves_data(self):
         conn = sqlite3.connect(self._db())
@@ -30,8 +30,8 @@ class TestMigration0002(unittest.TestCase):
         self.assertEqual(current_version(conn), 1)
         conn.execute("INSERT INTO cycles VALUES('c1','May','2026','Exported')")  # 4-col v1 schema
         conn.commit()
-        applied = run_migrations(conn)   # default MIGRATIONS -> v2 and v3 pending
-        self.assertEqual(applied, [2, 3])
+        applied = run_migrations(conn)   # default MIGRATIONS -> v2, v3, v4 pending
+        self.assertEqual(applied, [2, 3, 4])
         self.assertTrue(AI_TABLES.issubset(self._tables(conn)))
         self.assertEqual(conn.execute("SELECT COUNT(*) FROM cycles").fetchone()[0], 1)
 

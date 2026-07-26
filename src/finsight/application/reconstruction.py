@@ -93,6 +93,7 @@ class ReconstructionInputs:
     recorded_verified_fingerprint: Optional[str]
     recorded_extractor_version: Optional[str]
     legacy_metadata_incomplete: bool
+    overrides: Optional[Dict] = None                       # effective corrections, pre-fetched (UI thread)
 
 
 def _short(fp: Optional[str]) -> Optional[str]:
@@ -138,8 +139,12 @@ class ReviewReconstructionService:
                 legacy_incomplete = bool(gen.legacy_metadata_incomplete)
                 if recorded_vfp is None:
                     recorded_vfp = gen.verified_fingerprint
+        # Pre-fetch the effective corrections here (UI thread), so the worker reconstruction reproduces
+        # the CERTIFIED (corrected) verified dataset without touching the thread-bound DB connection.
+        override_repo = getattr(self._e, "extraction_override_repo", None)
+        overrides = override_repo.effective(cycle_id) if override_repo is not None else {}
         return ReconstructionInputs(cycle, cycle.state, bindings, recorded_vfp, extractor_version,
-                                    legacy_incomplete)
+                                    legacy_incomplete, overrides)
 
     # ---------- worker thread: pure reconstruction (NO database) ----------
     def reconstruct(self, inputs: ReconstructionInputs) -> RecoveryResult:
@@ -180,7 +185,7 @@ class ReviewReconstructionService:
         # 4) Verified reviews: rebuild the verified dataset and prove it equals the certified data.
         vds = None
         if verified:
-            vds = self._e.build_verified(cid, extracted, approve=True)
+            vds = self._e.build_verified(cid, extracted, approve=True, overrides=inputs.overrides)
             if inputs.recorded_verified_fingerprint is not None:
                 computed = verified_dataset_fingerprint(vds)
                 if computed != inputs.recorded_verified_fingerprint:

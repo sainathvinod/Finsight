@@ -11,13 +11,14 @@ class Orchestrator:
     def __init__(self, cycle_repo, ingested_repo, run_repo, finding_repo, audit, uow, hasher,
                  pipeline, verification, analysis, reporting, export, clock, actor="local-user",
                  source_binding_repo=None, cycle_lifecycle_repo=None, review_generation_repo=None,
-                 export_artifact_repo=None):
+                 export_artifact_repo=None, extraction_override_repo=None):
         self._engine = TransitionEngine(cycle_repo, ingested_repo, run_repo, finding_repo, audit, uow,
                                         hasher, pipeline, verification, analysis, reporting, export,
                                         clock, actor, source_binding_repo=source_binding_repo,
                                         cycle_lifecycle_repo=cycle_lifecycle_repo,
                                         review_generation_repo=review_generation_repo,
-                                        export_artifact_repo=export_artifact_repo)
+                                        export_artifact_repo=export_artifact_repo,
+                                        extraction_override_repo=extraction_override_repo)
 
     @property
     def engine(self) -> TransitionEngine:

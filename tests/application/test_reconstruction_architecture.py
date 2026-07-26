@@ -42,10 +42,11 @@ def test_reconstruction_performs_no_generation_or_result_writes():
     assert "source_binding_repo" in src or "self._bindings" in src   # binding path-hint write exists
 
 
-def test_no_schema_change_beyond_migration_0003():
-    assert len(MIGRATIONS) == 3
-    assert [m[0] for m in MIGRATIONS] == [1, 2, 3]
-    assert not os.path.exists(os.path.join(SRC, "infrastructure", "migrations", "m0004_.py"))
+def test_migration_set_is_the_known_head():
+    # Reconstruction (Phase 6.4c) added no schema; migration 0004 is the deliberate, separate corrections
+    # subsystem (target-product #6). The registry is the known, ordered head — no unexpected migrations.
+    assert [m[0] for m in MIGRATIONS] == [1, 2, 3, 4]
+    assert MIGRATIONS[3][1] == "extraction_overrides"
 
 
 def test_recovery_banner_has_no_repository_ai_or_file_io():

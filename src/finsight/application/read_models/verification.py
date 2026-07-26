@@ -4,7 +4,7 @@
 # is DERIVED from persisted workflow state, enriched with session validation facts when available.
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from finsight.domain.review_cycle import CycleState, state_rank
 
@@ -44,27 +44,59 @@ class VerificationPreview:
 class SourceRecords:
     """ALL extracted records for one source (target-product §9) — every accepted and quarantined row,
     each carrying its lineage (the `source` cell = file!row). No cap and no sampling: this is the full
-    extracted dataset the reviewer verifies. Read-only; nothing is re-read or persisted."""
+    extracted dataset the reviewer verifies, with the user's current corrections overlaid. Read-only;
+    nothing is re-read or persisted."""
     source_type: str                       # "GED" | "Budget Tracker"
+    document_type: str                     # "GED" | "BUDGET" (the correction key)
     filename: str
     period: str
     columns: Tuple[str, ...]               # leading "status" + the normalized columns (incl. lineage)
-    rows: Tuple[Tuple[str, ...], ...]       # every accepted then quarantined row, stringified
+    rows: Tuple[Tuple[str, ...], ...]       # every accepted then quarantined row, effective values
     accepted_rows: int
     quarantined_rows: int
     available: bool
+    editable_columns: Tuple[str, ...]      # column indices editable (correctable) for this source
+    corrected_cells: Tuple[Tuple[int, int], ...] = ()      # (row, col) cells showing a correction
+    originals: Dict = None                  # {(row, col): original extracted value} for corrected cells
+    source_refs: Tuple[str, ...] = ()       # per-row lineage ref (parallel to rows), for save calls
 
 
-def source_records(source_type: str, filename: str, period: str, columns: Tuple[str, ...],
-                   accepted_rows: List[dict], quarantined_rows: List[dict], available: bool) -> SourceRecords:
+def source_records(source_type: str, document_type: str, filename: str, period: str,
+                   columns: Tuple[str, ...], accepted_rows: List[dict], quarantined_rows: List[dict],
+                   available: bool, overrides=None, editable_fields=()) -> SourceRecords:
+    """Build the full record set with the effective corrections overlaid. `overrides` maps
+    (source_ref, field) -> (current_value, original_value) for non-reverted corrections; only ACCEPTED
+    rows are overlaid (only they feed analysis)."""
+    overrides = overrides or {}
     cols = ("status",) + tuple(columns)
-    rows = []
+    editable_columns = tuple(cols.index(f) for f in editable_fields if f in cols)
+    rows: List[Tuple[str, ...]] = []
+    refs: List[str] = []
+    corrected: List[Tuple[int, int]] = []
+    originals: Dict = {}
+
+    def build(status: str, r: dict, apply_overrides: bool):
+        ridx = len(rows)
+        src = _fmt(r.get("source")) if "source" in columns else ""
+        cells = [status]
+        for ci, c in enumerate(columns):
+            val = _fmt(r.get(c))
+            if apply_overrides and (src, c) in overrides:
+                current, original = overrides[(src, c)]
+                val = current
+                corrected.append((ridx, ci + 1))          # +1 for the leading status column
+                originals[(ridx, ci + 1)] = original
+            cells.append(val)
+        rows.append(tuple(cells))
+        refs.append(src)
+
     for r in accepted_rows:
-        rows.append(("Accepted",) + tuple(_fmt(r.get(c)) for c in columns))
+        build("Accepted", r, True)
     for r in quarantined_rows:
-        rows.append(("Quarantined",) + tuple(_fmt(r.get(c)) for c in columns))
-    return SourceRecords(source_type, filename, period, cols, tuple(rows),
-                         len(accepted_rows), len(quarantined_rows), available)
+        build("Quarantined", r, False)
+    return SourceRecords(source_type, document_type, filename, period, cols, tuple(rows),
+                         len(accepted_rows), len(quarantined_rows), available, editable_columns,
+                         tuple(corrected), dict(originals), tuple(refs))
 
 
 @dataclass(frozen=True)

@@ -10,6 +10,7 @@ from typing import Callable, List, Optional, Sequence, Tuple
 from finsight.infrastructure.migrations import m0001_baseline
 from finsight.infrastructure.migrations import m0002_ai_platform
 from finsight.infrastructure.migrations import m0003_review_lifecycle
+from finsight.infrastructure.migrations import m0004_extraction_overrides
 
 Migration = Tuple[int, str, Callable[[sqlite3.Connection], None]]
 
@@ -23,6 +24,7 @@ MIGRATIONS: List[Migration] = [
     (m0001_baseline.VERSION, m0001_baseline.NAME, m0001_baseline.up),
     (m0002_ai_platform.VERSION, m0002_ai_platform.NAME, m0002_ai_platform.up),
     (m0003_review_lifecycle.VERSION, m0003_review_lifecycle.NAME, m0003_review_lifecycle.up),
+    (m0004_extraction_overrides.VERSION, m0004_extraction_overrides.NAME, m0004_extraction_overrides.up),
 ]
 
 _META_DDL = (

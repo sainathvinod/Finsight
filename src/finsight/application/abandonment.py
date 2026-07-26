@@ -28,7 +28,7 @@ from finsight.domain.lifecycle import CycleDisposition
 # divergence checks) so a mere glance or divergence check does not reset the clock.
 MEANINGFUL_ACTIONS = frozenset({
     "setup", "upload_ged", "upload_budget", "upload_invoice", "missing_source_acknowledged",
-    "source_rebound", "verify", "analyze",
+    "correction_saved", "correction_reverted", "source_rebound", "verify", "analyze",
     "summarize", "export", "review_abandoned", "review_resumed",
 })
 

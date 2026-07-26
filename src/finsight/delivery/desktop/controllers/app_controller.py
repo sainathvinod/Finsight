@@ -248,9 +248,34 @@ class AppController(QObject):
         return self._s.workflow.verification_preview(ws.session) if ws else None
 
     def extraction_review(self, cycle_id: str):
-        """(records, omitted) — ALL extracted records per source + captured-but-omitted sources (§9)."""
+        """(records, omitted) — ALL extracted records per source + captured-but-omitted sources (§9),
+        with the user's current corrections overlaid (corrected value + original + a corrected flag)."""
         ws = self._working.get(cycle_id)
-        return self._s.workflow.extraction_review(ws.session) if ws else None
+        if ws is None:
+            return None
+        overrides = self._s.corrections.list_for_cycle(cycle_id)
+        return self._s.workflow.extraction_review(ws.session, overrides)
+
+    # --- user corrections to extracted data (§10-11; may raise FinsightAppError) ---
+    def save_correction(self, cycle_id: str, document_type: str, source_ref: str, field: str,
+                        original_value: str, new_value: str, reason: str = None):
+        ov = self._s.corrections.save(cycle_id, document_type, source_ref, field,
+                                      original_value, new_value, reason)
+        self.workflowChanged.emit(cycle_id)     # the review reflects the correction immediately
+        return ov
+
+    def revert_correction(self, cycle_id: str, document_type: str, source_ref: str, field: str) -> bool:
+        reverted = self._s.corrections.revert(cycle_id, document_type, source_ref, field)
+        if reverted:
+            self.workflowChanged.emit(cycle_id)
+        return reverted
+
+    def corrections(self, cycle_id: str):
+        """Active (non-reverted) corrections for disclosure/compare — original → corrected, per cell."""
+        return self._s.corrections.active_overrides(cycle_id)
+
+    def has_corrections(self, cycle_id: str) -> bool:
+        return self._s.corrections.has_corrections(cycle_id)
 
     def review_readiness(self, cycle_id: str):
         """Deterministic readiness derived from persisted state, enriched by the session snapshot."""
