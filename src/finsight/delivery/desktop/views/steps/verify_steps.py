@@ -36,6 +36,8 @@ class VerificationPanel(StepPanel):
                                           "Review every extracted record and its source before you verify.")
         self.content.addWidget(self._review_head)
         self._review = ExtractionReview()
+        self._review.correctionEdited.connect(self._on_correction)
+        self._review.revertRequested.connect(self._on_revert)
         self.content.addWidget(self._review)
 
         self._meaning = QLabel(); self._meaning.setProperty("role", "context"); self._meaning.setWordWrap(True)
@@ -68,6 +70,24 @@ class VerificationPanel(StepPanel):
         except FinsightAppError as e:
             self.show_error(e)
 
+    def _on_correction(self, document_type, source_ref, field, original, new_value):
+        cid = self.cid()
+        if not cid:
+            return
+        try:
+            self._c.save_correction(cid, document_type, source_ref, field, original, new_value)
+            self.clear_message()
+        except FinsightAppError as e:
+            self.show_error(e)
+        self._render_representative(cid)     # re-render with the correction overlaid (or reverted on error)
+
+    def _on_revert(self, document_type, source_ref, field):
+        cid = self.cid()
+        if not cid:
+            return
+        self._c.revert_correction(cid, document_type, source_ref, field)
+        self._render_representative(cid)
+
     def verification_preview_rows(self) -> List[Tuple[str, str]]:   # public seam (summary)
         return list(self._preview_rows)
 
@@ -92,6 +112,11 @@ class VerificationPanel(StepPanel):
             self._review.setVisible(False)
             return
         records, omitted = review
+        # Editable only before verification (FR-028: corrections are pre-approval). Once verified, the
+        # extracted data is read-only — its corrections are frozen into the verified fingerprint.
+        state = self._c.workflow_state(cid)
+        editable = RANK["Processed"] <= rank(state) < RANK["Verified"]
+        self._review.set_editable(editable)
         self._review.set_data(records, omitted)
         self._review_head.setVisible(True)
         self._review.setVisible(True)

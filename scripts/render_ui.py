@@ -86,6 +86,13 @@ def main() -> int:
         w_empty._workspace._apply(4)   # Verification step
         _grab(w_empty, os.path.join(out_dir, "01f-extraction-review.png"))
 
+        # 1g. A user correction: edit the first GED amount -> marked cell + original in tooltip (§10-11).
+        verify = w_empty._workspace.panel(4)
+        gtab = verify._review.tab("GED")
+        amount_col = list(gtab._records.columns).index("amount")
+        gtab.edit_cell(0, amount_col, "12000")
+        _grab(w_empty, os.path.join(out_dir, "01g-extraction-review-corrected.png"))
+
         # 2. Returning user: populated DB -> Dashboard home + key screens.
         pop_db = _populated_db(work)
         w = MainWindow(AppController(build_query_services(pop_db)))
