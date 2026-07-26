@@ -77,6 +77,15 @@ class OverviewView(QWidget):
         nxt.addWidget(self._continue)
         self._page_lay.addLayout(nxt)
 
+        # Historical comparison (§15): deterministic "what changed since last month" over stored reviews.
+        self._compare_head = SectionHeader("Compared to last month", "")
+        self._page_lay.addWidget(self._compare_head)
+        self._compare_card = QWidget(); self._compare_card.setProperty("role", "card")
+        self._compare_box = QVBoxLayout(self._compare_card)
+        self._compare_box.setContentsMargins(t.SP_3, t.SP_3, t.SP_3, t.SP_3)
+        self._compare_box.setSpacing(2)
+        self._page_lay.addWidget(self._compare_card)
+
         page_wrap = QWidget()
         wrap = QHBoxLayout(page_wrap)
         wrap.setContentsMargins(0, 0, 0, 0)
@@ -170,9 +179,38 @@ class OverviewView(QWidget):
             "source_ready": snap.available if snap is not None else False,
         }
         self._readiness = readiness
+        self._render_comparison(cid, state)
         self._stack.setCurrentIndex(0)
 
+    def _clear_compare(self):
+        while self._compare_box.count():
+            item = self._compare_box.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.setParent(None); w.deleteLater()
+
+    def _render_comparison(self, cid, state):
+        self._clear_compare()
+        self._comparison_lines = []
+        comp = self._c.historical_comparison(cid) if rank(state) >= RANK["Analyzed"] else None
+        if comp is None:
+            self._compare_head.set_subtitle("")
+            msg = ("Run analysis to compare this review with prior months."
+                   if rank(state) < RANK["Analyzed"]
+                   else "No earlier analyzed review to compare — this is the first in its history.")
+            lbl = QLabel(msg); lbl.setProperty("role", "context"); lbl.setWordWrap(True)
+            self._compare_box.addWidget(lbl)
+            return
+        self._compare_head.set_subtitle("vs " + comp.prior_period)
+        for line in comp.change_lines:
+            self._comparison_lines.append(line)
+            lbl = QLabel("• " + line); lbl.setProperty("role", "kvVal"); lbl.setWordWrap(True)
+            self._compare_box.addWidget(lbl)
+
     # --- public seams ---
+    def comparison_lines(self):
+        return list(getattr(self, "_comparison_lines", []))
+
     def review_overview_summary(self) -> Dict[str, object]:
         return dict(self._summary)
 

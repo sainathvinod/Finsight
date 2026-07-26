@@ -274,6 +274,26 @@ class AppController(QObject):
         """Active (non-reverted) corrections for disclosure/compare — original → corrected, per cell."""
         return self._s.corrections.active_overrides(cycle_id)
 
+    def historical_comparison(self, cycle_id: str):
+        """Deterministic 'what changed since last month' (§15): compares this review to the immediately
+        prior ANALYZED review's stored findings. Returns None when there is no prior analyzed review.
+        Descriptive facts only — no new metric or threshold."""
+        from finsight.application.read_models.history import compare
+        from finsight.delivery.desktop import presentation as pres
+        _ANALYZED = {"Analyzed", "Summarized", "Exported"}
+        reviews = self.reviews_with_status() or []
+        current = self.review_status(cycle_id)
+        if current is None:
+            return None
+        priors = sorted((v for v in reviews if v.cycle_id < cycle_id and v.state in _ANALYZED),
+                        key=lambda v: v.cycle_id)
+        if not priors:
+            return None
+        prior = priors[-1]
+        return compare(pres.period_text(current.month, current.year),
+                       pres.period_text(prior.month, prior.year),
+                       self.findings(cycle_id) or [], self.findings(prior.cycle_id) or [])
+
     def financial_map(self, cycle_id: str):
         """Deterministic relationship graph for the report's Financial Map (DEC-037): connects the
         EXISTING analysis outputs (accounts ↔ their findings) — it computes nothing new. Grouped by
