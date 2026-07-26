@@ -1,12 +1,16 @@
 from __future__ import annotations
-from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtGui import QKeySequence, QShortcut, QAction, QActionGroup
 from PySide6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel,
-                               QStackedWidget)
+                               QStackedWidget, QApplication)
 from finsight.delivery.desktop.components import NavItem
 from finsight.delivery.desktop.views import (
     ReviewsView, OverviewView, FindingsView, AuditView, WorkflowView, AskFinView, DashboardView)
 from finsight.delivery.desktop.views.welcome_view import WelcomeView
 from finsight.delivery.desktop.theme import tokens as t
+from finsight.delivery.desktop.theme.theming import ThemeManager
+
+_THEME_LABELS = [("system", "System"), ("light", "Light"), ("dark", "Dark"),
+                 ("high-contrast", "High Contrast")]
 
 # (nav key, label) in order; index aligns with the workspace stack. "dashboard" is the portfolio
 # launch home; "overview" is the active-review home; "workspace" is the guided workflow.
@@ -18,9 +22,10 @@ class MainWindow(QMainWindow):
     """Application shell: left navigation, top application bar with active-review context, and the
     workspace stack. Read-only in Phase 2; no workflow actions are exposed."""
 
-    def __init__(self, controller, parent=None):
+    def __init__(self, controller, parent=None, theme_manager=None):
         super().__init__(parent)
         self._c = controller
+        self._theme = theme_manager or ThemeManager()
         self._current_key = "reviews"
         self.setWindowTitle("FinSight")
         self.resize(1180, 720)
@@ -71,10 +76,46 @@ class MainWindow(QMainWindow):
             sc = QShortcut(QKeySequence(f"Ctrl+{i + 1}"), self)
             sc.activated.connect(lambda k=key: self.navigate(k))
 
+        self._build_menu()
         self._route_launch()   # first-ever launch -> Welcome; returning users -> Dashboard home
         # ReviewsView selects its first row during construction (before the signal above was
         # connected), so sync the top-bar context to whatever is already active.
         self._on_active_changed(self._c.active_review_id or "")
+
+    # --- accessibility: theme + zoom menu (§20) ---
+    def _build_menu(self) -> None:
+        view_menu = self.menuBar().addMenu("View")
+        theme_menu = view_menu.addMenu("Theme")
+        self._theme_group = QActionGroup(self)
+        self._theme_group.setExclusive(True)
+        self._theme_actions = {}
+        for mode, label in _THEME_LABELS:
+            act = QAction(label, self, checkable=True)
+            act.setChecked(self._theme.mode == mode)
+            act.triggered.connect(lambda _checked, m=mode: self._set_theme(m))
+            self._theme_group.addAction(act)
+            theme_menu.addAction(act)
+            self._theme_actions[mode] = act
+        view_menu.addSeparator()
+        for label, seq, fn in [
+            ("Zoom In", "Ctrl+=", self._theme.zoom_in),
+            ("Zoom Out", "Ctrl+-", self._theme.zoom_out),
+            ("Reset Zoom", "Ctrl+0", self._theme.reset_zoom),
+            ("Larger Text", "Ctrl+Shift+=", self._theme.zoom_in)]:
+            act = QAction(label, self)
+            act.setShortcut(QKeySequence(seq))
+            act.triggered.connect(lambda _checked=False, f=fn: f(QApplication.instance()))
+            view_menu.addAction(act)
+
+    def _set_theme(self, mode: str) -> None:
+        self._theme.set_mode(mode, QApplication.instance())
+        act = self._theme_actions.get(mode)
+        if act is not None:
+            act.setChecked(True)
+
+    # --- public seams (theme) ---
+    def theme_manager(self) -> ThemeManager:
+        return self._theme
 
     # --- shell construction ---
     def _build_sidebar(self) -> QWidget:

@@ -1,9 +1,12 @@
 # Builds the Qt stylesheet from tokens. No colors/sizes are hardcoded outside tokens.py.
+# A `palette` (theme/palettes.make_palette) may be passed to re-theme (Light/Dark/High-Contrast) and
+# zoom the entire surface in one call; it exposes the same token names, so the template is unchanged.
 from __future__ import annotations
-from finsight.delivery.desktop.theme import tokens as t
+from finsight.delivery.desktop.theme import tokens as _tokens
 
 
-def build_qss() -> str:
+def build_qss(palette=None) -> str:
+    t = palette if palette is not None else _tokens
     return f"""
 * {{
     font-family: {t.FONT_FAMILY};
@@ -141,6 +144,25 @@ QPushButton[role="heroPrimary"] {{
 QPushButton[role="heroPrimary"]:hover {{ background: {t.ACCENT_HOVER}; border-color: {t.ACCENT_HOVER}; }}
 QPushButton[role="heroPrimary"]:focus {{ border: 1px solid {t.FOCUS_RING}; }}
 
+QMainWindow {{ background: {t.BG_WORKSPACE}; }}
 QScrollArea {{ border: none; background: transparent; }}
-QToolTip {{ background: {t.TEXT_PRIMARY}; color: {t.WHITE}; border: none; padding: 3px 6px; }}
+/* Scroll viewports + their content widget stay transparent so the themed surface shows through in
+   every theme (otherwise a nested page would keep the default light background in dark mode). */
+QScrollArea > QWidget > QWidget {{ background: transparent; }}
+
+/* Menu bar + menus (accessibility theme + zoom controls live here) */
+QMenuBar {{ background: {t.BG_CHROME}; color: {t.TEXT_PRIMARY}; border-bottom: 1px solid {t.BORDER}; }}
+QMenuBar::item {{ padding: {t.SP_1}px {t.SP_3}px; background: transparent; }}
+QMenuBar::item:selected {{ background: {t.BG_HOVER}; }}
+QMenu {{ background: {t.BG_WORKSPACE}; color: {t.TEXT_PRIMARY}; border: 1px solid {t.BORDER_STRONG}; }}
+QMenu::item {{ padding: {t.SP_1}px {t.SP_4}px; }}
+QMenu::item:selected {{ background: {t.ACCENT_SUBTLE_BG}; color: {t.TEXT_PRIMARY}; }}
+QCheckBox {{ color: {t.TEXT_PRIMARY}; spacing: {t.SP_2}px; }}
+QComboBox, QSpinBox {{ background: {t.WHITE}; color: {t.TEXT_PRIMARY}; border: 1px solid {t.BORDER_STRONG};
+    border-radius: {t.RADIUS_MD}px; padding: {t.SP_1}px {t.SP_2}px; }}
+QTabWidget::pane {{ border: 1px solid {t.BORDER}; }}
+QTabBar::tab {{ background: {t.BG_CHROME}; color: {t.TEXT_SECONDARY}; padding: {t.SP_1}px {t.SP_3}px;
+    border: 1px solid {t.BORDER}; }}
+QTabBar::tab:selected {{ background: {t.BG_WORKSPACE}; color: {t.TEXT_PRIMARY}; }}
+QToolTip {{ background: {t.TEXT_PRIMARY}; color: {t.BG_WORKSPACE}; border: none; padding: 3px 6px; }}
 """

@@ -22,7 +22,6 @@ from PySide6.QtWidgets import QApplication
 
 from finsight.app import build_query_services, build_ask_fin_backend, acquire_single_instance
 from finsight.delivery.desktop.main_window import MainWindow
-from finsight.delivery.desktop.theme import build_qss
 from finsight.diagnostics import configure_logging, get_logger, app_support_dir
 
 _log = get_logger("ui.app")
@@ -56,7 +55,10 @@ def run(db_path: Optional[str] = None, argv: Optional[list] = None) -> int:
     qapp = QApplication.instance() or QApplication(argv if argv is not None else sys.argv[:1])
     qapp.setApplicationName("FinSight")
     qapp.setApplicationDisplayName("FinSight")
-    qapp.setStyleSheet(build_qss())
+    # Apply the persisted accessibility theme + zoom (§20); falls back to Light at scale 1.0.
+    from finsight.delivery.desktop.theme.theming import ThemeManager
+    _theme = ThemeManager()
+    _theme.apply(qapp)
 
     db = resolve_db_path(db_path)
 
@@ -70,7 +72,7 @@ def run(db_path: Optional[str] = None, argv: Optional[list] = None) -> int:
 
     try:
         services = build_query_services(db)
-        return _run_window(qapp, db, services)
+        return _run_window(qapp, db, services, _theme)
     finally:
         lock.release()
 
@@ -91,13 +93,14 @@ def _refuse_second_instance(db: str) -> None:
         pass
 
 
-def _run_window(qapp, db, services) -> int:
+def _run_window(qapp, db, services, theme_manager=None) -> int:
     # Ask Fin backend runs the whole pipeline off the UI thread on a worker-local SQLite connection.
     # Authorization is the fail-closed development/demo policy (FINSIGHT_AI_DEMO_AUTHORIZED) — NOT
     # production consent; provider selection follows FINSIGHT_AI_PROVIDER.
     ask_fin_backend = build_ask_fin_backend(db)
     from finsight.delivery.desktop.controllers import AppController
-    window = MainWindow(AppController(services, ask_fin_backend=ask_fin_backend))
+    window = MainWindow(AppController(services, ask_fin_backend=ask_fin_backend),
+                        theme_manager=theme_manager)
     window.show()
     # Packaging/clean-environment launch smoke: start, render one event cycle, then exit cleanly.
     # Proves the packaged app launches + composes the window without a human at the display.

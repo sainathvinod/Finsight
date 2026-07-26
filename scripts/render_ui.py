@@ -108,6 +108,16 @@ def main() -> int:
         w._workspace.panel(7).refresh()
         _grab(w, os.path.join(out_dir, "09-leadership-report.png"))
 
+        # 10-11. Dark theme + high-contrast (§20) — one setStyleSheet re-themes the whole surface.
+        from finsight.delivery.desktop.theme.palettes import make_palette
+        w2 = MainWindow(AppController(build_query_services(pop_db)))
+        w2.navigate("dashboard")
+        app.setStyleSheet(build_qss(make_palette("dark")))
+        _grab(w2, os.path.join(out_dir, "10-dashboard-dark.png"))
+        app.setStyleSheet(build_qss(make_palette("high-contrast", 1.15)))
+        _grab(w2, os.path.join(out_dir, "11-dashboard-high-contrast-zoom.png"))
+        app.setStyleSheet(build_qss())   # restore light for any later renders
+
     print(f"Rendered screens to {os.path.relpath(out_dir, REPO_ROOT)}/")
     return 0
 
