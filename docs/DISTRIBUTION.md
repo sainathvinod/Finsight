@@ -62,8 +62,36 @@ These are point-in-time results recorded when this document was written; re-run 
 - Both `dist/finsight.pyz` and the installed `finsight` launcher started headless and exited 0.
 - Second-instance refusal, restart/recovery, abandon/resume, and `provider=none` all verified.
 
+## Native macOS app (FinSight.app + DMG)
+
+A reproducible native-packaging recipe is provided (target-product §23; ADR-001 §3 / ADR-008 §3):
+
+| Artifact | Purpose |
+|---|---|
+| `packaging/finsight.spec` | PyInstaller spec — windowed `--onedir` `FinSight.app`; bundles the Qt runtime + cocoa plugin and all `finsight` submodules (lazy service imports). |
+| `packaging/finsight_launch.py` | Frozen entry → `finsight.delivery.desktop.app:main`. |
+| `scripts/build_macos_app.sh` | Builds `dist/FinSight.app`, then an `hdiutil` UDZO `dist/FinSight.dmg` with an `/Applications` symlink. |
+| `scripts/verify_macos_app.py` | Headless verification (below). |
+
+Build on macOS with the project venv:
+
+```bash
+PYTHON=.venv/bin/python bash scripts/build_macos_app.sh
+```
+
+**Headless-verifiable** (via `scripts/verify_macos_app.py`): the bundle structure
+(`Contents/MacOS/FinSight`, `Info.plist`, the bundled `libqcocoa` plugin); a
+`QT_QPA_PLATFORM=offscreen FINSIGHT_SMOKE=1` launch of the **frozen binary** that exits 0 (migrations
+run, services compose, the window renders one event cycle); and that the DMG mounts and contains
+`FinSight.app`.
+
+**NOT verifiable in a headless environment (RED CARD DoD-A — honest limitation):** a real Finder
+**double-click** on a physical/Retina display, on-screen pixel rendering, and Gatekeeper/notarization
+(Developer ID signing) acceptance. Those require a GUI session and a separate signing step, so packaging
+is **not declared complete** here — the recipe + headless checks are in place; the display-bound
+double-click launch and notarization are the remaining environment/owner step.
+
 ## Not included in R1 (deferred / R2)
 
-Native OS installers (`.app`/`.dmg`/MSI) via PyInstaller/Nuitka were **not** built — packaging is the
-pip wheel + zipapp above. Second-generation re-verification, manual promotion, export supersession,
-historical import, advanced AI, and the Review Health Score are R2 and intentionally absent.
+Second-generation re-verification, manual promotion, export supersession, historical import, advanced
+AI, and the Review Health Score are R2 and intentionally absent.
