@@ -175,7 +175,10 @@ def test_verification_preview_shows_what_is_approved(window_factory, empty_db, t
     labels = [lbl for lbl, _ in rows]
     assert any("GED" in lbl for lbl in labels)          # reviewer sees accepted counts
     assert any("Source" == lbl for lbl in labels)       # and the source documents
-    assert verify._approve.isEnabled()                  # approvable once data is visible
+    # §12: approval is gated on the explicit attestation — disabled until the reviewer confirms.
+    assert not verify._approve.isEnabled()
+    verify._attest_check.setChecked(True)
+    assert verify._approve.isEnabled()                  # approvable once attested
 
 def test_verification_blocked_without_data(window_factory, empty_db):
     w = window_factory(empty_db)

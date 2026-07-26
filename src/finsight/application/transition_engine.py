@@ -11,6 +11,7 @@ from finsight.domain.lifecycle import (
 )
 from finsight.application import intake as INTAKE
 from finsight.application.analysis import verified_dataset_fingerprint
+from finsight.application.attestation import attestation_statement
 from finsight.domain.corrections import NUMERIC_FIELDS, CORRECTABLE_FIELDS
 from finsight.domain.money import to_decimal
 from finsight.diagnostics import get_logger
@@ -184,6 +185,16 @@ class TransitionEngine:
             detail = {"approved": True}
             if gen_id is not None:
                 detail.update({"generation_id": gen_id, "creation_reason": "INITIAL_VERIFICATION"})
+            # §12 attestation, derived server-side: whether the reviewer corrected any value, the exact
+            # branching statement, and the verified-dataset fingerprint the attestation binds to. The
+            # actor + timestamp come from the audit fact itself. Recorded WITH the verify event so the
+            # human attestation and the certified dataset are one atomic, inseparable record.
+            corrections_present = bool(
+                self.extraction_override_repo.effective(cid)) if self.extraction_override_repo else False
+            detail["corrections_present"] = corrections_present
+            detail["attestation_statement"] = attestation_statement(corrections_present)
+            if ctx.get("vds") is not None:
+                detail["verified_fingerprint"] = verified_dataset_fingerprint(ctx["vds"])
             self.audit_event(cid, "verify", detail)
         self.transition(cycle, CycleState.VERIFIED, body)
 

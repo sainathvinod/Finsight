@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import Dict, List, Tuple
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QCheckBox
 from finsight.delivery.desktop.components.form_row import FormRow
 from finsight.delivery.desktop.components.extraction_review import ExtractionReview
 from finsight.delivery.desktop.components.section_header import SectionHeader
@@ -10,6 +10,7 @@ from finsight.delivery.desktop.views.findings_view import FindingsView
 from finsight.delivery.desktop.views.workflow_meta import rank, RANK
 from finsight.delivery.desktop.theme import tokens as t
 from finsight.application.errors import FinsightAppError
+from finsight.application.attestation import attestation_statement
 
 
 class VerificationPanel(StepPanel):
@@ -44,6 +45,20 @@ class VerificationPanel(StepPanel):
         self.content.addWidget(self._meaning)
         self._details = QLabel(); self._details.setProperty("role", "context"); self._details.setWordWrap(True)
         self.content.addWidget(self._details)
+
+        # §12 attestation: an explicit, branching human confirmation, required before analysis. The exact
+        # statement depends on whether the reviewer corrected any value; it is recorded (with the user,
+        # timestamp, whether corrections existed, and the verified fingerprint) by the verify audit fact.
+        self._can_verify = False
+        self._attest_head = SectionHeader("Verification attestation",
+                                          "Confirm the data before FinSight analyzes it.")
+        self.content.addWidget(self._attest_head)
+        self._attest_statement = QLabel(attestation_statement(False))
+        self._attest_statement.setProperty("role", "kvVal"); self._attest_statement.setWordWrap(True)
+        self.content.addWidget(self._attest_statement)
+        self._attest_check = QCheckBox("I confirm the statement above.")
+        self._attest_check.toggled.connect(self._sync_approve)
+        self.content.addWidget(self._attest_check)
 
         self._approve = QPushButton("Approve && verify data"); self._approve.setProperty("role", "primary")
         row = QHBoxLayout(); row.addWidget(self._approve); row.addStretch(1)
@@ -80,6 +95,7 @@ class VerificationPanel(StepPanel):
         except FinsightAppError as e:
             self.show_error(e)
         self._render_representative(cid)     # re-render with the correction overlaid (or reverted on error)
+        self._update_attestation()           # a correction switches to the "edited" attestation wording
 
     def _on_revert(self, document_type, source_ref, field):
         cid = self.cid()
@@ -87,6 +103,7 @@ class VerificationPanel(StepPanel):
             return
         self._c.revert_correction(cid, document_type, source_ref, field)
         self._render_representative(cid)
+        self._update_attestation()
 
     def verification_preview_rows(self) -> List[Tuple[str, str]]:   # public seam (summary)
         return list(self._preview_rows)
@@ -167,17 +184,44 @@ class VerificationPanel(StepPanel):
                 f"{p.doc_type} fingerprint {p.fingerprint[:12]}…" for p in snap.provenance))
 
         if state and rank(state) >= RANK["Verified"]:
+            self._can_verify = False
+            self._set_attestation_visible(False)
             self._approve.setEnabled(False)
             self.show_success("This data has been verified and certified as the basis for analysis.")
         elif snap.rejected_reason or not snap.available:
+            self._can_verify = False
+            self._set_attestation_visible(False)
             self._approve.setEnabled(False)
             self.show_warning("Rejected or unavailable data cannot be verified. Resolve the issue above.")
         else:
-            self._approve.setEnabled(True)
+            self._can_verify = True
+            self._set_attestation_visible(True)
+            self._update_attestation()
             self._meaning.setText(
                 "Approval confirms that the normalized data shown is suitable for deterministic "
                 "analysis. Source files remain unchanged.")
             self.clear_message()
+            self._sync_approve()
+
+    def _set_attestation_visible(self, visible: bool) -> None:
+        self._attest_head.setVisible(visible)
+        self._attest_statement.setVisible(visible)
+        self._attest_check.setVisible(visible)
+
+    def _update_attestation(self) -> None:
+        """Set the branching attestation wording (§12): the edited statement if the reviewer has
+        corrections, else the no-edit statement. Re-checking is required when the wording changes."""
+        cid = self.cid()
+        statement = attestation_statement(bool(cid) and self._c.has_corrections(cid))
+        if statement != self._attest_statement.text():
+            self._attest_statement.setText(statement)
+            self._attest_check.setChecked(False)          # a changed attestation must be re-confirmed
+
+    def attestation_text(self) -> str:                    # public seam (stable for tests)
+        return self._attest_statement.text()
+
+    def _sync_approve(self) -> None:
+        self._approve.setEnabled(self._can_verify and self._attest_check.isChecked())
 
 
 class AnalysisPanel(StepPanel):
