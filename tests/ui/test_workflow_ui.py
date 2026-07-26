@@ -119,7 +119,7 @@ def test_full_flow_analysis_summary_export(window_factory, empty_db, tmp_path, m
     summary = w._workspace.panel(7)
     summary.refresh()
     summary._on_gen()
-    assert "Needs Attention" in summary._body.text()
+    assert "Needs Attention" in summary.report_text()   # report shows the RAG status
 
     dest = os.path.join(str(tmp_path), "out.json")
     monkeypatch.setattr(QFileDialog, "getSaveFileName", staticmethod(lambda *a, **k: (dest, "JSON (*.json)")))

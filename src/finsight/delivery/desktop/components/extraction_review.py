@@ -83,7 +83,11 @@ class _SourceTab(QWidget):
                 if cell_editable:
                     self._preedit[(ridx, cidx)] = str(value)
                 if (ridx, cidx) in corrected:
-                    item.setText(_CORRECTED_GLYPH + str(value))
+                    # The ✎ marker lives ONLY in the DISPLAY text; the EDIT value stays the plain value,
+                    # so re-editing a corrected cell can never capture the marker into a saved correction
+                    # (defense-in-depth: _on_item_changed also reads EditRole + strips the glyph).
+                    item.setText(_CORRECTED_GLYPH + str(value))          # DisplayRole (shown)
+                    item.setData(str(value), Qt.ItemDataRole.EditRole)   # EditRole (edited + read back)
                     f = QFont(); f.setBold(True); item.setFont(f)
                     item.setToolTip("Corrected. Original: %s" % originals.get((ridx, cidx), ""))
                 items.append(item)
@@ -100,7 +104,13 @@ class _SourceTab(QWidget):
             return
         field = self._records.columns[col]
         source_ref = self._records.source_refs[row] if row < len(self._records.source_refs) else ""
-        new_value = item.text().strip()
+        # Read the EDIT value (plain), and strip the display marker if it ever leaked in — the certified
+        # correction must be exactly what the reviewer typed, never a UI glyph.
+        raw = item.data(Qt.ItemDataRole.EditRole)
+        raw = "" if raw is None else str(raw)
+        if raw.startswith(_CORRECTED_GLYPH):
+            raw = raw[len(_CORRECTED_GLYPH):]
+        new_value = raw.strip()
         original = (self._records.originals or {}).get((row, col)) or self._preedit.get((row, col), "")
         if new_value == self._preedit.get((row, col), ""):
             return                                       # no change
@@ -140,8 +150,8 @@ class _SourceTab(QWidget):
         self._search.setText(text)
 
     def edit_cell(self, row: int, col: int, value: str) -> None:
-        """Test seam: simulate a user editing a cell (drives the same itemChanged path as the UI)."""
-        self._model.item(row, col).setText(value)
+        """Test seam: simulate a user committing an edit (sets EditRole exactly like the cell editor)."""
+        self._model.item(row, col).setData(value, Qt.ItemDataRole.EditRole)
 
 
 class ExtractionReview(QWidget):

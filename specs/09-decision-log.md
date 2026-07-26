@@ -213,6 +213,22 @@ Review **abandonment** (explicit, audited, non-destructive, reversible `Active |
 **Traces to:** ADR-014 (policy); F-01-01 (feature home, scope-extended); F-08-01 (audit taxonomy); FR-108, FR-006, FR-081; DEC-022. Release 1.
 **Supersede note:** subordinates the directional "LangGraph/LangChain for the AI layer" mention in DEC-003 — no agent framework is adopted, and the concrete AI-library/provider selection is deferred to the AI-provider ADR (ADC-03). DEC-003's desktop/Python-core/SQLite direction is unaffected.
 
+### DEC-036 — Report discloses user corrections ✅ extends F-07-01
+**Date:** 2026-07-25 · Decided (project-owner ruling; ratified under the approved baseline)
+The leadership/visual report **discloses the user corrections** the review was based on. When a reviewer edited any extracted value before verification (FR-028/FR-029), the report includes a **user-correction disclosure** element listing each correction as *original → corrected* with its source lineage, so a reader knows the analysis ran on human-approved corrected data. When there were no corrections, the report states that plainly.
+**Feature home:** **F-07-01 — Leadership Summary** scope is **extended** to add the correction-disclosure element (previously fixed sections did not surface corrections; corrections lived only in the verification surface and the audit trail). **No new FR/NFR identifier is minted** — it traces to **FR-028/FR-085** (correction capture/audit) + **F-01-09** + **ADR-011 §8** (report verification-basis honesty), which already require corrections to be captured, audited, and honestly disclosed.
+**Rationale:** trust and auditability — a leadership reader must see, in the report itself, that figures reflect approved corrections; hiding them would understate the verification basis. Serves DEC-022 and Trust > AI.
+**Consequences:** *(+)* the report is honest about its verified basis; corrections are traceable end-to-end (edit → attestation → report). *(−)* one fixed-section feature grows by one deterministic element; the content is deterministic (no AI narration).
+**Traces to:** F-07-01 (feature home, scope-extended); FR-028/FR-029/FR-085; F-01-09; ADR-011 §8; ADR-015 §3 (report identity). Release 1.
+
+### DEC-037 — "Financial Map" is a visualization layer over existing deterministic results ✅ extends F-07-01/F-03-01
+**Date:** 2026-07-25 · Decided (project-owner ruling; ratified under the approved baseline)
+The report's **Financial Map** is a **visual representation of the deterministic analysis FinSight has already computed — NOT a new analytical artifact**. It performs **no additional calculation** and derives **no new financial conclusion**; it visually connects already-computed entities (budget accounts, GED accounts, invoice evidence when available, variances, findings, vendors, categories, user-approved corrections, reconciliation relationships) using a **relationship / node-link / account-relationship / connected-account-vendor / grouped-flow graph** over the existing approved report data. It introduces no new metric, band, or threshold.
+**Feature home:** **F-07-01 — Leadership Summary** and **F-03-01 — Budget analysis** presentation are **extended** with a visualization element governed by **08-ui-design-system.md**. Because it adds only a *view* over existing deterministic outputs (not new analytical content), the F-07-01 fixed-section guardrail is respected. **No new FR/NFR identifier is minted** — it traces to **FR-030/FR-043** (account/variance outputs it visualizes), **FR-076/FR-077** (leadership summary), and the design system.
+**Rationale:** helps a reviewer understand relationships between existing deterministic results without adding a second analytical model; determinism and Trust > AI are preserved because the map only presents already-approved numbers.
+**Consequences:** *(+)* clearer comprehension of account/vendor/finding relationships; nothing computed anew. *(−)* a new visualization surface to maintain; it must never accrete new analytics (chart-accretion watch item #4, `04 §15`) — enforced by keeping all inputs the existing deterministic read models.
+**Traces to:** F-07-01/F-03-01 (feature homes, presentation-extended); FR-030/FR-043/FR-076/FR-077; 08-ui-design-system.md; NFR-025 (no color-only meaning). Release 1.
+
 ---
 
 ## Open questions — resolved under the approved baseline

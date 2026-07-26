@@ -102,6 +102,12 @@ def main() -> int:
             w.navigate(key)
             _grab(w, os.path.join(out_dir, f"{name}.png"))
 
+        # 09. The visual leadership report (§14) incl. the Financial Map, on the completed review.
+        w.navigate("workspace")
+        w._workspace._apply(7)         # Leadership Report step
+        w._workspace.panel(7).refresh()
+        _grab(w, os.path.join(out_dir, "09-leadership-report.png"))
+
     print(f"Rendered screens to {os.path.relpath(out_dir, REPO_ROOT)}/")
     return 0
 

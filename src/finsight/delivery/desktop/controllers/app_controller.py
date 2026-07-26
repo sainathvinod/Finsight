@@ -274,6 +274,25 @@ class AppController(QObject):
         """Active (non-reverted) corrections for disclosure/compare — original → corrected, per cell."""
         return self._s.corrections.active_overrides(cycle_id)
 
+    def financial_map(self, cycle_id: str):
+        """Deterministic relationship graph for the report's Financial Map (DEC-037): connects the
+        EXISTING analysis outputs (accounts ↔ their findings) — it computes nothing new. Grouped by
+        account, findings sorted by severity rank then rule for a stable layout."""
+        sev_rank = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
+        findings = self.findings(cycle_id) or []
+        by_account = {}
+        for f in findings:
+            by_account.setdefault(f.account, []).append(f)
+        accounts = []
+        for account in sorted(by_account):
+            fs = sorted(by_account[account], key=lambda f: (sev_rank.get(f.severity, 9), f.rule_id))
+            accounts.append({
+                "account": account,
+                "findings": [{"severity": f.severity, "finding_type": f.finding_type,
+                              "rule_id": f.rule_id} for f in fs],
+            })
+        return {"accounts": accounts}
+
     def has_corrections(self, cycle_id: str) -> bool:
         return self._s.corrections.has_corrections(cycle_id)
 

@@ -55,6 +55,27 @@ def test_reverting_restores_original(window_factory, empty_db, tmp_path):
     assert not w._c.has_corrections("2026-07")            # effective correction cleared
 
 
+def test_re_editing_a_corrected_account_never_captures_the_marker_glyph(window_factory, empty_db, tmp_path):
+    # Regression (independent-review finding): the ✎ display marker must never leak into a saved
+    # correction of a TEXT field (account). Re-editing an already-corrected account must store the
+    # plain value, so the certified account code is exactly what the reviewer typed.
+    from finsight.delivery.desktop.components.extraction_review import _CORRECTED_GLYPH
+    w = window_factory(empty_db)
+    _process(w, tmp_path)
+    verify = w._workspace.panel(4)
+    verify.refresh()
+    tab = verify._review.tab("GED")
+    acc = list(tab._records.columns).index("account")
+    tab.edit_cell(0, acc, "6100")                        # first correction of the account
+    verify.refresh()                                     # re-render -> the cell now shows "✎ 6100"
+    tab2 = verify._review.tab("GED")
+    tab2.edit_cell(0, acc, "6200")                       # re-edit the already-corrected cell
+    stored = [o for o in w._c.corrections("2026-07") if o.field == "account"]
+    assert stored, "account correction should be recorded"
+    assert all(_CORRECTED_GLYPH not in o.current_value for o in stored)
+    assert stored[-1].current_value == "6200"            # exactly what was typed, no glyph
+
+
 def test_review_is_read_only_after_verification(window_factory, empty_db, tmp_path):
     w = window_factory(empty_db)
     _process(w, tmp_path)

@@ -224,10 +224,28 @@ class VerificationPanel(StepPanel):
         self._approve.setEnabled(self._can_verify and self._attest_check.isChecked())
 
 
+# Honest analysis stages (§13): the real deterministic phases. No fabricated percentages/timing.
+# A missing source degrades a capability honestly — it is never faked as if it ran.
+_ANALYSIS_STAGES = (
+    "Validating each source",
+    "Reconciling Budget against GED (where both are present)",
+    "Applying the deterministic rules",
+    "Detecting exceptions",
+    "Recording findings with their lineage",
+    "Preparing the leadership summary",
+)
+
+
 class AnalysisPanel(StepPanel):
     def __init__(self, controller):
         super().__init__(controller, "Analysis",
                          "Run the deterministic rules engine on the verified data.")
+        stages_intro = QLabel("Analysis performs these deterministic steps, in order:")
+        stages_intro.setProperty("role", "context")
+        self.content.addWidget(stages_intro)
+        self._stages = QLabel("\n".join("•  " + s for s in _ANALYSIS_STAGES))
+        self._stages.setProperty("role", "context"); self._stages.setWordWrap(True)
+        self.content.addWidget(self._stages)
         self._run = QPushButton("Run analysis"); self._run.setProperty("role", "primary")
         row = QHBoxLayout(); row.addWidget(self._run); row.addStretch(1)
         self.content.addLayout(row)
