@@ -382,8 +382,41 @@ class AppController(QObject):
 
     def analyze(self, cycle_id: str) -> AnalysisResult:
         result = self._s.workflow.analyze(self._session_for(cycle_id))
+        self.record_review_memory(cycle_id)     # deterministic system-derived memory (ADR-009)
         self.workflowChanged.emit(cycle_id)
         return result
+
+    # --- local structured review memory (ADR-009; deterministic, cited, review-isolated, local-only) ---
+    def review_memory(self, cycle_id: str):
+        """Structured memory entries for a review (system-derived deterministic facts + human notes).
+        Local-only, per-review; never replaces the source of truth and never changes results."""
+        try:
+            return self._s.ai.memory.list(self._user_id, cycle_id)
+        except Exception:
+            return []
+
+    def record_review_memory(self, cycle_id: str) -> None:
+        """Write deterministic, cited memory derived from the month-over-month comparison (recurring
+        accounts). Written by this deterministic path, NOT the model (Trust > AI; ADR-011 §3). Idempotent
+        — only records once per review. Synthetic demo data (ADR-009 synthetic-until-encryption)."""
+        try:
+            existing = self._s.ai.memory.list(self._user_id, cycle_id)
+        except Exception:
+            return
+        if any(getattr(e, "source_type", "") == "comparison" for e in existing):
+            return                              # already recorded for this review
+        comp = self.historical_comparison(cycle_id)
+        if comp is None:
+            return
+        for account in comp.recurring_accounts:
+            content = ("Account %s was flagged in both %s and %s." %
+                       (account, comp.prior_period, comp.current_period))
+            try:
+                self._s.ai.memory.add_system_derived(
+                    self._user_id, cycle_id, content, source_type="comparison",
+                    source_id="account:" + account, actor="system")
+            except Exception:
+                _log.warning("review memory write failed cid=%s", cycle_id)
 
     def summarize(self, cycle_id: str) -> SummaryView:
         result = self._s.workflow.summarize(self._session_for(cycle_id))

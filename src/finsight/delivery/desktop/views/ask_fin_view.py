@@ -151,6 +151,15 @@ class AskFinView(QWidget):
         lay.addWidget(self._det_meta)
         self._shown_det_answer = ""
 
+        # Local structured review memory (ADR-009) — deterministic, cited, review-isolated notes.
+        self._memory_label = QLabel("What FinSight remembers about this review:")
+        self._memory_label.setProperty("role", "cardLabel"); self._memory_label.setVisible(False)
+        lay.addWidget(self._memory_label)
+        self._memory_box = QLabel(""); self._memory_box.setProperty("role", "context")
+        self._memory_box.setWordWrap(True); self._memory_box.setVisible(False)
+        lay.addWidget(self._memory_box)
+        self._remembered = []
+
         # Local-AI status card: a clear headline + concrete in-app setup steps when unavailable.
         self._status_card = QWidget()
         self._status_card.setProperty("role", "card")
@@ -214,6 +223,7 @@ class AskFinView(QWidget):
             "Ask a question about this review…" if mode == "review"
             else "Pick a question above, or select a review to ask about its data.")
         self._render_prompts()
+        self._render_memory(mode)
         self._stack.setCurrentIndex(0)
         if self._c.ask_fin_available():
             if not self._status_probed:
@@ -240,6 +250,20 @@ class AskFinView(QWidget):
             btn.clicked.connect(lambda _checked=False, k=key: self._on_prompt(k))
             self._prompts_box.addWidget(btn)
             self._prompt_buttons.append((key, btn))
+
+    def _render_memory(self, mode: str) -> None:
+        self._remembered = []
+        entries = self._c.review_memory(self._c.active_review_id) if mode == "review" else []
+        if not entries:
+            self._memory_label.setVisible(False); self._memory_box.setVisible(False)
+            return
+        lines = []
+        for e in entries:
+            src = (" (from %s)" % e.source_id) if getattr(e, "source_id", None) else ""
+            lines.append("• " + e.content + src)
+            self._remembered.append(e.content)
+        self._memory_box.setText("\n".join(lines))
+        self._memory_label.setVisible(True); self._memory_box.setVisible(True)
 
     def _on_prompt(self, key: str) -> None:
         ans = self._c.ask_fin_deterministic_answer(key)
@@ -373,6 +397,9 @@ class AskFinView(QWidget):
 
     def deterministic_answer_text(self) -> str:
         return self._shown_det_answer
+
+    def remembered_notes(self) -> List[str]:
+        return list(self._remembered)
 
     def current_status(self) -> str:
         return self._state.value
