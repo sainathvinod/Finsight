@@ -33,6 +33,8 @@ _LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 
 def _is_loopback(base_url: str) -> bool:
     authority = base_url.split("://", 1)[-1].split("/", 1)[0]
+    if "@" in authority:                                  # URL userinfo hides the real (remote) host
+        return False
     if authority.startswith("["):                         # bracketed IPv6, e.g. [::1]:11434
         host = authority[1:authority.index("]")] if "]" in authority else authority[1:]
     else:

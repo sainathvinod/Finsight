@@ -37,11 +37,23 @@ def test_what_changed_uses_the_comparison_or_says_none():
     assert "June 2026" in ans.text and "6200" in ans.text
 
 
+def test_reconciliation_reports_budget_findings_not_a_false_all_clear():
+    # Independent-review regression: budget-vs-GED (R-BUD-02 over-budget) findings ARE the product's
+    # reconciliation checks — Ask Fin must report them, never affirm an all-clear (specs/10 §4.3).
+    over = [_F("F1", "6100", "High", "R-BUD-02", "over-budget", {"variance": "3000.00"})]
+    ans = deterministic_review_answer("reconciliation", findings=over)
+    assert "6100" in ans.text and "finding:F1" in ans.citations
+    assert "reconciled against the budget" not in ans.text.lower()   # no false all-clear
+    # Genuinely no budget findings -> honest "none".
+    none = deterministic_review_answer("reconciliation", findings=[])
+    assert "no budget-vs-ged reconciliation issues" in none.text.lower()
+
+
 def test_empty_findings_are_honest_not_guessed():
     for key in ("highest_risk", "why_finding", "investigate_next"):
         ans = deterministic_review_answer(key, findings=[])
         assert ans.citations == () and "no finding" in ans.text.lower()
     recon = deterministic_review_answer("reconciliation", findings=[])
-    assert "no reconciliation issues" in recon.text.lower()
+    assert "no budget-vs-ged reconciliation issues" in recon.text.lower()
 
 

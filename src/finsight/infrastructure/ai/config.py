@@ -147,6 +147,12 @@ def _validate_base_url(url: str) -> str:
     authority = url.split("://", 1)[1].split("/", 1)[0]   # host[:port] before any path
     if not authority:
         raise AiConfigError("FINSIGHT_OLLAMA_BASE_URL must include a host")
+    # Reject URL userinfo: "http://localhost:11434@evil.example.com/" would connect to evil.example.com
+    # while a naive host parse sees "localhost". No userinfo is ever valid for a loopback Ollama.
+    if "@" in authority:
+        raise AiConfigError(
+            "FINSIGHT_OLLAMA_BASE_URL must not contain user info (@) — the real host would be remote; "
+            "Ask Fin is local-only (confidentiality)")
     host = _host_of(authority)
     if host not in _LOOPBACK_HOSTS:
         raise AiConfigError(

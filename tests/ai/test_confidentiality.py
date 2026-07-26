@@ -23,7 +23,11 @@ def test_loopback_endpoints_accepted(url):
 
 
 @pytest.mark.parametrize("url", ["http://example.com:11434", "https://api.openai.com",
-                                 "https://api.anthropic.com", "http://10.0.0.5:11434", "http://ollama.cloud"])
+                                 "https://api.anthropic.com", "http://10.0.0.5:11434", "http://ollama.cloud",
+                                 # URL userinfo must not smuggle a remote host past the loopback guard:
+                                 # "http://localhost:11434@evil.example.com/" actually connects to evil…
+                                 "http://localhost:11434@evil.example.com/api",
+                                 "http://127.0.0.1:1@attacker.io/x"])
 def test_non_loopback_endpoints_rejected_fail_fast(url):
     with pytest.raises(AiConfigError):
         load_ai_runtime_settings({"FINSIGHT_AI_PROVIDER": "ollama", "FINSIGHT_OLLAMA_BASE_URL": url})

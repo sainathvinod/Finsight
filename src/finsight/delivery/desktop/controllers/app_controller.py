@@ -448,9 +448,26 @@ class AppController(QObject):
         if self._ask_fin is None:
             on_error(RuntimeError("ask_fin_unavailable"))
             return
-        request = AskFinRequest(user_id=self._user_id, cycle_id=self._active or "", question=question,
+        cid = self._active or ""
+        request = AskFinRequest(user_id=self._user_id, cycle_id=cid, question=question,
                                 audience=audience, answer_detail=answer_detail)
-        run_async(lambda: self._ask_fin.explain(request), on_result, on_error)
+
+        def _record_then_deliver(result):
+            # Record a NON-SENSITIVE audit fact for the model-assisted ask too (§19) — question_key is
+            # "free_text" (never the question text). Runs on the UI thread (safe for the bound DB).
+            try:
+                status = getattr(result, "status", None)
+                answer = getattr(result, "answer", None)
+                self._s.ask_fin_audit.record_answer(
+                    cid, mode="review", question_key="free_text",
+                    status=status.value if status is not None else "unknown",
+                    grounded=bool(answer and getattr(answer, "citations", None)),
+                    source="model_assisted")
+            except Exception:
+                _log.warning("ask_fin model-assisted audit failed cid=%s", cid)
+            on_result(result)
+
+        run_async(lambda: self._ask_fin.explain(request), _record_then_deliver, on_error)
 
     # --- Ask Fin: modes, greeting, one-click prompts, deterministic answers (E-09; work with AI off) ---
     _ANALYZED_STATES = frozenset({"Analyzed", "Summarized", "Exported"})
@@ -497,7 +514,9 @@ class AppController(QObject):
             self._s.ask_fin_audit.record_answer(
                 cid, mode="review", question_key=key,
                 status="answered" if ans.available else "no_answer",
-                grounded=bool(ans.citations), source="deterministic")
+                # Grounded iff it draws on real evidence — finding citations OR a read-model source
+                # (summarize/what-changed are grounded in the summary/comparison but carry no finding IDs).
+                grounded=bool(ans.citations or ans.source), source="deterministic")
             return ans
         text = H.HELP_ANSWERS.get(key)
         if text is None:

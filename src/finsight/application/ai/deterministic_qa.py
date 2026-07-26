@@ -59,12 +59,17 @@ def answer_what_changed(comparison) -> DeterministicAnswer:
 
 
 def answer_reconciliation(findings) -> DeterministicAnswer:
-    recon = [f for f in findings
-             if str(f.rule_id).upper().startswith("R-REC") or "reconcil" in str(f.finding_type).lower()]
+    # In this product, "reconciliation" IS the budget-vs-GED comparison (help/report use that term), and
+    # the implemented engine raises those as R-BUD-* budget findings — so they ARE reconciliation issues.
+    # Never affirm an all-clear when such findings exist (specs/10 §4.3 — Fin does not fabricate).
+    def _is_recon(f):
+        rid = str(f.rule_id).upper()
+        ft = str(f.finding_type).lower()
+        return rid.startswith(("R-REC", "R-BUD")) or "reconcil" in ft or "budget" in ft
+    recon = [f for f in findings if _is_recon(f)]
     if not recon:
-        return DeterministicAnswer("No reconciliation issues were flagged in this review — the recorded "
-                                   "spending reconciled against the budget where both sources were "
-                                   "present.", source="Findings")
+        return DeterministicAnswer("No budget-vs-GED reconciliation issues were flagged in this review "
+                                   "where both sources were present.", source="Findings")
     lines = ["Reconciliation issues found:"]
     for f in recon:
         lines.append("  • account %s — %s (%s, %s)" % (f.account, f.finding_type, f.severity, f.rule_id))

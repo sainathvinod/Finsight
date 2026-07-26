@@ -29,8 +29,10 @@ from finsight.domain.lifecycle import CycleDisposition
 MEANINGFUL_ACTIONS = frozenset({
     "setup", "upload_ged", "upload_budget", "upload_invoice", "missing_source_acknowledged",
     "correction_saved", "correction_reverted", "source_rebound", "verify", "analyze",
-    "summarize", "export", "review_abandoned", "review_resumed", "ask_fin_answered",
+    "summarize", "export", "review_abandoned", "review_resumed",
 })
+# NOTE: ask_fin_answered is deliberately EXCLUDED (see the header note above) — a read-only Ask Fin
+# question is an explanation-only glance and must NOT reset the inactivity clock (ADR-014/DEC-035).
 
 _REMINDER_30_DAYS = 30
 _REMINDER_60_DAYS = 60
