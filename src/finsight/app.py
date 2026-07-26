@@ -149,6 +149,7 @@ class AppServices:
     recovery: "ReviewReconstructionService"
     abandonment: "AbandonmentService"
     corrections: "CorrectionService"
+    ask_fin_audit: "AskFinAuditService"
     ai: "AiServices"
 
 
@@ -340,6 +341,7 @@ def build_query_services(db_path: str, clock=None) -> "AppServices":
     from finsight.application.reconstruction import ReviewReconstructionService
     from finsight.application.abandonment import AbandonmentService
     from finsight.application.corrections import CorrectionService
+    from finsight.application.ai.ask_fin_audit import AskFinAuditService
     from finsight.infrastructure.lifecycle_repositories import ReviewGenerationRepoSqlite
     container = build_app(db_path, clock or SystemClock())
     reporting = ReportingService()
@@ -355,5 +357,6 @@ def build_query_services(db_path: str, clock=None) -> "AppServices":
                                        container.audit, container.uow, container.clock),
         corrections=CorrectionService(container.extraction_override_repo, container.cycle_repo,
                                       container.audit, container.uow, container.clock),
+        ask_fin_audit=AskFinAuditService(container.audit, container.uow, container.clock),
         ai=build_ai_services(container),
     )

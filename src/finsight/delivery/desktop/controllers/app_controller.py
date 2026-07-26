@@ -418,3 +418,55 @@ class AppController(QObject):
         request = AskFinRequest(user_id=self._user_id, cycle_id=self._active or "", question=question,
                                 audience=audience, answer_detail=answer_detail)
         run_async(lambda: self._ask_fin.explain(request), on_result, on_error)
+
+    # --- Ask Fin: modes, greeting, one-click prompts, deterministic answers (E-09; work with AI off) ---
+    _ANALYZED_STATES = frozenset({"Analyzed", "Summarized", "Exported"})
+
+    def ask_fin_mode(self) -> str:
+        """'review' when the active review has deterministic results to explain; else 'product_help'
+        (usable before any review exists)."""
+        cid = self._active
+        if cid:
+            status = self.review_status(cid)
+            if status is not None and status.state in self._ANALYZED_STATES:
+                return "review"
+        return "product_help"
+
+    def ask_fin_review_period(self) -> str:
+        from finsight.delivery.desktop import presentation as pres
+        cid = self._active
+        status = self.review_status(cid) if cid else None
+        return pres.period_text(status.month, status.year) if status else ""
+
+    def ask_fin_greeting(self) -> str:
+        from finsight.application.ai import help_content as H
+        if self.ask_fin_mode() == "review":
+            return H.REVIEW_GREETING_TEMPLATE.format(period=self.ask_fin_review_period())
+        return H.GREETING_PRODUCT_HELP
+
+    def ask_fin_suggested_prompts(self):
+        """(key, label) one-click prompts for the current mode."""
+        from finsight.application.ai import help_content as H
+        return list(H.REVIEW_QUESTIONS if self.ask_fin_mode() == "review" else H.HELP_TOPICS)
+
+    def ask_fin_deterministic_answer(self, key: str):
+        """Answer a canonical question WITHOUT any model — from help content (product-help) or the
+        deterministic read models (review). Always available (FR-101/102). Records a non-sensitive
+        audit fact in review mode (§19)."""
+        from finsight.application.ai import help_content as H
+        from finsight.application.ai.deterministic_qa import (
+            DeterministicAnswer, deterministic_review_answer)
+        if self.ask_fin_mode() == "review":
+            cid = self._active
+            ans = deterministic_review_answer(
+                key, findings=self.findings(cid), summary=self.summary(cid),
+                comparison=self.historical_comparison(cid))
+            self._s.ask_fin_audit.record_answer(
+                cid, mode="review", question_key=key,
+                status="answered" if ans.available else "no_answer",
+                grounded=bool(ans.citations), source="deterministic")
+            return ans
+        text = H.HELP_ANSWERS.get(key)
+        if text is None:
+            return DeterministicAnswer(H.NO_EVIDENCE, source="", available=False)
+        return DeterministicAnswer(text, source="FinSight help")

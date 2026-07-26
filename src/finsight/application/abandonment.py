@@ -29,7 +29,7 @@ from finsight.domain.lifecycle import CycleDisposition
 MEANINGFUL_ACTIONS = frozenset({
     "setup", "upload_ged", "upload_budget", "upload_invoice", "missing_source_acknowledged",
     "correction_saved", "correction_reverted", "source_rebound", "verify", "analyze",
-    "summarize", "export", "review_abandoned", "review_resumed",
+    "summarize", "export", "review_abandoned", "review_resumed", "ask_fin_answered",
 })
 
 _REMINDER_30_DAYS = 30
