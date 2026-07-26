@@ -1,7 +1,8 @@
 from __future__ import annotations
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence, QShortcut, QAction, QActionGroup
 from PySide6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel,
-                               QStackedWidget, QApplication)
+                               QStackedWidget, QApplication, QDockWidget, QPushButton)
 from finsight.delivery.desktop.components import NavItem
 from finsight.delivery.desktop.views import (
     ReviewsView, OverviewView, FindingsView, AuditView, WorkflowView, AskFinView, DashboardView)
@@ -62,6 +63,25 @@ class MainWindow(QMainWindow):
         outer.addWidget(right_wrap, 1)
         self.setCentralWidget(central)
 
+        # Persistent Ask Fin drawer (§17): available on EVERY screen, toggled from the top bar or Ctrl+/.
+        # A second AskFinView instance (same experience as the nav screen), context-aware of the active
+        # review. Product-help works before any review; deterministic answers work with the model off.
+        self._ask_dock = QDockWidget("Ask Fin", self)
+        self._ask_dock.setObjectName("AskFinDock")
+        self._ask_dock.setAllowedAreas(Qt.DockWidgetArea.RightDockWidgetArea
+                                       | Qt.DockWidgetArea.LeftDockWidgetArea)
+        self._ask_panel = AskFinView(controller)
+        self._ask_dock.setWidget(self._ask_panel)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self._ask_dock)
+        self._ask_dock.hide()
+        self._ask_visible = False
+        # Keep the drawer context-aware: refresh on active-review and workflow changes so a visible
+        # drawer always reflects the current review (product-help before analysis, review-mode after).
+        controller.activeReviewChanged.connect(lambda _c: self._ask_panel.refresh())
+        controller.workflowChanged.connect(lambda _c: self._ask_panel.refresh())
+        sc = QShortcut(QKeySequence("Ctrl+/"), self)
+        sc.activated.connect(self.toggle_ask_fin)
+
         # wiring
         self._reviews.reviewActivated.connect(lambda _cid: self.navigate("overview"))
         self._reviews.newReviewRequested.connect(self._on_new_review)
@@ -113,6 +133,19 @@ class MainWindow(QMainWindow):
         if act is not None:
             act.setChecked(True)
 
+    # --- persistent Ask Fin drawer (§17) ---
+    def toggle_ask_fin(self) -> None:
+        self._ask_visible = not self._ask_visible
+        self._ask_dock.setVisible(self._ask_visible)
+        if self._ask_visible:
+            self._ask_panel.refresh()
+
+    def ask_fin_drawer(self):                 # public seam
+        return self._ask_panel
+
+    def ask_fin_drawer_visible(self) -> bool:
+        return self._ask_visible
+
     # --- public seams (theme) ---
     def theme_manager(self) -> ThemeManager:
         return self._theme
@@ -157,6 +190,12 @@ class MainWindow(QMainWindow):
         self._context = QLabel("No review selected")
         self._context.setProperty("role", "context")
         lay.addWidget(self._context)
+        self._ask_toggle = QPushButton("Ask Fin")
+        self._ask_toggle.setProperty("role", "secondary")
+        self._ask_toggle.setToolTip("Ask Fin — grounded help & explanations (Ctrl+/)")
+        self._ask_toggle.clicked.connect(self.toggle_ask_fin)
+        lay.addSpacing(t.SP_3)
+        lay.addWidget(self._ask_toggle)
         return bar
 
     # --- navigation ---

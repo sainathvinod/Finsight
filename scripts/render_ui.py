@@ -108,6 +108,19 @@ def main() -> int:
         w._workspace.panel(7).refresh()
         _grab(w, os.path.join(out_dir, "09-leadership-report.png"))
 
+        # 09b-09c. Persistent Ask Fin drawer — product-help (no review) and review-mode (with a
+        # deterministic grounded answer). Both work with the local model OFF.
+        w_ph = MainWindow(AppController(build_query_services(os.path.join(work, "ph.db"))))
+        w_ph.toggle_ask_fin()
+        w_ph.ask_fin_drawer().click_prompt("data_privacy")
+        _grab(w_ph, os.path.join(out_dir, "09b-ask-fin-product-help.png"))
+
+        w_rev = MainWindow(AppController(build_query_services(pop_db)))
+        w_rev.navigate("dashboard")
+        w_rev.toggle_ask_fin()
+        w_rev.ask_fin_drawer().click_prompt("highest_risk")
+        _grab(w_rev, os.path.join(out_dir, "09c-ask-fin-review.png"))
+
         # 10-11. Dark theme + high-contrast (§20) — one setStyleSheet re-themes the whole surface.
         from finsight.delivery.desktop.theme.palettes import make_palette
         w2 = MainWindow(AppController(build_query_services(pop_db)))

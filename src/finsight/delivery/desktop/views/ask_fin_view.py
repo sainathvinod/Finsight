@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
 )
 from finsight.application.ai.ask_fin_contracts import AskFinStatus
 from finsight.application.ai.contracts import GroundingConfidence
+from finsight.application.ai import help_content as H
 from finsight.delivery.desktop.components import SectionHeader, EmptyState
 from finsight.delivery.desktop.components.message import InlineMessage
 from finsight.delivery.desktop import presentation as pres
@@ -125,6 +126,31 @@ class AskFinView(QWidget):
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(t.SP_3)
 
+        # Greeting (mode-aware) + persistent grounding warning (specs/10 §4.1).
+        self._greeting = QLabel("")
+        self._greeting.setProperty("role", "kvVal"); self._greeting.setWordWrap(True)
+        lay.addWidget(self._greeting)
+        self._warning = QLabel(H.GROUNDING_WARNING)
+        self._warning.setProperty("role", "context"); self._warning.setWordWrap(True)
+        lay.addWidget(self._warning)
+
+        # One-click suggested questions (FR-101) — mode-dependent, each answered deterministically.
+        self._prompts_label = QLabel("Try one of these:")
+        self._prompts_label.setProperty("role", "cardLabel")
+        lay.addWidget(self._prompts_label)
+        self._prompts_box = QVBoxLayout(); self._prompts_box.setSpacing(t.SP_1)
+        self._prompt_buttons = []
+        lay.addLayout(self._prompts_box)
+
+        # Deterministic answer area (always works, even with AI off). Separate from the LLM answer.
+        self._det_answer = QTextEdit(); self._det_answer.setReadOnly(True); self._det_answer.setVisible(False)
+        self._det_answer.setMaximumHeight(180)
+        lay.addWidget(self._det_answer)
+        self._det_meta = QLabel(""); self._det_meta.setProperty("role", "context")
+        self._det_meta.setWordWrap(True); self._det_meta.setVisible(False)
+        lay.addWidget(self._det_meta)
+        self._shown_det_answer = ""
+
         # Local-AI status card: a clear headline + concrete in-app setup steps when unavailable.
         self._status_card = QWidget()
         self._status_card.setProperty("role", "card")
@@ -178,13 +204,55 @@ class AskFinView(QWidget):
 
     # --- lifecycle ---
     def refresh(self) -> None:
-        available = self._c.ask_fin_available() and bool(self._c.active_review_id)
-        self._stack.setCurrentIndex(0 if available else 1)
-        if available and not self._status_probed:
-            self._status_probed = True
-            self._provider_status.setText("Checking AI provider…")
-            self._c.ask_fin_provider_status_async(self._on_provider_status, self._on_provider_status_error)
-        self._sync_ask_enabled()   # always: keep the Ask button disabled when unavailable/no review
+        # Ask Fin is ALWAYS available: product-help works before any review, and every canonical
+        # question has a deterministic answer even with the local model off (FR-101/102).
+        self._greeting.setText(self._c.ask_fin_greeting())
+        mode = self._c.ask_fin_mode()
+        self._header.set_subtitle("Product help — how FinSight works" if mode == "product_help"
+                                  else "Grounded in this review's verified data")
+        self._question.setPlaceholderText(
+            "Ask a question about this review…" if mode == "review"
+            else "Pick a question above, or select a review to ask about its data.")
+        self._render_prompts()
+        self._stack.setCurrentIndex(0)
+        if self._c.ask_fin_available():
+            if not self._status_probed:
+                self._status_probed = True
+                self._provider_status.setText("Checking AI provider…")
+                self._c.ask_fin_provider_status_async(self._on_provider_status,
+                                                      self._on_provider_status_error)
+        else:
+            self._provider_status.setText("Local AI is off — the one-click answers above work without it.")
+            self._guidance.setText(""); self._guidance.setVisible(False)
+        self._sync_ask_enabled()   # free-text (model) ask stays gated to a review + provider
+
+    # --- one-click deterministic answers ---
+    def _render_prompts(self) -> None:
+        while self._prompts_box.count():
+            item = self._prompts_box.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.setParent(None); w.deleteLater()
+        self._prompt_buttons = []
+        for key, label in self._c.ask_fin_suggested_prompts():
+            btn = QPushButton(label)
+            btn.setProperty("role", "secondary")
+            btn.clicked.connect(lambda _checked=False, k=key: self._on_prompt(k))
+            self._prompts_box.addWidget(btn)
+            self._prompt_buttons.append((key, btn))
+
+    def _on_prompt(self, key: str) -> None:
+        ans = self._c.ask_fin_deterministic_answer(key)
+        self._shown_det_answer = ans.text
+        self._det_answer.setPlainText(ans.text)
+        self._det_answer.setVisible(True)
+        meta = []
+        if ans.source:
+            meta.append("Source: " + ans.source)
+        if ans.citations:
+            meta.append("Sources used: " + ", ".join(pres.citation_label(c) for c in ans.citations))
+        self._det_meta.setText("      ".join(meta))
+        self._det_meta.setVisible(bool(meta))
 
     # --- submission ---
     def submit_question(self, text: Optional[str] = None) -> None:
@@ -294,6 +362,18 @@ class AskFinView(QWidget):
         self._ask.setEnabled(ready)
 
     # --- public seams (stable API for tests and integrators) ---
+    def greeting_text(self) -> str:
+        return self._greeting.text()
+
+    def suggested_prompt_keys(self) -> List[str]:
+        return [k for k, _ in self._prompt_buttons]
+
+    def click_prompt(self, key: str) -> None:
+        self._on_prompt(key)
+
+    def deterministic_answer_text(self) -> str:
+        return self._shown_det_answer
+
     def current_status(self) -> str:
         return self._state.value
 
