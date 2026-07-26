@@ -271,8 +271,11 @@ class AppController(QObject):
         self.workflowChanged.emit(cycle.cycle_id)
         return cycle
 
-    def upload(self, cycle_id: str, ged_path: str, budget_path: str) -> UploadResult:
-        result = self._s.workflow.upload(self._session_for(cycle_id), ged_path, budget_path)
+    def upload(self, cycle_id: str, ged_path: str, budget_path: str,
+               invoice_path: str = None) -> UploadResult:
+        # invoice_path is optional and captured for provenance/audit only (§6) — never extracted.
+        result = self._s.workflow.upload(self._session_for(cycle_id), ged_path, budget_path,
+                                         invoice_path)
         self.workflowChanged.emit(cycle_id)
         return result
 

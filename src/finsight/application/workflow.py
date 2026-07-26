@@ -94,15 +94,20 @@ class ReviewWorkflowService:
         return self._require_cycle(cycle_id)
 
     # ---- Step 2: Data Upload (INTAKE) ----
-    def upload(self, session: ReviewSession, ged_path: str, budget_path: str) -> UploadResult:
+    def upload(self, session: ReviewSession, ged_path: str, budget_path: str,
+               invoice_path: str = None) -> UploadResult:
         cycle = self._require_cycle(session.cycle_id)
-        provenance, missing = self._e.build_provenance(cycle, ged_path, budget_path)
+        provenance, missing = self._e.build_provenance(cycle, ged_path, budget_path, invoice_path)
         if missing:
             _log.warning("upload rejected cid=%s missing=%s", session.cycle_id, missing)
             raise MissingFileError(
                 "Required file(s) missing or unreadable: " + ", ".join(missing) + ".", missing)
         session.ctx["provenance"] = provenance
-        session.ctx["paths"] = {"GED": ged_path, "BUDGET": budget_path}
+        # Only GED/BUDGET feed extraction; the invoice is captured for provenance/audit only (§6).
+        paths = {"GED": ged_path, "BUDGET": budget_path}
+        if invoice_path:
+            paths["INVOICE"] = invoice_path
+        session.ctx["paths"] = paths
         try:
             self._e.do_intake(cycle, session.ctx)
         except Exception as e:

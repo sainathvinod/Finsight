@@ -7,8 +7,9 @@ from finsight.delivery.desktop.components.severity import severity_text, severit
 from finsight.delivery.desktop.components.inspector import DetailInspector
 from finsight.delivery.desktop.components.workflow_rail import WorkflowRail
 from finsight.delivery.desktop.components.audit_timeline import AuditTimeline, AuditTimelineRow
+from finsight.delivery.desktop.components.source_card import SourceCard
 
 __all__ = [
     "NavItem", "SectionHeader", "DataTable", "EmptyState", "severity_text", "severity_color",
-    "DetailInspector", "WorkflowRail", "AuditTimeline", "AuditTimelineRow",
+    "DetailInspector", "WorkflowRail", "AuditTimeline", "AuditTimelineRow", "SourceCard",
 ]

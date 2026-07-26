@@ -1,6 +1,6 @@
 from __future__ import annotations
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QWidget, QVBoxLayout
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QScrollArea, QFrame
 from finsight.delivery.desktop.components import SectionHeader
 from finsight.delivery.desktop.components.message import InlineMessage
 from finsight.application.errors import FinsightAppError
@@ -8,8 +8,9 @@ from finsight.delivery.desktop.theme import tokens as t
 
 
 class StepPanel(QWidget):
-    """Base for a workflow step panel: a header, an inline (non-modal) message area, and a content
-    region subclasses fill via `self.content`."""
+    """Base for a workflow step panel: a header, an inline (non-modal) message area, and a scrollable
+    content region subclasses fill via `self.content`. The content scrolls so tall steps (multi-card
+    upload, extraction review tables) stay fully usable when the window is small or zoomed (§22/§24)."""
 
     def __init__(self, controller, title: str, subtitle: str = ""):
         super().__init__()
@@ -21,11 +22,16 @@ class StepPanel(QWidget):
         root.addWidget(self._header)
         self.message = InlineMessage()
         root.addWidget(self.message)
-        self.content = QVBoxLayout()
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        body = QWidget()
+        self.content = QVBoxLayout(body)
+        self.content.setContentsMargins(0, 0, 0, 0)
         self.content.setSpacing(t.SP_3)
         self.content.setAlignment(Qt.AlignmentFlag.AlignTop)
-        root.addLayout(self.content)
-        root.addStretch(1)
+        scroll.setWidget(body)
+        root.addWidget(scroll, 1)
 
     def cid(self):
         return self._c.active_review_id

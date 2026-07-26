@@ -67,9 +67,16 @@ class TransitionEngine:
             self.audit_event(cycle.cycle_id, "resume", {"from_state": cycle.state.value})
 
     # ---- deterministic recompute helpers (pure: no DB writes, no audit) ----
-    def build_provenance(self, cycle, ged_path, budget_path):
+    def build_provenance(self, cycle, ged_path, budget_path, invoice_path=None):
+        # INVOICE is an OPTIONAL captured source (target-product §6): fingerprinted for provenance +
+        # audit like any untrusted inbound file (NFR-012), but it is NOT extracted or analyzed — no
+        # invoice rule catalog exists (E-12 / Phase 3). Reconstruction ignores non-required bindings
+        # (reconstruction.REQUIRED_DOCS = GED, BUDGET), so capturing it never perturbs the trusted core.
+        paths = {"GED": ged_path, "BUDGET": budget_path}
+        if invoice_path:
+            paths["INVOICE"] = invoice_path
         return INTAKE.build_provenance(
-            cycle, {"GED": ged_path, "BUDGET": budget_path}, self.hasher, self.clock, self.actor)
+            cycle, paths, self.hasher, self.clock, self.actor, optional=("INVOICE",))
 
     def extract(self, ged_path, budget_path):
         return self.pipeline.run(ged_path, budget_path)
@@ -99,7 +106,8 @@ class TransitionEngine:
             if self.cycle_lifecycle_repo is not None:
                 self.cycle_lifecycle_repo.set_intake_stage(cid, IntakeStage.SOURCE_BOUND)
             for f in ctx["provenance"]:
-                self.audit_event(cid, "upload_ged" if f.doc_type == "GED" else "upload_budget",
+                # upload_ged / upload_budget / upload_invoice — the "source bound" audit facts.
+                self.audit_event(cid, "upload_" + f.doc_type.lower(),
                                  {"name": f.name, "fingerprint": f.fingerprint, "period": f.period})
         self.transition(cycle, CycleState.INTAKE, body)
 

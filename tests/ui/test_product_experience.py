@@ -107,13 +107,19 @@ def test_create_generates_correct_request(window_factory, empty_db):
     setup._on_create()
     assert w._c.active_review_id == "2026-07"
 
-def test_upload_shows_required_sources_and_deferred(window_factory, empty_db):
+def test_upload_shows_three_source_cards_with_honest_invoice(window_factory, empty_db):
     w = window_factory(empty_db)
     w._c.create_review("2026-07", "July", "2026")
     w.navigate("workspace")
     upload = w._workspace.panel(1)
     upload.refresh()
-    assert "not yet accepted" in upload._deferred.text().lower()   # deferred sources honest
+    # Exactly three source cards: GED + Budget required, Invoice optional (captured, not analyzed).
+    assert upload._ged_card.path() is None and upload._bud_card.path() is None
+    upload.set_invoice("/tmp/inv.pdf")
+    assert "not available" in upload._inv_card.status_text().lower()   # honest: invoice not analyzed
+    # Required-only upload stays enabled without the invoice; invoice is optional.
+    upload.set_ged("/tmp/g.xlsx"); upload.set_budget("/tmp/b.xlsx")
+    assert upload._upload.isEnabled()
 
 
 # ===================== navigation / IA =====================

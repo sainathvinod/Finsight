@@ -39,7 +39,7 @@ def _populated_db(workdir: str) -> str:
 
 
 def _grab(window: MainWindow, out_path: str) -> None:
-    window.resize(1180, 760)
+    window.resize(1180, 860)
     window.grab().save(out_path)
     print(f"  wrote {os.path.relpath(out_path, REPO_ROOT)}")
 
@@ -61,6 +61,12 @@ def main() -> int:
         # 1b. Create New Review -> dedicated Review-Period step (§5).
         w_empty.view("welcome").newReviewRequested.emit()
         _grab(w_empty, os.path.join(out_dir, "01b-create-review-period.png"))
+
+        # 1c. After creating a review -> Data Upload with three source cards (§6).
+        w_empty._c.create_review("2026-08", "August", "2026")
+        w_empty.navigate("workspace")
+        w_empty._workspace._apply(1)   # Data Upload step
+        _grab(w_empty, os.path.join(out_dir, "01c-data-upload-three-sources.png"))
 
         # 2. Returning user: populated DB -> Dashboard home + key screens.
         pop_db = _populated_db(work)

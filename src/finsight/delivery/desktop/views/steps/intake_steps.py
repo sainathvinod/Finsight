@@ -1,6 +1,6 @@
 from __future__ import annotations
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QComboBox,
+from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox,
                                QSpinBox, QPushButton, QProgressBar, QFileDialog)
 from finsight.delivery.desktop.components import SectionHeader  # noqa: F401 (re-exported convenience)
 from finsight.delivery.desktop.components.form_row import FormRow
@@ -12,9 +12,6 @@ from finsight.delivery.desktop.theme import tokens as t
 
 _MONTHS = ["January", "February", "March", "April", "May", "June",
            "July", "August", "September", "October", "November", "December"]
-
-# Approved Release-1 sources (backend-supported) and honestly-deferred future types (FR-004/NFR-045).
-_DEFERRED_SOURCES = "Invoices, resource sheets, contracts/SOWs, and rate cards are planned and not yet accepted."
 
 # Plain explanation of what the review period is and why it matters (§5). No invented rule — the
 # period simply identifies the month a review belongs to (FR-005, F-01-03).
@@ -161,37 +158,55 @@ class SetupPanel(StepPanel):
             self._check_period()                          # re-evaluate duplicate state on (re)entry
 
 
+# Invoice slot honest handling (§6 + RED CARD): the invoice is CAPTURED for provenance and the audit
+# trail, but NOT read or analyzed — no invoice rule catalog exists (E-12 / Phase 3). We never claim it
+# was validated. Dialog accepts PDF (the FR-002 invoice format) plus any file, since only bytes are
+# fingerprinted.
+_INVOICE_FILTER = "Invoice document (*.pdf);;All files (*)"
+_INVOICE_NOTE = ("Invoice analysis is not available in this release. Your invoice is captured for the "
+                 "record and the audit trail — it is not read, validated, or analyzed.")
+
+
 class UploadPanel(StepPanel):
+    """Data Upload (§6): exactly three source cards — GED and Budget (required, extracted) and an
+    Invoice (optional, captured-only). Each card shows purpose, accepted format, status, filename,
+    replace/remove, and a confidentiality line. The invoice is never analyzed (RED CARD: no invoice
+    rules exist); it is captured for provenance + audit only."""
+
     def __init__(self, controller):
         super().__init__(controller, "Data Upload",
-                         "Select the two required source workbooks. Your source files are never modified.")
-        self._ged = None
-        self._bud = None
-        self._ged_field = QLineEdit(); self._ged_field.setReadOnly(True)
-        self._ged_field.setPlaceholderText(ACCEPTED_LABEL)
-        self._bud_field = QLineEdit(); self._bud_field.setReadOnly(True)
-        self._bud_field.setPlaceholderText(ACCEPTED_LABEL)
-        ged_btn = QPushButton("Choose GED…"); ged_btn.setProperty("role", "secondary")
-        bud_btn = QPushButton("Choose Budget…"); bud_btn.setProperty("role", "secondary")
-        ged_row = QWidget(); gl = QHBoxLayout(ged_row); gl.setContentsMargins(0, 0, 0, 0); gl.setSpacing(t.SP_2)
-        gl.addWidget(self._ged_field, 1); gl.addWidget(ged_btn)
-        bud_row = QWidget(); bl = QHBoxLayout(bud_row); bl.setContentsMargins(0, 0, 0, 0); bl.setSpacing(t.SP_2)
-        bl.addWidget(self._bud_field, 1); bl.addWidget(bud_btn)
-        self.content.addWidget(FormRow("General Expense Detail  (required)", ged_row, label_width=220))
-        self._ged_purpose = QLabel("The month's expense transactions to analyze.")
-        self._ged_purpose.setProperty("role", "context"); self.content.addWidget(self._ged_purpose)
-        self.content.addWidget(FormRow("Budget Tracker  (required)", bud_row, label_width=220))
-        self._bud_purpose = QLabel("Approved budget and actuals to compare spending against.")
-        self._bud_purpose.setProperty("role", "context"); self.content.addWidget(self._bud_purpose)
-        self._deferred = QLabel(_DEFERRED_SOURCES)     # honest: not silently pretended as accepted
-        self._deferred.setProperty("role", "context"); self._deferred.setWordWrap(True)
-        self.content.addWidget(self._deferred)
+                         "Add your source files. Empty optional slots are normal, not errors.")
+        from finsight.delivery.desktop.components import SourceCard
+        self._conf = QLabel("Your files are read only. FinSight never modifies a source file, and "
+                            "nothing is uploaded or sent anywhere — all processing is on this computer.")
+        self._conf.setProperty("role", "context"); self._conf.setWordWrap(True)
+        self.content.addWidget(self._conf)
+
+        # GED/Budget accepted format comes from the single source-format policy (ACCEPTED_LABEL),
+        # so the UI can never claim a format the reader cannot actually read.
+        self._ged_card = SourceCard(
+            "General Expense Detail (GED)", "The month's expense transactions to analyze.",
+            ACCEPTED_LABEL, required=True)
+        self._bud_card = SourceCard(
+            "Budget Tracker", "Approved budget and actuals to compare spending against.",
+            ACCEPTED_LABEL, required=True)
+        self._inv_card = SourceCard(
+            "Invoice", "Vendor invoice for this period, kept with the review.",
+            "PDF — captured for your records (not analyzed)", required=False, note=_INVOICE_NOTE)
+        for card in (self._ged_card, self._bud_card, self._inv_card):
+            self.content.addWidget(card)
+
+        self._ged_card.chooseRequested.connect(self._choose_ged)
+        self._ged_card.removeRequested.connect(lambda: (self._ged_card.clear(), self._sync()))
+        self._bud_card.chooseRequested.connect(self._choose_bud)
+        self._bud_card.removeRequested.connect(lambda: (self._bud_card.clear(), self._sync()))
+        self._inv_card.chooseRequested.connect(self._choose_invoice)
+        self._inv_card.removeRequested.connect(lambda: (self._inv_card.clear(), self._sync()))
+
         self._upload = QPushButton("Upload files"); self._upload.setProperty("role", "primary")
         self._upload.setEnabled(False)
         row = QHBoxLayout(); row.addStretch(1); row.addWidget(self._upload)
         self.content.addLayout(row)
-        ged_btn.clicked.connect(self._choose_ged)
-        bud_btn.clicked.connect(self._choose_bud)
         self._upload.clicked.connect(self._on_upload)
 
     def _choose_ged(self):
@@ -204,19 +219,30 @@ class UploadPanel(StepPanel):
         if path:
             self.set_budget(path)
 
+    def _choose_invoice(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Select invoice document", "", _INVOICE_FILTER)
+        if path:
+            self.set_invoice(path)
+
     def set_ged(self, path):    # also used by tests to inject a selection
-        self._ged = path; self._ged_field.setText(path); self._sync()
+        self._ged_card.set_file(path); self._sync()
 
     def set_budget(self, path):
-        self._bud = path; self._bud_field.setText(path); self._sync()
+        self._bud_card.set_file(path); self._sync()
+
+    def set_invoice(self, path):
+        self._inv_card.set_file(path)
+        self._inv_card.set_status("Captured for the record — invoice analysis is not available this release.")
+        self._sync()
 
     def _sync(self):
-        self._upload.setEnabled(bool(self._ged and self._bud and self.cid()))
+        self._upload.setEnabled(bool(self._ged_card.path() and self._bud_card.path() and self.cid()))
 
     def _on_upload(self):
         self.clear_message()
         try:
-            self._c.upload(self.cid(), self._ged, self._bud)
+            self._c.upload(self.cid(), self._ged_card.path(), self._bud_card.path(),
+                           invoice_path=self._inv_card.path())
         except FinsightAppError as e:
             self.show_error(e)
 
