@@ -1,11 +1,10 @@
 from __future__ import annotations
 from typing import Dict, List, Tuple
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTableWidget, QTableWidgetItem,
-    QAbstractItemView, QHeaderView,
-)
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton
 from finsight.delivery.desktop.components.form_row import FormRow
+from finsight.delivery.desktop.components.extraction_review import ExtractionReview
+from finsight.delivery.desktop.components.section_header import SectionHeader
 from finsight.delivery.desktop.views.steps.base import StepPanel
 from finsight.delivery.desktop.views.findings_view import FindingsView
 from finsight.delivery.desktop.views.workflow_meta import rank, RANK
@@ -30,10 +29,14 @@ class VerificationPanel(StepPanel):
         self._preview_holder = holder
         self.content.addWidget(holder)
 
-        # Representative normalized rows per source (Phase 5.4). Session-scoped, read-only.
+        # Full per-source extraction review (§9): every extracted record with lineage, search + sort.
+        # `_sources` keeps the representative summary (Phase 5.4 seams) populated in parallel.
         self._sources: Dict[str, object] = {}
-        self._rep_area = QVBoxLayout(); self._rep_area.setSpacing(t.SP_2)
-        self.content.addLayout(self._rep_area)
+        self._review_head = SectionHeader("Extracted records",
+                                          "Review every extracted record and its source before you verify.")
+        self.content.addWidget(self._review_head)
+        self._review = ExtractionReview()
+        self.content.addWidget(self._review)
 
         self._meaning = QLabel(); self._meaning.setProperty("role", "context"); self._meaning.setWordWrap(True)
         self.content.addWidget(self._meaning)
@@ -68,45 +71,30 @@ class VerificationPanel(StepPanel):
     def verification_preview_rows(self) -> List[Tuple[str, str]]:   # public seam (summary)
         return list(self._preview_rows)
 
-    # --- representative normalized rows (Phase 5.4) ---
+    # --- extraction review (§9) + representative summary seams (Phase 5.4) ---
     def _clear_rep(self):
-        while self._rep_area.count():
-            item = self._rep_area.takeAt(0)
-            w = item.widget()
-            if w is not None:
-                w.setParent(None); w.deleteLater()
         self._sources = {}
+        self._review.set_data([], [])
+        self._review_head.setVisible(False)
+        self._review.setVisible(False)
 
     def _render_representative(self, cid):
-        self._clear_rep()
+        # Populate the representative-summary seams from the capped preview...
+        self._sources = {}
         preview = self._c.verification_preview(cid) if cid else None
-        if preview is None:
+        if preview is not None:
+            for sp in preview.sources:
+                self._sources[sp.source_type] = sp
+        # ...and drive the full all-records review from the uncapped extraction read model.
+        review = self._c.extraction_review(cid) if cid else None
+        if review is None:
+            self._review_head.setVisible(False)
+            self._review.setVisible(False)
             return
-        for sp in preview.sources:
-            self._sources[sp.source_type] = sp
-            head = QLabel(f"{sp.source_type} — {sp.filename or '(source)'}  ·  "
-                          f"{sp.accepted_rows} accepted, {sp.quarantined_rows} quarantined")
-            head.setProperty("role", "cardLabel"); head.setWordWrap(True)
-            self._rep_area.addWidget(head)
-            if sp.rows:
-                self._rep_area.addWidget(self._source_table(sp))
-            else:
-                none_lbl = QLabel("No representative rows available.")
-                none_lbl.setProperty("role", "context")
-                self._rep_area.addWidget(none_lbl)
-
-    def _source_table(self, sp) -> QTableWidget:
-        table = QTableWidget(len(sp.rows), len(sp.columns))
-        table.setHorizontalHeaderLabels([c.replace("_", " ") for c in sp.columns])
-        table.verticalHeader().setVisible(False)
-        table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)   # read-only
-        table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
-        table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        table.setMaximumHeight(220)
-        for ri, row in enumerate(sp.rows):
-            for ci, val in enumerate(row):
-                table.setItem(ri, ci, QTableWidgetItem(str(val)))
-        return table
+        records, omitted = review
+        self._review.set_data(records, omitted)
+        self._review_head.setVisible(True)
+        self._review.setVisible(True)
 
     # --- new preview seams ---
     def verification_preview_columns(self, source: str):

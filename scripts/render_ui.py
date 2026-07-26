@@ -78,6 +78,14 @@ def main() -> int:
         up._continue1.click()          # step 2: explicit Continue-anyway choice
         _grab(w_empty, os.path.join(out_dir, "01e-missing-source-step2.png"))
 
+        # 1f. Extraction review (§9): all records per source with lineage, at the Verification step.
+        w_empty._c.upload("2026-08", ged, bud)
+        w_empty._c._s.workflow.process(w_empty._c._session_for("2026-08"))
+        w_empty._c.select_review("2026-08")
+        w_empty.navigate("workspace")
+        w_empty._workspace._apply(4)   # Verification step
+        _grab(w_empty, os.path.join(out_dir, "01f-extraction-review.png"))
+
         # 2. Returning user: populated DB -> Dashboard home + key screens.
         pop_db = _populated_db(work)
         w = MainWindow(AppController(build_query_services(pop_db)))

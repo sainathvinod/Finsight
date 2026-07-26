@@ -41,6 +41,33 @@ class VerificationPreview:
 
 
 @dataclass(frozen=True)
+class SourceRecords:
+    """ALL extracted records for one source (target-product §9) — every accepted and quarantined row,
+    each carrying its lineage (the `source` cell = file!row). No cap and no sampling: this is the full
+    extracted dataset the reviewer verifies. Read-only; nothing is re-read or persisted."""
+    source_type: str                       # "GED" | "Budget Tracker"
+    filename: str
+    period: str
+    columns: Tuple[str, ...]               # leading "status" + the normalized columns (incl. lineage)
+    rows: Tuple[Tuple[str, ...], ...]       # every accepted then quarantined row, stringified
+    accepted_rows: int
+    quarantined_rows: int
+    available: bool
+
+
+def source_records(source_type: str, filename: str, period: str, columns: Tuple[str, ...],
+                   accepted_rows: List[dict], quarantined_rows: List[dict], available: bool) -> SourceRecords:
+    cols = ("status",) + tuple(columns)
+    rows = []
+    for r in accepted_rows:
+        rows.append(("Accepted",) + tuple(_fmt(r.get(c)) for c in columns))
+    for r in quarantined_rows:
+        rows.append(("Quarantined",) + tuple(_fmt(r.get(c)) for c in columns))
+    return SourceRecords(source_type, filename, period, cols, tuple(rows),
+                         len(accepted_rows), len(quarantined_rows), available)
+
+
+@dataclass(frozen=True)
 class ReviewReadinessSummary:
     """Deterministic, categorical review readiness. No numeric score. Row-count/validation facts are
     populated only when the in-session snapshot is available (they are session-scoped, not persisted)."""

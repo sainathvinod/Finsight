@@ -364,10 +364,30 @@ class ValidationPanel(StepPanel):
                        f"{item.name}  ·  {item.period}  ·  {item.fingerprint[:12]}…")
 
 
+# Honest processing stages (§8): the real phases the deterministic pipeline performs. Shown as an
+# ordered explanation with an indeterminate indicator — never a fabricated percentage or fake timing.
+_PROCESSING_STAGES = (
+    "Securing the source files (read-only; originals are never modified)",
+    "Reading each workbook",
+    "Extracting the records",
+    "Normalizing values (exact decimal — no rounding drift)",
+    "Building lineage back to each source row",
+    "Checking and quarantining rows that fail validation",
+    "Preparing the dataset for your review",
+)
+
+
 class ProcessingPanel(StepPanel):
     def __init__(self, controller):
         super().__init__(controller, "Processing",
                          "Run the deterministic extraction and normalization pipeline.")
+        stages_intro = QLabel("Processing performs these steps, in order:")
+        stages_intro.setProperty("role", "context")
+        self.content.addWidget(stages_intro)
+        self._stages = QLabel("\n".join("•  " + s for s in _PROCESSING_STAGES))
+        self._stages.setProperty("role", "context"); self._stages.setWordWrap(True)
+        self.content.addWidget(self._stages)
+
         self._run = QPushButton("Run processing"); self._run.setProperty("role", "secondary")
         self._progress = QProgressBar(); self._progress.setRange(0, 0)  # indeterminate (no measurable %)
         self._progress.setVisible(False); self._progress.setFixedWidth(180)

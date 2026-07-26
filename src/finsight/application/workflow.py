@@ -198,6 +198,37 @@ class ReviewWorkflowService:
         return V.VerificationPreview(available=bool(ex.get("available")),
                                      rejected_reason=session.ctx.get("rejected"), sources=sources)
 
+    def extraction_review(self, session: ReviewSession):
+        """ALL extracted records per provided source (target-product §9), for the review-before-verify
+        tables. Returns (records, omitted): `records` has one entry per extracted source with every
+        accepted+quarantined row and its lineage; `omitted` names captured-but-not-extracted sources
+        (e.g. an invoice — captured for the record, never analyzed). None before extraction exists."""
+        from finsight.application.read_models import verification as V
+        if session is None or session.ctx.get("extracted") is None:
+            return None
+        ex = session.ctx["extracted"]
+        prov = {p.doc_type: p for p in (session.ctx.get("provenance") or [])}
+
+        def _p(doc_type, attr, default=""):
+            p = prov.get(doc_type)
+            return getattr(p, attr) if p else default
+
+        avail = bool(ex.get("available"))
+        records = [
+            V.source_records("GED", _p("GED", "name"), _p("GED", "period"), V.ged_columns(),
+                             ex.get("ged_valid", []), ex.get("ged_quarantined", []), avail),
+            V.source_records("Budget Tracker", _p("BUDGET", "name"), _p("BUDGET", "period"),
+                             V.budget_columns(), ex.get("budget_valid", []),
+                             ex.get("budget_quarantined", []), avail),
+        ]
+        # An invoice, if captured, is NOT extracted (no invoice rules exist — §6/RED CARD). Name it as
+        # an omitted source so the review never implies it was analyzed.
+        omitted = []
+        if "INVOICE" in prov:
+            omitted.append(("Invoice", prov["INVOICE"].name,
+                            "Captured for the record — not extracted or analyzed in this release."))
+        return records, omitted
+
     # ---- Step 5: Verification (VERIFIED) — explicit human approval ----
     def verify(self, session: ReviewSession) -> ReviewCycle:
         cycle = self._require_cycle(session.cycle_id)

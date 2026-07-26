@@ -247,6 +247,11 @@ class AppController(QObject):
         ws = self._working.get(cycle_id)
         return self._s.workflow.verification_preview(ws.session) if ws else None
 
+    def extraction_review(self, cycle_id: str):
+        """(records, omitted) — ALL extracted records per source + captured-but-omitted sources (§9)."""
+        ws = self._working.get(cycle_id)
+        return self._s.workflow.extraction_review(ws.session) if ws else None
+
     def review_readiness(self, cycle_id: str):
         """Deterministic readiness derived from persisted state, enriched by the session snapshot."""
         from finsight.application.read_models.verification import build_readiness
