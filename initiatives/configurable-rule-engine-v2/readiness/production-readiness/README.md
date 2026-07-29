@@ -27,7 +27,8 @@ received the required human approval.
 - [Baseline Decision Package](STAGE-01-BASELINE-DECISION-PACKAGE.md)
 - `STARTING-WORKTREE-MANIFEST.json` and
   `STARTING-WORKTREE-MANIFEST.tsv` — generated exact inventory
-- `STAGE-01-INDEPENDENT-REVIEW.md` — added after independent review
+- [Independent Stage 1 Review](STAGE-01-INDEPENDENT-REVIEW.md) — PASS for
+  decision-package presentation; Stage 1 gate remains pending
 
 ## Gate rule
 

@@ -2,7 +2,7 @@
 
 **Stage:** Baseline Freeze and SDD Reconciliation
 **Prepared:** 2026-07-29
-**Package status:** Candidate; independent review and human decisions pending
+**Package status:** Independent PASS for presentation; human decisions pending
 **Progression decision:** **NO-GO to Stage 2 until this gate passes**
 
 ## 1. Purpose
@@ -30,7 +30,7 @@ changes.
 | [Decision Register](STAGE-01-PRODUCT-AND-FINANCIAL-CONTROL-DECISIONS.md) | Product/Financial Control selections and approvals | **Decisions open** |
 | [Scope Freeze](STAGE-01-FIRST-RELEASE-SCOPE-FREEZE.md) | Candidate included/deferred release scope | Not effective |
 | Starting worktree JSON/TSV | Exact generated path/hash/class inventory | Generated and hashed |
-| Stage 1 independent review | Independent package verification | Pending |
+| [Stage 1 independent review](STAGE-01-INDEPENDENT-REVIEW.md) | Independent package verification | **PASS for presentation; gate pending** |
 
 The exact candidate decision artifacts to approve are:
 
@@ -43,6 +43,7 @@ The exact candidate decision artifacts to approve are:
 | Candidate First-Release Scope Freeze | `c322babbda195662370878e0b09a210bc3ade0dadfbc67dc7328429912643acf` |
 | Source and Artifact Inventory | `a9850e466a6061eff041aef2ed1b800154c50e2e177ac944a2dd2ab01c07d762` |
 | Production-Readiness Master Plan | `a94fb84d361b3feddd9685fe293e05bdc59c721490ef0efd77fa95a5b6743609` |
+| Independent Stage 1 Review | `9087396e8c42ada977cb659e73d8a94003f181d6de0aeb9834911bed1aaaf3e8` |
 
 ## 3. Preservation completed
 
@@ -128,16 +129,17 @@ choices may be inferred from the implementation.
 - [x] Exact starting path/hash manifest generated and frozen.
 - [x] Source/test/migration/governed-document candidate committed.
 - [x] Clean-checkout fixture and submodule reconstruction passed.
-- [ ] Normative-source hierarchy independently reviewed.
+- [x] Normative-source hierarchy independently reviewed.
 - [ ] Historical statuses and supersessions accepted through an overlay.
 - [ ] S1-D01 through S1-D13 each contain an approved selection, rationale,
       actor, timestamp, and authority.
 - [ ] Different-person Financial Control approval is recorded for S1-D01/S1-D02 as
       applicable.
-- [ ] Requirements delta and traceability independently reviewed.
+- [x] Requirements delta and traceability independently reviewed.
 - [ ] Candidate first-release scope approved.
 - [ ] No ambiguity remains for Stage 2 deterministic behavior.
-- [ ] Independent Stage 1 review returns PASS.
+- [x] Independent Stage 1 review returns PASS for decision-package
+      presentation.
 - [ ] Product Owner records Stage 1 PASS.
 
 ## 7. Required gate response
