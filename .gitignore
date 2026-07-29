@@ -15,7 +15,8 @@ desktop.ini
 !docs/**/*.md
 # The two V2 workbook fixtures are approved synthetic test evidence and are required
 # for clean-checkout financial-oracle and ingestion verification.
-!initiatives/configurable-rule-engine-v2/fixtures/*.xlsx
+!initiatives/configurable-rule-engine-v2/fixtures/Sample_Budget_Report.xlsx
+!initiatives/configurable-rule-engine-v2/fixtures/Sample_GED_Report.xlsx
 
 # Python bytecode / caches
 __pycache__/
