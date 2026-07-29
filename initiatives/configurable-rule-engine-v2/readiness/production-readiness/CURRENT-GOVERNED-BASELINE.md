@@ -95,8 +95,14 @@ commits without changing the known product semantics:
 | `31f7f36e3f0be5c0fb301343512e8019d6bb2bcd` | V2 production source, migrations, dependency metadata, and reconstruction configuration |
 | `f3232afde5776a43211d62e894294775b3acf643` | V2 automated tests, independent financial-oracle tooling, launch helpers, and screenshot-capture tooling |
 
-The governed-document and fixture commit, clean-checkout reconstruction result,
-and final candidate commit are recorded after the Stage 1 package is complete.
+The governed-document and fixture commit is
+`0966ab2e90a9edbcd43908e08152c8223081bf87`.
+
+An isolated `--no-hardlinks` clone at that commit successfully initialized the
+pinned `spec-driven` submodule and reproduced both approved workbook hashes.
+The full suite in that clone reproduced the same four known failures:
+`4 failed, 1212 passed, 2 subtests passed in 82.23s`. See
+[the clean reconstruction verification](STAGE-01-CLEAN-RECONSTRUCTION-VERIFICATION.md).
 
 The exact pre-freeze manifest contains 1,760 classified paths:
 
@@ -163,7 +169,8 @@ Requirements or Architecture snapshots. Until Stage 1 approval:
   committed on the stabilization branch;
 - generated/runtime/obsolete/accidental artifacts excluded from source and
   preserved by hash;
-- a clean-checkout reconstruction proves the fixture and submodule paths;
+- a clean-checkout reconstruction proves the fixture and submodule paths
+  (**PASS at candidate commit `0966ab2`**);
 - Stage 1 requirements/status overlays and traceability pass independent review;
 - every Product Owner/Financial Control decision is approved;
 - no ambiguity remains for Stage 2 deterministic behavior; and

@@ -23,6 +23,7 @@ changes.
 | [Current Baseline](CURRENT-GOVERNED-BASELINE.md) | Exact source/snapshot/test/release state | Candidate |
 | [Directive Record](STAGE-01-GOVERNING-DIRECTIVE-RECORD.md) | Source hashes, authority, and clause interpretation | Candidate |
 | [Source Inventory](STAGE-01-SOURCE-AND-ARTIFACT-INVENTORY.md) | Dirty/generated/obsolete/accidental classification and disposition | Candidate |
+| [Clean Reconstruction](STAGE-01-CLEAN-RECONSTRUCTION-VERIFICATION.md) | Isolated clone, fixtures, submodule, and full-suite reproduction | PASS for reconstruction |
 | [Normative Hierarchy](STAGE-01-NORMATIVE-SOURCE-HIERARCHY.md) | Authority, frozen-snapshot, status, and supersession overlay | Candidate |
 | [Requirements Delta](PRODUCTION-READINESS-REQUIREMENTS-DELTA.md) | Durable IDs for the new program and Section 15 | Pending approval |
 | [Traceability](UPDATED-REQUIREMENTS-TRACEABILITY-MATRIX.md) | Source-to-stage-to-evidence mapping | Pending approval |
@@ -63,7 +64,13 @@ The exact candidate decision artifacts to approve are:
   `31f7f36e3f0be5c0fb301343512e8019d6bb2bcd`.
 - Candidate test/tooling commit:
   `f3232afde5776a43211d62e894294775b3acf643`.
+- Candidate governed-document/fixture commit:
+  `0966ab2e90a9edbcd43908e08152c8223081bf87`.
 - Archive and bundle verification passed.
+- Isolated clone reconstruction passed for Git cleanliness, the pinned
+  submodule, and both approved workbook hashes.
+- The clean clone reproduced the known red test state exactly:
+  `4 failed, 1212 passed, 2 subtests passed in 82.23s`.
 - No cleanup, reset, rebase, stash, or source deletion was used.
 
 ## 4. Baseline mechanics corrected
@@ -119,9 +126,8 @@ choices may be inferred from the implementation.
 - [x] Fixture-ignore and submodule reconstruction defects identified.
 - [x] Generated/runtime/obsolete/accidental areas classified.
 - [x] Exact starting path/hash manifest generated and frozen.
-- [ ] Source/test/migration/governed-document candidate committed
-      (source and test commits complete; governed-document commit pending).
-- [ ] Clean-checkout fixture and submodule reconstruction passed.
+- [x] Source/test/migration/governed-document candidate committed.
+- [x] Clean-checkout fixture and submodule reconstruction passed.
 - [ ] Normative-source hierarchy independently reviewed.
 - [ ] Historical statuses and supersessions accepted through an overlay.
 - [ ] S1-D01 through S1-D13 each contain an approved selection, rationale,

@@ -18,6 +18,7 @@ received the required human approval.
 - [Current Governed Baseline](CURRENT-GOVERNED-BASELINE.md)
 - [Governing Directive Record](STAGE-01-GOVERNING-DIRECTIVE-RECORD.md)
 - [Source and Artifact Inventory](STAGE-01-SOURCE-AND-ARTIFACT-INVENTORY.md)
+- [Clean Reconstruction Verification](STAGE-01-CLEAN-RECONSTRUCTION-VERIFICATION.md)
 - [Normative Source Hierarchy](STAGE-01-NORMATIVE-SOURCE-HIERARCHY.md)
 - [Production-Readiness Requirements Delta](PRODUCTION-READINESS-REQUIREMENTS-DELTA.md)
 - [Updated Requirements Traceability Matrix](UPDATED-REQUIREMENTS-TRACEABILITY-MATRIX.md)
