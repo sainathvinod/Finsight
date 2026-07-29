@@ -135,14 +135,16 @@ def test_dashboard_populated_primary_is_new_review(qtbot):
 
 
 # ===================== navigation (real window) =====================
-def test_dashboard_is_launch_home(window_factory, populated_db):
+def test_review_management_is_launch_home_and_legacy_dashboard_is_preserved(
+    window_factory, populated_db
+):
     w = window_factory(populated_db)
-    assert w.current_view_key() == "dashboard"
+    assert w.current_view_key() == "welcome"
     assert w.view("dashboard").dashboard_kpis()["total_reviews"] == 1
 
 def test_empty_db_dashboard_shows_first_run(window_factory, empty_db):
     w = window_factory(empty_db)
-    assert w.current_view_key() == "dashboard"
+    assert w.current_view_key() == "welcome"
     assert w.view("dashboard").dashboard_empty_state() == "first_run"
 
 def test_open_review_from_dashboard_sets_active_and_navigates(window_factory, populated_db):

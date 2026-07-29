@@ -1,7 +1,7 @@
 # Verifies: Phase 6.4c — architecture/fitness guards for reconstruction & recovery.
 # Reconstruction stays pure application (no Qt/sqlite/AI), performs NO durable write except the source
 # path re-bind + its audit (no normalized-row persistence, no generation/promotion/supersession
-# production behavior), and this phase adds NO schema beyond migration 0003.
+# production behavior). Workflows 1 and 2 add only their separately governed V2 migrations.
 import os
 import re
 
@@ -42,10 +42,25 @@ def test_reconstruction_performs_no_generation_or_result_writes():
     assert "source_binding_repo" in src or "self._bindings" in src   # binding path-hint write exists
 
 
-def test_no_schema_change_beyond_migration_0003():
-    assert len(MIGRATIONS) == 3
-    assert [m[0] for m in MIGRATIONS] == [1, 2, 3]
-    assert not os.path.exists(os.path.join(SRC, "infrastructure", "migrations", "m0004_.py"))
+def test_schema_head_includes_stage2_private_ask_fin_audit():
+    assert len(MIGRATIONS) == 14
+    assert [m[0] for m in MIGRATIONS] == [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+    ]
+    assert MIGRATIONS[-1][1] == "private_ask_fin_audit"
 
 
 def test_recovery_banner_has_no_repository_ai_or_file_io():

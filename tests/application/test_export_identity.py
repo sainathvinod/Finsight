@@ -4,14 +4,15 @@
 # always "current"; no supersession (R2).
 import os
 
-import sqlite3
 import pytest
+from sqlcipher3 import dbapi2 as sqlcipher
 
 from finsight.app import build_app
 from finsight.application.review_session import ReviewSession
 from finsight.application.workflow import ReviewWorkflowService
 from finsight.infrastructure.lifecycle_repositories import (
-    ReviewGenerationRepoSqlite, ExportArtifactRepoSqlite, LifecycleConstraintError,
+    ExportArtifactRepoSqlite,
+    ReviewGenerationRepoSqlite,
 )
 from tests.support import FixedClock, build_synthetic_ged, build_synthetic_budget
 
@@ -21,10 +22,17 @@ pytestmark = pytest.mark.ui
 def _export(tmp_path, cid="A"):
     c = build_app(str(tmp_path / "fs.db"), FixedClock())
     wf = ReviewWorkflowService(c.orch.engine)
-    ged = os.path.join(str(tmp_path), "g.xlsx"); bud = os.path.join(str(tmp_path), "b.xlsx")
-    build_synthetic_ged(ged); build_synthetic_budget(bud)
-    wf.create_review(cid, "May", "2026"); s = ReviewSession(cid)
-    wf.upload(s, ged, bud); wf.process(s); wf.verify(s); wf.analyze(s); wf.summarize(s)
+    ged = os.path.join(str(tmp_path), "g.xlsx")
+    bud = os.path.join(str(tmp_path), "b.xlsx")
+    build_synthetic_ged(ged)
+    build_synthetic_budget(bud)
+    wf.create_review(cid, "May", "2026")
+    s = ReviewSession(cid)
+    wf.upload(s, ged, bud)
+    wf.process(s)
+    wf.verify(s)
+    wf.analyze(s)
+    wf.summarize(s)
     result = wf.export(s)
     return c, result
 
@@ -55,9 +63,9 @@ def test_immutable_export_artifact_persisted(tmp_path):
 def test_export_artifact_is_append_only(tmp_path):
     c, _ = _export(tmp_path)
     # DB blocks update/delete (migration 0003 append-only triggers)
-    with pytest.raises(sqlite3.IntegrityError):
+    with pytest.raises(sqlcipher.IntegrityError):
         c.dal.conn.execute("UPDATE export_artifacts SET export_path='/x' WHERE cycle_id='A'")
-    with pytest.raises(sqlite3.IntegrityError):
+    with pytest.raises(sqlcipher.IntegrityError):
         c.dal.conn.execute("DELETE FROM export_artifacts WHERE cycle_id='A'")
 
 
@@ -71,8 +79,10 @@ def test_export_fingerprint_is_deterministic(tmp_path):
 
 def test_batch_run_review_persists_one_immutable_export(tmp_path):
     c = build_app(str(tmp_path / "fs.db"), FixedClock())
-    ged = os.path.join(str(tmp_path), "g.xlsx"); bud = os.path.join(str(tmp_path), "b.xlsx")
-    build_synthetic_ged(ged); build_synthetic_budget(bud)
+    ged = os.path.join(str(tmp_path), "g.xlsx")
+    bud = os.path.join(str(tmp_path), "b.xlsx")
+    build_synthetic_ged(ged)
+    build_synthetic_budget(bud)
     c.orch.run_review("B", "May", "2026", ged, bud, approve=True)
     assert len(ExportArtifactRepoSqlite(c.dal).list_for_cycle("B")) == 1    # exactly one, no supersession
     assert c.dal.conn.execute("SELECT COUNT(*) FROM generation_supersessions").fetchone()[0] == 0

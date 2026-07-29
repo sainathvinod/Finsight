@@ -35,12 +35,19 @@ def test_console_entrypoint_target_is_importable_and_callable():
     assert r.returncode == 0 and "entrypoint OK" in r.stdout, r.stderr
 
 
-def test_startup_creates_db_at_configured_path_not_cwd():
+def test_release_startup_ignores_user_environment_database_redirect():
     dbdir = tempfile.mkdtemp()
     db = os.path.join(dbdir, "finsight.db")
     env = dict(os.environ, FINSIGHT_SMOKE="1", QT_QPA_PLATFORM="offscreen", PYTHONPATH=_SRC,
                FINSIGHT_DB=db)
-    subprocess.run([sys.executable, "-m", "finsight"], env=env, cwd=tempfile.gettempdir(),
-                   capture_output=True, text=True, timeout=90)
-    assert os.path.exists(db)                          # DB at the configured path, created on launch
-    assert os.path.exists(db + ".lock")                # single-instance lock sidecar created
+    result = subprocess.run(
+        [sys.executable, "-m", "finsight"],
+        env=env,
+        cwd=tempfile.gettempdir(),
+        capture_output=True,
+        text=True,
+        timeout=90,
+    )
+    assert result.returncode == 0, result.stderr
+    assert not os.path.exists(db)
+    assert not os.path.exists(db + ".lock")

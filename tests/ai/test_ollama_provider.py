@@ -5,13 +5,19 @@ import json
 import socket
 import unittest
 import urllib.error
+import urllib.parse
+import urllib.request
+from unittest import mock
 
 from finsight.application.ai.contracts import PromptRequest
 from finsight.application.ai.errors import (
     ProviderError, ProviderTimeoutError, ProviderUnavailableError, ResponseFormatError,
 )
 from finsight.domain.ai.contracts import ProviderConfiguration
-from finsight.infrastructure.ai.providers.ollama import OllamaProvider
+from finsight.infrastructure.ai.providers.ollama import (
+    OllamaProvider,
+    _redirect_rejecting_opener,
+)
 
 _PROMPT = PromptRequest(system_prompt="SYS", context_block="CTX", conversation_block="CONV",
                         question="Q", output_schema="SCHEMA", prompt_version="v1", schema_version="v1")
@@ -23,8 +29,9 @@ def _cfg(timeout=30.0, max_tokens=None):
 
 
 class _FakeResp:
-    def __init__(self, body):
+    def __init__(self, body, peer=("127.0.0.1", 11434)):
         self._body = body if isinstance(body, bytes) else json.dumps(body).encode("utf-8")
+        self.peer_address = peer
     def read(self):
         return self._body
     def __enter__(self):
@@ -250,6 +257,219 @@ class TestStatus(unittest.TestCase):
 
     def test_operational_always_true(self):
         self.assertTrue(self._status({"models": []}).operational)
+
+
+_APPROVED_DIGEST = "sha256:" + ("a" * 64)
+
+
+def _loopback_resolver(*_args, **_kwargs):
+    return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 11434))]
+
+
+class _PrivateOpener:
+    def __init__(
+        self,
+        *,
+        digest=_APPROVED_DIGEST,
+        show=None,
+        peer=("127.0.0.1", 11434),
+        response_model="llama3.2:3b",
+    ):
+        self.digest = digest
+        self.show = show or {
+            "details": {"format": "gguf", "family": "llama"},
+            "model_info": {"general.architecture": "llama"},
+            "capabilities": ["completion"],
+        }
+        self.peer = peer
+        self.response_model = response_model
+        self.calls = []
+
+    def __call__(self, request, timeout):
+        self.calls.append((request.full_url, timeout))
+        if request.full_url.endswith("/api/tags"):
+            value = {
+                "models": [
+                    {
+                        "name": "llama3.2:3b",
+                        "digest": self.digest,
+                    }
+                ]
+            }
+        elif request.full_url.endswith("/api/show"):
+            value = self.show
+        else:
+            value = dict(_CHAT_OK, model=self.response_model)
+        return _FakeResp(value, peer=self.peer)
+
+
+def _private_provider(opener, *, resolver=_loopback_resolver, digest=_APPROVED_DIGEST):
+    return OllamaProvider(
+        _cfg(),
+        status_timeout=2.0,
+        opener=opener,
+        private_local=True,
+        approved_model_digest=digest,
+        approved_model_profile_id="stage2-local-ollama-gguf-v1",
+        resolver=resolver,
+    )
+
+
+class TestPrivateLoopbackAndModelIdentity(unittest.TestCase):
+    def test_no_proxy_opener_installs_an_explicit_empty_proxy_handler(self):
+        request = urllib.request.Request("http://127.0.0.1:11434/api/tags")
+        built = mock.Mock()
+        built.open.return_value = object()
+        with mock.patch(
+            "finsight.infrastructure.ai.providers.ollama.urllib.request.build_opener",
+            return_value=built,
+        ) as build:
+            _redirect_rejecting_opener(request, timeout=1.0)
+        proxy_handlers = [
+            item
+            for item in build.call_args.args
+            if isinstance(item, urllib.request.ProxyHandler)
+        ]
+        self.assertEqual(len(proxy_handlers), 1)
+        self.assertEqual(proxy_handlers[0].proxies, {})
+
+    def test_mixed_local_and_external_resolution_fails_before_transport(self):
+        opener = _PrivateOpener()
+
+        def mixed(*_args, **_kwargs):
+            return [
+                (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 11434)),
+                (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.2.3.4", 11434)),
+            ]
+
+        status = _private_provider(opener, resolver=mixed).status()
+        self.assertFalse(status.generation_available)
+        self.assertEqual(status.reason, "non_loopback_resolution")
+        self.assertEqual(opener.calls, [])
+
+    def test_non_loopback_connected_peer_is_rejected(self):
+        status = _private_provider(
+            _PrivateOpener(peer=("10.2.3.4", 11434))
+        ).status()
+        self.assertFalse(status.generation_available)
+        self.assertEqual(status.reason, "peer_not_loopback")
+
+    def test_status_requires_matching_digest_and_show_profile(self):
+        mismatch = _private_provider(
+            _PrivateOpener(digest="sha256:" + ("b" * 64))
+        ).status()
+        self.assertEqual(mismatch.reason, "model_digest_mismatch")
+
+        bad_profile = _private_provider(
+            _PrivateOpener(
+                show={
+                    "details": {"format": "gguf", "family": "llama"},
+                    "model_info": {"general.architecture": "llama"},
+                    "capabilities": ["embedding"],
+                }
+            )
+        ).status()
+        self.assertEqual(bad_profile.reason, "model_profile_mismatch")
+
+        remote_profile = _private_provider(
+            _PrivateOpener(
+                show={
+                    "provider": "openai",
+                    "details": {"format": "gguf", "family": "llama"},
+                    "model_info": {"general.architecture": "llama"},
+                    "capabilities": ["completion"],
+                }
+            )
+        ).status()
+        self.assertEqual(remote_profile.reason, "model_profile_mismatch")
+
+    def test_unconfigured_digest_is_auto_pinned_but_cloud_alias_stays_blocked(self):
+        opener = _PrivateOpener()
+        unpinned = _private_provider(opener, digest="").status()
+        self.assertTrue(unpinned.generation_available)
+        self.assertEqual(unpinned.reason, "ok")
+        self.assertEqual(
+            [urllib.parse.urlsplit(url).path for url, _ in opener.calls],
+            ["/api/tags", "/api/show"],
+        )
+
+        opener.calls.clear()
+        cloud_config = ProviderConfiguration.ollama(
+            model="gpt-oss:120b-cloud",
+            base_url="http://127.0.0.1:11434",
+        )
+        cloud = OllamaProvider(
+            cloud_config,
+            status_timeout=2.0,
+            opener=opener,
+            private_local=True,
+            approved_model_digest=_APPROVED_DIGEST,
+            approved_model_profile_id="stage2-local-ollama-gguf-v1",
+            resolver=_loopback_resolver,
+        ).status()
+        self.assertEqual(cloud.reason, "model_alias_blocked")
+        self.assertEqual(opener.calls, [])
+
+    def test_auto_pinned_digest_is_reverified_and_recorded_before_chat(self):
+        opener = _PrivateOpener()
+        provider = _private_provider(opener, digest="")
+
+        self.assertTrue(provider.status().generation_available)
+        response = provider.generate(_PROMPT, _cfg())
+
+        self.assertEqual(response.metadata["model_digest"], _APPROVED_DIGEST)
+        self.assertEqual(
+            [urllib.parse.urlsplit(url).path for url, _ in opener.calls],
+            ["/api/tags", "/api/show", "/api/tags", "/api/show", "/api/chat"],
+        )
+
+    def test_auto_pinned_digest_rejects_a_swap_before_chat(self):
+        opener = _PrivateOpener()
+        provider = _private_provider(opener, digest="")
+        self.assertTrue(provider.status().generation_available)
+        opener.digest = "sha256:" + ("b" * 64)
+
+        with self.assertRaises(ProviderUnavailableError) as caught:
+            provider.generate(_PROMPT, _cfg())
+
+        self.assertEqual(caught.exception.code, "model_digest_mismatch")
+        self.assertNotIn(
+            "/api/chat",
+            [urllib.parse.urlsplit(url).path for url, _ in opener.calls],
+        )
+
+    def test_missing_or_malformed_observed_digest_fails_closed(self):
+        for digest in ("", "not-a-digest"):
+            with self.subTest(digest=digest):
+                status = _private_provider(
+                    _PrivateOpener(digest=digest), digest=""
+                ).status()
+                self.assertFalse(status.generation_available)
+                self.assertEqual(status.reason, "model_digest_unverifiable")
+
+    def test_show_profile_and_digest_are_reverified_before_chat(self):
+        opener = _PrivateOpener()
+        provider = _private_provider(opener)
+        self.assertTrue(provider.status().generation_available)
+        response = provider.generate(_PROMPT, _cfg())
+        paths = [urllib.parse.urlsplit(url).path for url, _timeout in opener.calls]
+        self.assertEqual(
+            paths,
+            ["/api/tags", "/api/show", "/api/tags", "/api/show", "/api/chat"],
+        )
+        self.assertEqual(response.metadata["model_version"], _APPROVED_DIGEST)
+        self.assertEqual(
+            response.metadata["model_profile_id"],
+            "stage2-local-ollama-gguf-v1",
+        )
+
+    def test_chat_response_from_different_model_is_rejected(self):
+        provider = _private_provider(
+            _PrivateOpener(response_model="unapproved:latest")
+        )
+        with self.assertRaises(ProviderUnavailableError) as caught:
+            provider.generate(_PROMPT, _cfg())
+        self.assertEqual(caught.exception.code, "model_response_mismatch")
 
 
 if __name__ == "__main__":
