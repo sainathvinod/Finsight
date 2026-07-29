@@ -173,7 +173,7 @@ Every requirement below is **Pending Stage 1 approval**. No code, migration, tes
 - **Statement:** WHEN and only when every governed stage, independent reviewer gate, Product Owner hands-on gate, release qualification, and final release-authority decision has passed, THE RELEASE PROCESS SHALL rebuild from the exact hands-on-approved source commit, produce and verify the signed artifact and release manifest, and publish a download that resolves to that exact artifact; otherwise the distribution action SHALL remain blocked.
 - **Source:** Section 15.13 through 15.17; production-readiness program Stages 8–9 and release-decision rules.
 - **Extends:** FR-178; NFR-095 and NFR-099.
-- **Acceptance:** Any missing/failed/stale gate prevents publication; the distributed artifact hash equals the release manifest and qualified artifact; final decision is exactly `GO`, `CONDITIONAL GO`, or `NO-GO` under the approved policy.
+- **Acceptance:** Any missing, failed, or stale gate prevents publication; the distributed artifact hash equals the release manifest and qualified artifact; the final decision is exactly `GO — Production-ready release` or `NO-GO — Release blocked`.
 - **Required stage:** Stage 9 after Stages 1–8.
 - **Verification:** Release-gate negative matrix; controlled pipeline rebuild reproducibility; signature/timestamp/hash/malware checks; clean-machine rerun; download-target verification.
 - **Status:** Pending Stage 1 approval.

@@ -37,8 +37,8 @@ The exact candidate decision artifacts to approve are:
 | Artifact | SHA-256 |
 |---|---|
 | Normative Source Hierarchy | `cbee7bc85dd76ad90944324230f51870449445fd65fac2a0b2bef43fb571a08c` |
-| Production-Readiness Requirements Delta | `de5323ee16ce5683622e6fb736dcce6a69dbef73a962f8acc095b5b805ecce85` |
-| Updated Requirements Traceability Matrix | `4c5f5d678d915d7d41f8bfa8e7cf5a44a179f025aae3284b58d2431e742f184a` |
+| Production-Readiness Requirements Delta | `a130f641902819d7828c14654ad132a9a8e6e10a87b7058d5a6bfe79e872f3bd` |
+| Updated Requirements Traceability Matrix | `cf7713a7b10a9f18fa6dc1c8a0f6cfac6c170d933543bb91650b2f64a9c2e7b5` |
 | Product and Financial Control Decisions | `1adaa804a2c4840d988c4375d69a6567c45c36174bcb120bae6d3ef6b7b57ca8` |
 | Candidate First-Release Scope Freeze | `c322babbda195662370878e0b09a210bc3ade0dadfbc67dc7328429912643acf` |
 | Source and Artifact Inventory | `a9850e466a6061eff041aef2ed1b800154c50e2e177ac944a2dd2ab01c07d762` |
