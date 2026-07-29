@@ -1,31 +1,130 @@
-# Implements: NFR-005, NFR-057, NFR-058, FR-107, NFR-022, F-02-02 (ADR-004 DAL; transactions; TEXT amounts)
+# Implements: NFR-005, NFR-057, NFR-058, FR-107, NFR-022, V2 NFR-085/086/088,
+# F-02-02 (ADR-004 / ADR-V2-003 DAL; SQLCipher; transactions; TEXT amounts)
 from __future__ import annotations
-import sqlite3, json
+import json
 from contextlib import contextmanager
 from typing import Any, Dict, List, Optional
 from finsight.domain.review_cycle import ReviewCycle, CycleState
 from finsight.infrastructure.migrations.runner import run_migrations
+from finsight.infrastructure.secure_store import (
+    SQLCIPHER_HMAC_ALGORITHM,
+    SQLCIPHER_KDF_ALGORITHM,
+    SQLCIPHER_KDF_ITERATIONS,
+    SQLCIPHER_PAGE_SIZE,
+    SQLCIPHER_PROFILE_ID,
+    SecureStoreError,
+    open_encrypted_connection,
+)
 
 class Dal:
-    def __init__(self, path: str):
-        self.conn = sqlite3.connect(path)
-        self.conn.execute("PRAGMA journal_mode=WAL")
-        self.conn.execute("PRAGMA foreign_keys=ON")   # enforce FK/ON DELETE CASCADE (AI tables)
+    def __init__(self, path: str, key_provider=None):
+        secure = open_encrypted_connection(path, key_provider)
+        self.conn = secure.connection
+        self.key_material = secure.key_material
+        self.cipher_version = secure.cipher_version
+        self.security_profile_id = secure.security_profile_id
         # Versioned schema (ADR-004). The baseline migration reproduces the original schema exactly
         # and is idempotent, so a new DB initializes and a legacy pre-migration DB is adopted safely.
         run_migrations(self.conn)
+        profile = self.conn.execute(
+            "SELECT p.profile_id,p.cipher_version,p.cipher_page_size,p.kdf_iterations,"
+            "p.hmac_algorithm,p.kdf_algorithm,p.journal_mode,p.synchronous_mode,p.binding_name,"
+            "p.binding_version FROM v2_store_security_profile_head h "
+            "JOIN v2_store_security_profiles p ON p.profile_id=h.profile_id "
+            "WHERE h.singleton=1"
+        ).fetchone()
+        expected = (
+            SQLCIPHER_PROFILE_ID,
+            self.cipher_version,
+            int(SQLCIPHER_PAGE_SIZE),
+            int(SQLCIPHER_KDF_ITERATIONS),
+            SQLCIPHER_HMAC_ALGORITHM,
+            SQLCIPHER_KDF_ALGORITHM,
+            "wal",
+            "FULL",
+            "sqlcipher3",
+            "0.6.2",
+        )
+        if profile != expected or secure.security_profile_id != profile[0]:
+            self.conn.close()
+            raise SecureStoreError(
+                "The persisted store security profile does not match the qualified runtime."
+            )
 
 class SqliteUnitOfWork:
     # ADR-004: the DAL owns transactions. All-or-nothing per cycle transition (NFR-005/057).
-    def __init__(self, dal): self.dal = dal
+    def __init__(self, dal):
+        self.dal = dal
+        self._after_commit_callbacks = None
+        self._before_commit_callbacks = None
+        self.last_commit_completed = False
+        self.control_plane_faulted = False
+
+    def after_commit(self, callback):
+        """Register a control-plane publication after the current DB commit.
+
+        Audit anchors live outside the rollbackable database. They are never
+        advanced for a transaction that rolls back.
+        """
+
+        if self._after_commit_callbacks is None:
+            raise RuntimeError("after_commit requires an active Unit of Work")
+        self._after_commit_callbacks.append(callback)
+
+    def before_commit(self, callback):
+        """Register a final in-transaction guard immediately before commit."""
+
+        if self._before_commit_callbacks is None:
+            raise RuntimeError("before_commit requires an active Unit of Work")
+        self._before_commit_callbacks.append(callback)
+
+    def clear_control_plane_fault_after_verified_reconciliation(self):
+        """Unlock writes only after the external control plane was re-verified."""
+
+        self.control_plane_faulted = False
+
+    def mark_control_plane_faulted(self):
+        """Fail closed when mandatory control-plane evidence cannot be retained."""
+
+        self.control_plane_faulted = True
+
     @contextmanager
     def atomic(self):
+        self.last_commit_completed = False
+        if self.control_plane_faulted:
+            raise RuntimeError(
+                "protected writes are locked after an integrity-checkpoint failure"
+            )
+        if (
+            self._after_commit_callbacks is not None
+            or self._before_commit_callbacks is not None
+        ):
+            raise RuntimeError("nested Unit of Work transactions are not supported")
+        after_commit_callbacks = []
+        before_commit_callbacks = []
+        self._after_commit_callbacks = after_commit_callbacks
+        self._before_commit_callbacks = before_commit_callbacks
+        committed = False
         try:
             yield
+            for callback in before_commit_callbacks:
+                callback()
             self.dal.conn.commit()
+            committed = True
+            self.last_commit_completed = True
+            try:
+                for callback in after_commit_callbacks:
+                    callback()
+            except Exception:
+                self.control_plane_faulted = True
+                raise
         except Exception:
-            self.dal.conn.rollback()
+            if not committed:
+                self.dal.conn.rollback()
             raise
+        finally:
+            self._after_commit_callbacks = None
+            self._before_commit_callbacks = None
 
 class ReviewCycleRepoSqlite:
     def __init__(self, dal): self.dal = dal

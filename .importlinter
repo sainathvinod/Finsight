@@ -1,19 +1,30 @@
 [importlinter]
 root_package = finsight
+include_external_packages = True
 
-[[contracts]]
+[importlinter:contract:layered-dependency-direction]
 name = Layered dependency direction
 type = layers
-layers = finsight.delivery | finsight.application | finsight.domain
+layers =
+    finsight.delivery
+    finsight.application
+    finsight.domain
 
-[[contracts]]
+[importlinter:contract:domain-independence]
 name = C-DOMAIN-INDEP domain imports nothing outward
 type = forbidden
 source_modules = finsight.domain
-forbidden_modules = finsight.application, finsight.infrastructure, finsight.delivery
+forbidden_modules =
+    finsight.application
+    finsight.infrastructure
+    finsight.delivery
 
-[[contracts]]
+[importlinter:contract:dal-only-storage]
 name = C-DAL-ONLY-STORAGE
 type = forbidden
-source_modules = finsight.domain, finsight.application, finsight.delivery
+source_modules =
+    finsight.domain
+    finsight.application
+    finsight.delivery
 forbidden_modules = sqlite3
+allow_indirect_imports = True

@@ -1,6 +1,6 @@
 {
   "_comment": "Single source of truth for FinSight build/release dependency governance. Values verified against PyPI/python.org/sqlite.org on the 'as_of' date. Product code (src/finsight) contains NO version-management or self-update logic; this file is consumed only by build/validate_deps.py and CI.",
-  "as_of": "2026-07-17",
+  "as_of": "2026-07-28",
   "python": {
     "required_min": "3.10",
     "recommended": "3.12",
@@ -15,9 +15,15 @@
   },
   "packages": {
     "openpyxl":      {"required_min": "3.1.0", "pinned": "3.1.5",  "latest_stable": "3.1.5",  "required": true, "scope": "runtime"},
+    "cryptography":  {"required_min": "49.0.0","pinned": "49.0.0", "latest_stable": "49.0.0", "required": true, "scope": "runtime"},
+    "sqlcipher3":    {"required_min": "0.6.2", "pinned": "0.6.2",  "latest_stable": "0.6.2",  "required": true, "scope": "runtime"},
     "pytest":        {"required_min": "8.0.0", "pinned": "9.1.1",  "latest_stable": "9.1.1",  "required": true, "scope": "dev"},
+    "pytest-qt":     {"required_min": "4.5.0", "pinned": "4.5.0",  "latest_stable": "4.5.0",  "required": true, "scope": "dev"},
     "import-linter": {"required_min": "2.0",   "pinned": "2.13",   "latest_stable": "2.13",   "required": true, "scope": "dev"},
-    "ruff":          {"required_min": "0.14.0","pinned": "0.15.22","latest_stable": "0.15.22","required": true, "scope": "dev"},
-    "coverage":      {"required_min": "7.6.0", "pinned": "7.15.2", "latest_stable": "7.15.2", "required": true, "scope": "dev"}
+    "ruff":          {"required_min": "0.14.0","pinned": "0.15.22","latest_stable": "0.16.0", "required": true, "scope": "dev"},
+    "coverage":      {"required_min": "7.6.0", "pinned": "7.15.2", "latest_stable": "7.15.2", "required": true, "scope": "dev"},
+    "PySide6":       {"required_min": "6.11.1","pinned": "6.11.1", "latest_stable": "6.11.1", "required": true, "scope": "desktop"},
+    "QtAwesome":     {"required_min": "1.4.2", "pinned": "1.4.2",  "latest_stable": "1.4.2",  "required": true, "scope": "desktop"},
+    "QtPy":          {"required_min": "2.4.3", "pinned": "2.4.3",  "latest_stable": "2.4.3",  "required": true, "scope": "desktop"}
   }
 }

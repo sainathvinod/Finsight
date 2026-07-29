@@ -7,8 +7,30 @@ from finsight.delivery.desktop.components.severity import severity_text, severit
 from finsight.delivery.desktop.components.inspector import DetailInspector
 from finsight.delivery.desktop.components.workflow_rail import WorkflowRail
 from finsight.delivery.desktop.components.audit_timeline import AuditTimeline, AuditTimelineRow
+from finsight.delivery.desktop.components.review_progress import ReviewProgress
+from finsight.delivery.desktop.components.appearance_control import (
+    AppearanceControl,
+    AppearanceMenuButton,
+)
+from finsight.delivery.desktop.components.inline_message import InlineMessage
+from finsight.delivery.desktop.components.confirmation_dialogs import (
+    DeleteReviewDialog,
+    GovernedSaveDialog,
+)
+from finsight.delivery.desktop.components.charts import FinancialChartCard
+from finsight.delivery.desktop.components.iconography import (
+    IconBadge,
+    content_icon,
+)
+from finsight.delivery.desktop.components.adaptive_sidebar import AdaptiveSidebar
 
 __all__ = [
     "NavItem", "SectionHeader", "DataTable", "EmptyState", "severity_text", "severity_color",
-    "DetailInspector", "WorkflowRail", "AuditTimeline", "AuditTimelineRow",
+    "DetailInspector", "WorkflowRail", "AuditTimeline", "AuditTimelineRow", "ReviewProgress",
+    "AppearanceControl", "AppearanceMenuButton",
+    "InlineMessage",
+    "GovernedSaveDialog", "DeleteReviewDialog",
+    "FinancialChartCard",
+    "IconBadge", "content_icon",
+    "AdaptiveSidebar",
 ]

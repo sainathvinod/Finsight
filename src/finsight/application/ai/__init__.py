@@ -29,6 +29,20 @@ from finsight.application.ai.errors import (
     AiError, AiScopeError, ConversationNotFoundError, MemoryProvenanceError, MaskingError,
     ResponseFormatError, CitationError,
 )
+from finsight.application.ai.private_ask_fin import (
+    PrivateAskFinService,
+    decision_boundary_trigger,
+)
+from finsight.application.ai.private_contracts import (
+    AskFinContext,
+    AskFinMode,
+    PrivateAskFinRequest,
+    PrivateAskFinResult,
+    PrivateAskFinSession,
+    PrivateAskFinStatus,
+    PrivateCitation,
+)
+from finsight.application.ai.private_grounding import V2FinancialGroundingService
 
 __all__ = [
     "ConversationService", "ReviewMemoryService", "PreferencesService", "GroundingQueryService",
@@ -44,4 +58,8 @@ __all__ = [
     "DEFAULT_RETENTION_POLICY", "PREFERENCE_DEFAULTS",
     "AiError", "AiScopeError", "ConversationNotFoundError", "MemoryProvenanceError", "MaskingError",
     "ResponseFormatError", "CitationError",
+    "PrivateAskFinService", "decision_boundary_trigger",
+    "AskFinContext", "AskFinMode", "PrivateAskFinRequest", "PrivateAskFinResult",
+    "PrivateAskFinSession", "PrivateAskFinStatus", "PrivateCitation",
+    "V2FinancialGroundingService",
 ]

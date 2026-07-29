@@ -10,6 +10,25 @@ from typing import Callable, List, Optional, Sequence, Tuple
 from finsight.infrastructure.migrations import m0001_baseline
 from finsight.infrastructure.migrations import m0002_ai_platform
 from finsight.infrastructure.migrations import m0003_review_lifecycle
+from finsight.infrastructure.migrations import m0004_v2_review_management
+from finsight.infrastructure.migrations import m0005_v2_source_intake
+from finsight.infrastructure.migrations import m0006_v2_integrated_review
+from finsight.infrastructure.migrations import m0007_configurable_rules_and_reanalysis
+from finsight.infrastructure.migrations import m0008_review_disposal
+from finsight.infrastructure.migrations import m0009_protected_core_governance
+from finsight.infrastructure.migrations import (
+    m0010_protected_core_governance_integrity,
+)
+from finsight.infrastructure.migrations import (
+    m0011_protected_request_baseline_binding,
+)
+from finsight.infrastructure.migrations import (
+    m0012_workspace_baseline_upgrade_governance,
+)
+from finsight.infrastructure.migrations import (
+    m0013_finding_explanations_and_review_status,
+)
+from finsight.infrastructure.migrations import m0014_private_ask_fin_audit
 
 Migration = Tuple[int, str, Callable[[sqlite3.Connection], None]]
 
@@ -23,6 +42,61 @@ MIGRATIONS: List[Migration] = [
     (m0001_baseline.VERSION, m0001_baseline.NAME, m0001_baseline.up),
     (m0002_ai_platform.VERSION, m0002_ai_platform.NAME, m0002_ai_platform.up),
     (m0003_review_lifecycle.VERSION, m0003_review_lifecycle.NAME, m0003_review_lifecycle.up),
+    (
+        m0004_v2_review_management.VERSION,
+        m0004_v2_review_management.NAME,
+        m0004_v2_review_management.up,
+    ),
+    (
+        m0005_v2_source_intake.VERSION,
+        m0005_v2_source_intake.NAME,
+        m0005_v2_source_intake.up,
+    ),
+    (
+        m0006_v2_integrated_review.VERSION,
+        m0006_v2_integrated_review.NAME,
+        m0006_v2_integrated_review.up,
+    ),
+    (
+        m0007_configurable_rules_and_reanalysis.VERSION,
+        m0007_configurable_rules_and_reanalysis.NAME,
+        m0007_configurable_rules_and_reanalysis.up,
+    ),
+    (
+        m0008_review_disposal.VERSION,
+        m0008_review_disposal.NAME,
+        m0008_review_disposal.up,
+    ),
+    (
+        m0009_protected_core_governance.VERSION,
+        m0009_protected_core_governance.NAME,
+        m0009_protected_core_governance.up,
+    ),
+    (
+        m0010_protected_core_governance_integrity.VERSION,
+        m0010_protected_core_governance_integrity.NAME,
+        m0010_protected_core_governance_integrity.up,
+    ),
+    (
+        m0011_protected_request_baseline_binding.VERSION,
+        m0011_protected_request_baseline_binding.NAME,
+        m0011_protected_request_baseline_binding.up,
+    ),
+    (
+        m0012_workspace_baseline_upgrade_governance.VERSION,
+        m0012_workspace_baseline_upgrade_governance.NAME,
+        m0012_workspace_baseline_upgrade_governance.up,
+    ),
+    (
+        m0013_finding_explanations_and_review_status.VERSION,
+        m0013_finding_explanations_and_review_status.NAME,
+        m0013_finding_explanations_and_review_status.up,
+    ),
+    (
+        m0014_private_ask_fin_audit.VERSION,
+        m0014_private_ask_fin_audit.NAME,
+        m0014_private_ask_fin_audit.up,
+    ),
 ]
 
 _META_DDL = (
@@ -64,6 +138,10 @@ def run_migrations(
     - Transactional: each migration + its version record commit together, or roll back together.
     - Never resets or recreates a user database.
     """
+    # Migration 0008 uses a connection-local SQLite function in guarded delete
+    # triggers. Re-register its fail-closed fallback on every reopened database
+    # without replacing a governed disposal callback.
+    m0008_review_disposal.ensure_disposal_guard_function(conn)
     regs = list(MIGRATIONS if migrations is None else migrations)
 
     versions = [m[0] for m in regs]

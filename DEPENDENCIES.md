@@ -4,7 +4,7 @@
 
 **Single source of truth:** [build/versions.json](build/versions.json). Pins are mirrored in [requirements.txt](requirements.txt), [requirements-dev.txt](requirements-dev.txt), and [pyproject.toml](pyproject.toml). Change versions in `versions.json` first, then reconcile the pin files (CI's *verify-installed-matches-pins* step catches drift).
 
-**Versions verified against PyPI / python.org / sqlite.org on 2026-07-17.** Do not assume; re-verify on each dependency review.
+**Versions verified against PyPI / python.org / sqlite.org on 2026-07-28.** Do not assume; re-verify on each dependency review.
 
 ---
 
@@ -12,31 +12,37 @@
 
 | Component | Current (this env) | Required min | Latest stable | Pinned | Recommendation | Compatibility risk |
 |---|---|---|---|---|---|---|
-| Python | **3.9.6** | 3.10 | 3.14.6 | target 3.12 | **Upgrade — blocking.** 3.9 is EOL (2025-10) and below the pytest/coverage floor. Adopt 3.12 (supported to 2028-10). | **High** — EOL interpreter; no security fixes; blocks pinned toolchain. |
-| SQLite (stdlib-bundled) | 3.51.0 | 3.35.0 | 3.53.3 | n/a (travels with Python) | No action; above floor with margin. | Low — bundled with the interpreter; not pip-managed. |
+| Python | **3.11.15** | 3.10 | 3.14.6 | target 3.12 | Meets the floor. Use 3.12 for release builds as planned; keep 3.11 in CI. | Low–Medium — supported, but not the selected release-build interpreter. |
+| SQLite (stdlib-bundled) | 3.53.1 | 3.35.0 | 3.53.3 | n/a (travels with Python) | No action; above floor with margin. | Low — bundled with the interpreter; not pip-managed. |
+| SQLCipher (via `sqlcipher3`) | 4.12.0 community / SQLite 3.51.1 | SQLCipher 4.x | 4.12.0 | via `sqlcipher3==0.6.2` | Qualified for encrypted local storage; startup verifies cipher activation and schema access. | Medium — native wheels must remain qualified on Windows and macOS release targets. |
 | openpyxl | 3.1.5 | 3.1.0 | 3.1.5 | 3.1.5 | Current — no action. | Low. |
-| pytest | *not installed* | 8.0.0 | 9.1.1 | 9.1.1 | Install 9.1.1 (needs Python ≥3.10). | Medium — 9.x dropped 3.9; requires the Python upgrade first. |
-| import-linter | *not installed* | 2.0 | 2.13 | 2.13 | Install 2.13. | Low. |
-| ruff | *not installed* | 0.14.0 | 0.15.22 | 0.15.22 | Install 0.15.22. Pin exact (pre-1.0; rules shift between minors). | Low–Medium — pre-1.0 lints may change; exact pin protects CI stability. |
-| coverage | *not installed* | 7.6.0 | 7.15.2 | 7.15.2 | Install 7.15.2 (needs Python ≥3.10). | Medium — 7.15.x dropped 3.9; requires the Python upgrade first. |
+| cryptography | 49.0.0 | 49.0.0 | 49.0.0 | 49.0.0 | Qualified for Ed25519 authorization-manifest verification. | Low–Medium — security-sensitive dependency; retain exact pin and release review. |
+| sqlcipher3 | 0.6.2 | 0.6.2 | 0.6.2 | 0.6.2 | Qualified; no plaintext database fallback is permitted. | Medium — native wheel and SQLCipher linkage require both-OS release verification. |
+| PySide6 | 6.11.1 | 6.11.1 | 6.11.1 | 6.11.1 | Qualified for the desktop UI and accessibility tests. | Medium — native Qt runtime requires release-target smoke tests. |
+| QtAwesome | 1.4.2 | 1.4.2 | 1.4.2 | 1.4.2 | Qualified for the bundled, cross-platform Phosphor icon language used by the desktop shell. | Low–Medium — packaged builds must retain QtAwesome font resources. |
+| QtPy | 2.4.3 | 2.4.3 | 2.4.3 | 2.4.3 | Qualified compatibility layer required by QtAwesome. | Low. |
+| pytest | 9.1.1 | 8.0.0 | 9.1.1 | 9.1.1 | Current — no action. | Low. |
+| pytest-qt | 4.5.0 | 4.5.0 | 4.5.0 | 4.5.0 | Current — no action. | Low. |
+| import-linter | 2.13 | 2.0 | 2.13 | 2.13 | Current — no action. | Low. |
+| ruff | 0.15.22 | 0.14.0 | 0.16.0 | 0.15.22 | Pinned version meets the floor; review 0.16.0 separately after Workflow 1. | Low–Medium — pre-1.0 lint rules may change. |
+| coverage | 7.15.2 | 7.6.0 | 7.15.2 | 7.15.2 | Current — no action. | Low. |
 
-## 2. Missing dependency report
+## 2. Environment readiness
 
-Four required dev/build dependencies are absent from the current environment. Install (after upgrading Python to ≥3.10):
+No pinned Workflow 1 runtime, desktop, test, lint, or coverage dependency is missing from the project
+virtual environment. To reproduce it on Python 3.10 or newer:
 
 ```bash
-# 1) Provision Python 3.12 (pyenv / official installer / OS package), then in the project venv:
 python -m pip install --upgrade pip
 python -m pip install -r requirements-dev.txt
-# equivalently, the exact pins:
-python -m pip install "pytest==9.1.1" "import-linter==2.13" "ruff==0.15.22" "coverage==7.15.2" "openpyxl==3.1.5"
 ```
 
-`openpyxl==3.1.5` is already present and satisfies the runtime pin.
+Workflow 1 dependency qualification evidence is recorded under
+`initiatives/configurable-rule-engine-v2/verification/`.
 
 ## 3. Pinning strategy (intentional; drift-detectable; upgrade-reviewable)
 
-- **Exact pins (`==`)** for the whole dev/build toolchain and the runtime dependency — reproducible builds and byte-identical determinism (NFR-021/029) demand that no unpinned resolution changes behaviour between machines or over time.
+- **Exact pins (`==`)** for the whole dev/build toolchain and runtime dependencies — reproducible builds and deterministic behavior require that no unpinned resolution changes behavior between machines or over time.
 - **`required_min`** in `versions.json` is the *floor* that CI enforces as a hard gate. `pinned` is the exact version installed. `latest_stable` is the drift reference (WARN-only).
 - **Detectable drift:** `build/validate_deps.py` compares installed vs min vs latest; CI's `pip check` + `--dry-run` step confirms the pins still resolve together.
 - **Reviewable upgrades:** bumping a version is a one-line edit to `versions.json` + the pin files, reviewed like any change. The weekly scheduled CI run reports (never applies) new latest-stable versions.
