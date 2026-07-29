@@ -43,7 +43,7 @@ The exact candidate decision artifacts to approve are:
 | Candidate First-Release Scope Freeze | `c322babbda195662370878e0b09a210bc3ade0dadfbc67dc7328429912643acf` |
 | Source and Artifact Inventory | `a9850e466a6061eff041aef2ed1b800154c50e2e177ac944a2dd2ab01c07d762` |
 | Production-Readiness Master Plan | `a94fb84d361b3feddd9685fe293e05bdc59c721490ef0efd77fa95a5b6743609` |
-| Independent Stage 1 Review | `9087396e8c42ada977cb659e73d8a94003f181d6de0aeb9834911bed1aaaf3e8` |
+| Independent Stage 1 Review | `654ab35a8940822bc87d91d128ef25f42531db7d76fb7d0681e60d072f1a580f` |
 
 ## 3. Preservation completed
 

@@ -171,7 +171,8 @@ decision, and refresh the affected approval hashes.
 
 - FR-217 now uses only the two exact permitted decisions;
 - the PRP §11–14 trace row now says exact GO or NO-GO;
-- no remaining `CONDITIONAL GO` occurrence exists in this package;
+- no remaining normative allowance for `CONDITIONAL GO` exists in the
+  requirements delta, traceability matrix, or decision package;
 - the refreshed delta and matrix hashes match the package table;
 - the correcting commit changes only the two affected statements and two hash
   values; and
