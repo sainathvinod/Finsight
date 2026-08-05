@@ -22,7 +22,7 @@ class TestMigration0002(unittest.TestCase):
         conn = sqlite3.connect(self._db())
         run_migrations(conn)
         self.assertTrue(AI_TABLES.issubset(self._tables(conn)))
-        self.assertEqual(current_version(conn), 14)
+        self.assertEqual(current_version(conn), 16)
 
     def test_upgrade_from_0001_preserves_data(self):
         conn = sqlite3.connect(self._db())
@@ -32,7 +32,7 @@ class TestMigration0002(unittest.TestCase):
         conn.commit()
         applied = run_migrations(conn)
         self.assertEqual(
-            applied, [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+            applied, [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
         )
         self.assertTrue(AI_TABLES.issubset(self._tables(conn)))
         self.assertEqual(conn.execute("SELECT COUNT(*) FROM cycles").fetchone()[0], 1)

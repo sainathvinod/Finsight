@@ -42,8 +42,8 @@ def test_reconstruction_performs_no_generation_or_result_writes():
     assert "source_binding_repo" in src or "self._bindings" in src   # binding path-hint write exists
 
 
-def test_schema_head_includes_stage2_private_ask_fin_audit():
-    assert len(MIGRATIONS) == 14
+def test_schema_head_includes_validation_rule_set_confirmation():
+    assert len(MIGRATIONS) == 16
     assert [m[0] for m in MIGRATIONS] == [
         1,
         2,
@@ -59,8 +59,10 @@ def test_schema_head_includes_stage2_private_ask_fin_audit():
         12,
         13,
         14,
+        15,
+        16,
     ]
-    assert MIGRATIONS[-1][1] == "private_ask_fin_audit"
+    assert MIGRATIONS[-1][1] == "validation_run_identity"
 
 
 def test_recovery_banner_has_no_repository_ai_or_file_io():

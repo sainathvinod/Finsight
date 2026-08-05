@@ -45,11 +45,9 @@ def test_controller_loads_governed_manifest_before_background_evaluation():
         "src/finsight/delivery/desktop/controllers/app_controller.py"
     )
     manifest_load = source.index(
-        "manifest = self._s.financial_review.rule_manifest(review_id)"
+        "manifest = self._s.financial_review.start_validation_attempt("
     )
     worker_definition = source.index("def work():", manifest_load)
-    pure_dispatch = source.index(
-        "evaluate_manifest(dataset, manifest)",
-        worker_definition,
-    )
-    assert manifest_load < worker_definition < pure_dispatch
+    pure_dispatch = source.index("evaluate_manifest(", worker_definition)
+    manifest_argument = source.index("dataset, manifest", pure_dispatch)
+    assert manifest_load < worker_definition < pure_dispatch < manifest_argument

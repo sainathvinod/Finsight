@@ -179,6 +179,12 @@ class RuleManagementService:
         }
         if not administrative:
             return bound
+        exclusions = {
+            (str(item["rule_id"]), str(item["rule_version"]))
+            for item in self._repo.current_rule_proposal_draft_exclusions(
+                review_id
+            )
+        }
         drafts = [
             {
                 **with_history(item),
@@ -186,6 +192,10 @@ class RuleManagementService:
                 "enabled": False,
                 "rule_set_id": None,
                 "ordinal": None,
+                "excluded_from_proposed_set": (
+                    str(item["rule_id"]), str(item["version"])
+                )
+                in exclusions,
             }
             for item in self._repo.latest_optional_rule_versions()
             if (str(item["rule_id"]), str(item["version"]))
@@ -193,6 +203,76 @@ class RuleManagementService:
             and item.get("lifecycle_status") in {"DRAFT", "TESTED"}
         ]
         return [*bound, *drafts]
+
+    def set_draft_excluded_from_proposed_set(
+        self,
+        review_id: str,
+        rule_id: str,
+        version: str,
+        *,
+        excluded: bool,
+    ) -> dict[str, Any]:
+        """Record one explicit, review-local Draft proposal disposition."""
+
+        self._authorize(Permission.RULE_OPTIONAL_DRAFT_MANAGE)
+        definition = self._require_optional(rule_id, version)
+        if definition["lifecycle_status"] not in {"DRAFT", "TESTED"}:
+            raise RuleManagementError(
+                "Only a Draft or Tested optional version can be excluded "
+                "from the proposed Rule Set."
+            )
+        current_set_id = self._repo.current_rule_set_id(review_id)
+        if current_set_id and any(
+            item["rule_id"] == rule_id
+            and item["rule_version"] == version
+            and item["enabled"]
+            for item in self._repo.rule_set_members(current_set_id)
+        ):
+            raise RuleManagementError(
+                "An active optional rule must be disabled, not excluded as a Draft."
+            )
+        timestamp = self._clock.now()
+        action = "EXCLUDED" if excluded else "RESTORED"
+        event = {
+            "event_id": "draftproposal_" + self._id(),
+            "review_id": review_id,
+            "rule_id": rule_id,
+            "rule_version": version,
+            "action": action,
+            "actor_id": self._actor.actor_id,
+            "occurred_at": timestamp,
+            "reason": (
+                "DRAFT_EXCLUDED_FROM_PROPOSED_RULE_SET"
+                if excluded
+                else "DRAFT_RETURNED_TO_PROPOSAL_REVIEW"
+            ),
+        }
+        event["event_hash"] = _digest(event)
+        with self._uow.atomic():
+            self._repo.append_rule_proposal_draft_event(event)
+            self._append_audit(
+                (
+                    "optional_rule_excluded_from_proposed_set"
+                    if excluded
+                    else "optional_rule_returned_to_proposal_review"
+                ),
+                {
+                    "review_id": review_id,
+                    "rule_id": rule_id,
+                    "rule_version": version,
+                    "action": action,
+                    "reason": event["reason"],
+                },
+                review_id=review_id,
+                occurred_at=timestamp,
+            )
+        return event
+
+    def draft_proposal_exclusions(
+        self, review_id: str
+    ) -> list[dict[str, Any]]:
+        self._authorize(Permission.RULE_BOUND_READ)
+        return self._repo.current_rule_proposal_draft_exclusions(review_id)
 
     def create_optional_draft(
         self,
@@ -350,8 +430,25 @@ class RuleManagementService:
             )
         if definition["lifecycle_status"] not in {"TESTED", "ACTIVE"}:
             raise RuleManagementError("Only a Tested optional rule can be activated.")
+        predecessor = None
+        predecessor_version = definition.get("predecessor_version")
+        if predecessor_version:
+            predecessor = self._require_optional(
+                rule_id, str(predecessor_version)
+            )
         timestamp = self._clock.now()
         with self._uow.atomic():
+            if (
+                predecessor is not None
+                and predecessor["lifecycle_status"] != "RETIRED"
+            ):
+                self._append_lifecycle(
+                    rule_id,
+                    str(predecessor["version"]),
+                    "RETIRED",
+                    f"SUPERSEDED_BY_{version}",
+                    timestamp,
+                )
             if definition["lifecycle_status"] != "ACTIVE":
                 self._append_lifecycle(
                     rule_id,
@@ -376,6 +473,11 @@ class RuleManagementService:
                     "rule_version": version,
                     "rule_set_id": rule_set_id,
                     "test_id": test["test_id"],
+                    "superseded_rule_version": (
+                        str(predecessor["version"])
+                        if predecessor is not None
+                        else None
+                    ),
                 },
                 review_id=review_id,
             )

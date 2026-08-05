@@ -7,10 +7,7 @@ from typing import Mapping
 
 from PySide6.QtCore import QSettings
 
-from finsight.infrastructure.ai.private_config import (
-    PrivateAskFinSettings,
-    load_private_ask_fin_settings,
-)
+from finsight.app import load_private_ask_fin_runtime_settings
 
 
 _ENV_KEYS = (
@@ -48,7 +45,7 @@ class PrivateAskFinPreferenceStore:
         self, *, environment: Mapping[str, str] | None = None
     ) -> PrivateAskFinPreferenceSnapshot:
         values = self._effective_environment(environment=environment)
-        resolved = load_private_ask_fin_settings(env=values)
+        resolved = load_private_ask_fin_runtime_settings(env=values)
         return PrivateAskFinPreferenceSnapshot(
             endpoint=resolved.provider_configuration.base_url,
             model=resolved.provider_configuration.model,
@@ -61,8 +58,8 @@ class PrivateAskFinPreferenceStore:
 
     def effective_settings(
         self, *, environment: Mapping[str, str] | None = None
-    ) -> PrivateAskFinSettings:
-        return load_private_ask_fin_settings(
+    ):
+        return load_private_ask_fin_runtime_settings(
             env=self._effective_environment(environment=environment)
         )
 
@@ -79,7 +76,7 @@ class PrivateAskFinPreferenceStore:
         # longer persisted. Explicit environment policy is applied later by
         # ``effective_settings``.
         del approved_model_digest
-        candidate = load_private_ask_fin_settings(
+        candidate = load_private_ask_fin_runtime_settings(
             env={
                 "FINSIGHT_AI_PROVIDER": "ollama",
                 "FINSIGHT_OLLAMA_BASE_URL": endpoint,

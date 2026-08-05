@@ -387,14 +387,34 @@ class AppController(QObject):
         on_progress: Callable,
         on_result: Callable,
         on_error: Callable,
+        *,
+        confirmation_id: str,
     ) -> None:
         review_id = dataset.review_id
+        def record_failure(error: BaseException) -> None:
+            try:
+                self._s.financial_review.record_validation_failure(
+                    confirmation_id, error
+                )
+            except Exception:
+                _log.exception(
+                    "validation failure audit could not be recorded rid=%s",
+                    review_id,
+                )
+
         if review_id != self._active:
-            on_error(RuntimeError("The active review changed before validation."))
+            error = RuntimeError(
+                "The active review changed before validation."
+            )
+            record_failure(error)
+            on_error(error)
             return
         try:
-            manifest = self._s.financial_review.rule_manifest(review_id)
+            manifest = self._s.financial_review.start_validation_attempt(
+                confirmation_id, dataset
+            )
         except Exception as exc:
+            record_failure(exc)
             on_error(exc)
             return
         self.processingChanged.emit(True)
@@ -409,19 +429,43 @@ class AppController(QObject):
                     review_id,
                     dataset,
                     evaluation,
+                    confirmation_id=confirmation_id,
                     started_at=started_at,
                 )
             except Exception as exc:
+                record_failure(exc)
                 self.processingChanged.emit(False)
+                if self._active != review_id:
+                    _log.info(
+                        "validation persistence failed for inactive review "
+                        "rid=%s; failure recorded and UI callback suppressed "
+                        "active_rid=%s",
+                        review_id,
+                        self._active or "",
+                    )
+                    return
                 on_error(exc)
                 return
             self.processingChanged.emit(False)
             self.reviewManagementChanged.emit()
             self.workflowChanged.emit(review_id)
             self.financialReviewChanged.emit(review_id)
+            if self._active != review_id:
+                # The completed result belongs to the review that started the
+                # worker and remains legitimately persisted there.  A review
+                # switch must not deliver that result into the now-active
+                # review's presentation callbacks, however.
+                _log.info(
+                    "validation completed for inactive review rid=%s; "
+                    "result persisted and UI callback suppressed active_rid=%s",
+                    review_id,
+                    self._active or "",
+                )
+                return
             on_result(projection)
 
         def failed(exc):
+            record_failure(exc)
             self.processingChanged.emit(False)
             _log.error(
                 "deterministic validation failed rid=%s: %s",
@@ -429,9 +473,37 @@ class AppController(QObject):
                 type(exc).__name__,
                 exc_info=exc,
             )
+            if self._active != review_id:
+                _log.info(
+                    "validation failed for inactive review rid=%s; "
+                    "failure recorded and UI callback suppressed active_rid=%s",
+                    review_id,
+                    self._active or "",
+                )
+                return
             on_error(exc)
 
-        run_async(work, done, failed)
+        try:
+            run_async(work, done, failed)
+        except Exception as exc:
+            record_failure(exc)
+            self.processingChanged.emit(False)
+            on_error(exc)
+
+    def validation_rule_set_proposal(self, dataset):
+        return self._s.financial_review.validation_rule_set_proposal(
+            dataset.review_id, dataset
+        )
+
+    def confirm_validation_rule_set(self, dataset, proposal_hash: str):
+        return self._s.financial_review.confirm_validation_rule_set(
+            dataset.review_id,
+            dataset,
+            proposal_hash=proposal_hash,
+        )
+
+    def record_revalidation_entry(self, review_id: str):
+        return self._s.financial_review.record_revalidation_entry(review_id)
 
     def financial_results(self, review_id: str):
         return self._s.financial_review.results(review_id)
@@ -583,6 +655,25 @@ class AppController(QObject):
             ),
             "findings": int(metrics.get("fail_count", 0)),
         }
+
+    def set_optional_draft_excluded(
+        self,
+        review_id: str,
+        rule_id: str,
+        version: str,
+        *,
+        excluded: bool,
+    ):
+        result = (
+            self._s.rule_management.set_draft_excluded_from_proposed_set(
+                review_id,
+                rule_id,
+                version,
+                excluded=excluded,
+            )
+        )
+        self.financialReviewChanged.emit(review_id)
+        return result
 
     def activate_optional_rule(
         self, review_id: str, rule_id: str, version: str
@@ -1057,14 +1148,20 @@ class AppController(QObject):
         on_error: Callable,
         *,
         context: AskFinContext | None = None,
+        review_id: str | None = None,
     ) -> None:
-        if not self.private_ask_fin_available() or not self._active:
+        selected_review = review_id or self._active
+        if (
+            not self.private_ask_fin_available()
+            or not selected_review
+            or selected_review != self._active
+        ):
             on_error(RuntimeError("private_ask_fin_unavailable"))
             return
         run_async(
             lambda: self._ask_fin.session(
                 user_id=self._user_id,
-                review_id=self._active,
+                review_id=selected_review,
                 context=context,
             ),
             on_result,
@@ -1078,13 +1175,19 @@ class AppController(QObject):
         on_error: Callable,
         *,
         context: AskFinContext | None = None,
+        review_id: str | None = None,
     ) -> None:
-        if not self.private_ask_fin_available() or not self._active:
+        selected_review = review_id or self._active
+        if (
+            not self.private_ask_fin_available()
+            or not selected_review
+            or selected_review != self._active
+        ):
             on_error(RuntimeError("private_ask_fin_unavailable"))
             return
         request = PrivateAskFinRequest(
             user_id=self._user_id,
-            review_id=self._active,
+            review_id=selected_review,
             question=question,
             context=context,
         )

@@ -10,7 +10,7 @@ from enum import Enum
 from typing import Any, Mapping, Optional, Tuple
 
 
-PRIVATE_ASK_FIN_PROMPT_VERSION = "stage2-private-v4"
+PRIVATE_ASK_FIN_PROMPT_VERSION = "stage2-private-v6"
 
 
 class AskFinMode(str, Enum):
@@ -63,6 +63,7 @@ class AskFinContext:
     object_type: str
     object_id: str
     label: str = ""
+    validation_run_id: Optional[str] = None
 
     def __post_init__(self) -> None:
         if not self.review_id or not self.object_type or not self.object_id:
@@ -118,6 +119,7 @@ class PrivateCitation:
     object_id: str
     label: str
     navigation_target: Mapping[str, Any] = field(default_factory=dict)
+    evidence_details: Mapping[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -148,3 +150,6 @@ class PrivateAskFinResult:
     prompt_version: str = PRIVATE_ASK_FIN_PROMPT_VERSION
     latency_ms: Optional[int] = None
     retrieved_record_keys: Tuple[str, ...] = ()
+    intent: str = ""
+    resolved_context: Optional[AskFinContext] = None
+    follow_up_questions: Tuple[str, ...] = ()

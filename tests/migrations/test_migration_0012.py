@@ -26,6 +26,7 @@ from tests.application.test_protected_rule_governance import (
     _approver,
     _confirmed_review,
 )
+from tests.support import persist_confirmed_validation
 
 
 def _connection() -> sqlite3.Connection:
@@ -91,9 +92,7 @@ def test_migration_0012_rejects_self_decision_and_unbound_application(
     financial = services.financial_review
     admin = _admin(financial)
     approver = _approver(financial)
-    financial.persist_evaluation(
-        review.review_id, dataset, financial.evaluate(dataset)
-    )
+    persist_confirmed_validation(financial, review.review_id, dataset)
     _activate_governed_baseline(admin, approver, review, dataset)
     request = admin.request_workspace_upgrade(
         review.review_id, "Exercise migration-level integrity guards."

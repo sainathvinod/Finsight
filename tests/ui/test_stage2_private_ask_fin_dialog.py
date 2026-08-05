@@ -1,9 +1,11 @@
 """Focused UI checks for the private, review-scoped Stage 2 Ask Fin panel."""
+
 from __future__ import annotations
 
 import pytest
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QPushButton
+from PySide6.QtTest import QSignalSpy
+from PySide6.QtWidgets import QPushButton, QWidget
 
 from finsight.application.ai.contracts import ProviderStatus
 from finsight.application.ai.private_contracts import (
@@ -25,6 +27,8 @@ class _PrivateAskFinController:
     def __init__(self):
         self.questions: list[tuple[str, object]] = []
         self.session_contexts: list[object] = []
+        self.session_review_ids: list[str | None] = []
+        self.question_review_ids: list[str | None] = []
 
     def private_ask_fin_provider_status_async(self, on_result, _on_error):
         on_result(
@@ -36,9 +40,10 @@ class _PrivateAskFinController:
         )
 
     def private_ask_fin_session_async(
-        self, on_result, _on_error, *, context=None
+        self, on_result, _on_error, *, context=None, review_id=None
     ):
         self.session_contexts.append(context)
+        self.session_review_ids.append(review_id)
         on_result(
             PrivateAskFinSession(
                 mode=AskFinMode.FINANCIAL_REVIEW,
@@ -58,9 +63,16 @@ class _PrivateAskFinController:
         )
 
     def private_ask_fin_ask_async(
-        self, question, on_result, _on_error, *, context=None
+        self,
+        question,
+        on_result,
+        _on_error,
+        *,
+        context=None,
+        review_id=None,
     ):
         self.questions.append((question, context))
+        self.question_review_ids.append(review_id)
         on_result(
             PrivateAskFinResult(
                 status=PrivateAskFinStatus.OK,
@@ -116,28 +128,57 @@ def test_private_ask_fin_uses_real_provider_contract_and_accessible_greeting(
         button.accessibleName().startswith("Ask suggested question:")
         for button in dialog._suggested_buttons
     )
+    assert controller.session_review_ids == ["review-may-2026"]
+    assert dialog._initial_panel.isVisible()
 
-    qtbot.mouseClick(
-        dialog._suggested_buttons[0], Qt.MouseButton.LeftButton
-    )
+    qtbot.mouseClick(dialog._suggested_buttons[0], Qt.MouseButton.LeftButton)
     assert controller.questions
     question, context = controller.questions[0]
     assert question == "Why did FinSight flag this finding?"
     assert context.review_id == "review-may-2026"
     assert context.object_type == "finding"
     assert context.object_id == "finding-1"
+    assert controller.question_review_ids == ["review-may-2026"]
     assert "did not map to a Budget" in dialog._transcript.toPlainText()
+    assert not dialog._initial_panel.isVisible()
+    messages = dialog.conversation_messages()
+    assert [message.role for message in messages] == ["user", "assistant"]
+    assert not any(message.pending for message in messages)
+    assert messages[-1].citations
+    user_bubble = dialog.findChild(QWidget, "AskFinUserBubble")
+    fin_bubble = dialog.findChild(QWidget, "AskFinAssistantBubble")
+    assert user_bubble is not None
+    assert fin_bubble is not None
+    assert user_bubble.accessibleName().startswith("You message:")
+    assert fin_bubble.accessibleName().startswith("Fin message:")
+
+    evidence_toggles = [
+        button
+        for button in dialog.findChildren(QPushButton)
+        if button.objectName() == "AskFinEvidenceToggle"
+    ]
+    assert len(evidence_toggles) == 1
+    assert evidence_toggles[0].text() == "Show evidence (1)"
+    citation_spy = QSignalSpy(dialog.citationActivated)
+    qtbot.mouseClick(evidence_toggles[0], Qt.MouseButton.LeftButton)
+    assert evidence_toggles[0].text() == "Hide evidence (1)"
     citation_buttons = [
         button
         for button in dialog.findChildren(QPushButton)
-        if button.text().startswith("Open source:")
+        if button.text() == "Open source"
     ]
     assert len(citation_buttons) == 1
     assert citation_buttons[0].accessibleName() == (
         "Open Ask Fin citation Valid Account Coding finding"
     )
+    qtbot.mouseClick(citation_buttons[0], Qt.MouseButton.LeftButton)
+    assert citation_spy.count() == 1
     assert dialog._message.text() == (
         "Answer grounded in the cited active-review records."
+    )
+    assert not dialog._message.isVisible()
+    assert dialog._last_accessibility_announcement == (
+        "Ask Fin answered with 1 recorded source."
     )
 
     qtbot.mouseClick(dialog._clear_scope, Qt.MouseButton.LeftButton)
@@ -177,15 +218,20 @@ def test_private_ask_fin_unavailable_state_is_fail_closed_and_reassuring(qtbot):
         "Ask Fin could not use the selected local model. Retry the connection."
     )
     assert [
-        button.text()
-        for button in dialog._unavailable_card.findChildren(QPushButton)
+        button.text() for button in dialog._unavailable_card.findChildren(QPushButton)
     ] == ["Retry"]
     assert not dialog._message.isVisible()
 
 
 class _MidRequestUnavailableController(_PrivateAskFinController):
     def private_ask_fin_ask_async(
-        self, _question, _on_result, on_error, *, context=None
+        self,
+        _question,
+        _on_result,
+        on_error,
+        *,
+        context=None,
+        review_id=None,
     ):
         on_error(RuntimeError("local Ollama stopped"))
 
@@ -204,6 +250,5 @@ def test_mid_request_failure_uses_the_same_single_retry_state(qtbot):
         "Ask Fin could not connect to local Ollama. Start Ollama, then retry."
     )
     assert [
-        button.text()
-        for button in dialog._unavailable_card.findChildren(QPushButton)
+        button.text() for button in dialog._unavailable_card.findChildren(QPushButton)
     ] == ["Retry"]

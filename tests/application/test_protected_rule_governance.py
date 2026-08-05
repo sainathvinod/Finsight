@@ -30,7 +30,7 @@ from finsight.infrastructure.persistence import Dal
 from finsight.infrastructure.secure_store import (
     TestEnvironmentStoreKeyProvider,
 )
-from tests.support import FixedClock
+from tests.support import FixedClock, persist_confirmed_validation
 
 
 FIXTURES = "initiatives/configurable-rule-engine-v2/fixtures"
@@ -886,8 +886,8 @@ def test_workspace_upgrade_preserves_optional_members_history_and_other_workspac
         review.review_id, draft["rule_id"], draft["version"]
     )
     admin.set_optional_enabled(review.review_id, draft["rule_id"], False)
-    initial = financial.persist_evaluation(
-        review.review_id, dataset, financial.evaluate(dataset)
+    initial = persist_confirmed_validation(
+        financial, review.review_id, dataset
     )
     prior_rule_set_id = financial._repo.current_rule_set_id(review.review_id)
     prior_members = financial._repo.rule_set_members(prior_rule_set_id)
@@ -1000,8 +1000,8 @@ def test_workspace_upgrade_preserves_optional_members_history_and_other_workspac
     assert status["current_baseline_id"] == target
     assert status["pending_request_id"] is None
 
-    successor = financial.persist_evaluation(
-        review.review_id, dataset, financial.evaluate(dataset)
+    successor = persist_confirmed_validation(
+        financial, review.review_id, dataset
     )
     assert successor["run_id"] != initial["run_id"]
     assert reviewer.workspace_upgrade_status(review.review_id)["state"] == "VALIDATED"
@@ -1136,9 +1136,7 @@ def test_stale_workspace_upgrade_cannot_be_approved_but_can_be_rejected(
     financial = services.financial_review
     admin = _admin(financial)
     approver = _approver(financial)
-    financial.persist_evaluation(
-        review.review_id, dataset, financial.evaluate(dataset)
-    )
+    persist_confirmed_validation(financial, review.review_id, dataset)
     _activate_governed_baseline(admin, approver, review, dataset)
     request = admin.request_workspace_upgrade(
         review.review_id, "Request against the current workspace evidence."
@@ -1226,9 +1224,7 @@ def test_stale_workspace_upgrade_target_cannot_be_approved_and_remains_rejectabl
     financial = services.financial_review
     admin = _admin(financial)
     approver = _approver(financial)
-    financial.persist_evaluation(
-        review.review_id, dataset, financial.evaluate(dataset)
-    )
+    persist_confirmed_validation(financial, review.review_id, dataset)
     _activate_governed_baseline(admin, approver, review, dataset)
     request = admin.request_workspace_upgrade(
         review.review_id, "Bind the first effective successor baseline."
@@ -1291,9 +1287,7 @@ def test_workspace_upgrade_requires_run_and_enforces_roles_and_distinct_actor(
             review.review_id, "Cannot upgrade before a completed run."
         )
 
-    financial.persist_evaluation(
-        review.review_id, dataset, financial.evaluate(dataset)
-    )
+    persist_confirmed_validation(financial, review.review_id, dataset)
     request = admin.request_workspace_upgrade(
         review.review_id, "Now bind the completed authoritative run."
     )
@@ -1319,9 +1313,7 @@ def test_composed_role_self_upgrade_is_denied_and_audited_once(tmp_path):
     database, services, review, dataset = _confirmed_review(tmp_path)
     financial = services.financial_review
     admin = _admin(financial)
-    financial.persist_evaluation(
-        review.review_id, dataset, financial.evaluate(dataset)
-    )
+    persist_confirmed_validation(financial, review.review_id, dataset)
     _activate_governed_baseline(
         admin, _approver(financial), review, dataset
     )

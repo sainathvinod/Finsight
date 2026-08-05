@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QMainWindow,
     QPushButton,
+    QSizePolicy,
     QSplitter,
     QStackedWidget,
     QVBoxLayout,
@@ -190,6 +191,9 @@ class MainWindow(QMainWindow):
         self._hide_embedded_back_controls()
         self._install_navigation_history()
         self._c.activeReviewChanged.connect(self._on_active_changed)
+        self._c.financialReviewChanged.connect(
+            self._on_financial_review_changed
+        )
         self._legacy_shortcuts = []
         for i, (key, _label) in enumerate(_NAV):
             sc = QShortcut(QKeySequence(f"Ctrl+{i + 1}"), self)
@@ -267,6 +271,14 @@ class MainWindow(QMainWindow):
             header = view.findChild(QWidget, "Workflow1TopBar")
             if header is None or header.layout() is None:
                 continue
+            for label in header.findChildren(
+                QLabel, options=Qt.FindChildOption.FindDirectChildrenOnly
+            ):
+                label.setMinimumWidth(0)
+                label.setSizePolicy(
+                    QSizePolicy.Policy.Ignored,
+                    QSizePolicy.Policy.Preferred,
+                )
             back = QPushButton("← Back", header)
             back.setObjectName("GlobalBackButton")
             back.setProperty("role", "secondary")
@@ -301,7 +313,6 @@ class MainWindow(QMainWindow):
         )
         for control in controls:
             control.hide()
-            control.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
     def _install_navigation_history(self) -> None:
         """Observe page and analytical-subview changes as one application history."""
@@ -612,11 +623,14 @@ class MainWindow(QMainWindow):
         self._financial_review.return_from_rules(revalidation=revalidation)
 
     def _start_validation_from_rules(
-        self, review, dataset, revalidation=False
+        self, review, dataset, revalidation=False, confirmation=None
     ) -> None:
         self._root_stack.setCurrentIndex(2)
         self._financial_review.start_validation_from_rules(
-            review, dataset, revalidation=bool(revalidation)
+            review,
+            dataset,
+            revalidation=bool(revalidation),
+            confirmation=confirmation,
         )
 
     def _show_past_reviews(self) -> None:
@@ -739,3 +753,13 @@ class MainWindow(QMainWindow):
                 self._context.setText(f"Active review:  {status.month} {status.year}  ·  {status.state}")
                 return
         self._context.setText("No review selected")
+
+    def _on_financial_review_changed(self, review_id: str) -> None:
+        """Refresh visible Ask Fin grounding after review/run changes."""
+
+        if (
+            self._ask_fin_drawer.isVisible()
+            and review_id
+            and review_id == self._ask_fin_drawer._review_id
+        ):
+            self._ask_fin_drawer.refresh_review()

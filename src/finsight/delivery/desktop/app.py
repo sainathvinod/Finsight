@@ -166,8 +166,17 @@ def _refuse_second_instance(db: str) -> None:
     if headless:
         return
     try:
-        from PySide6.QtWidgets import QMessageBox
-        QMessageBox.warning(None, "FinSight is already running", msg)
+        from finsight.delivery.desktop.components import (
+            DialogVariant,
+            show_in_app_message,
+        )
+
+        show_in_app_message(
+            None,
+            "FinSight is already running",
+            msg,
+            variant=DialogVariant.WARNING,
+        )
     except Exception:
         pass
 

@@ -157,6 +157,15 @@ def main(output_directory: str | None = None) -> int:
         drawer._send_button.click()
         _wait(
             app,
+            lambda: (
+                drawer._running
+                and any(message.pending for message in drawer.conversation_messages())
+            ),
+            "the conversational loading indicator",
+        )
+        capture.screen("02-loading")
+        _wait(
+            app,
             lambda: not drawer._running,
             "a completed response from local Ollama",
             timeout=180,
@@ -174,7 +183,28 @@ def main(output_directory: str | None = None) -> int:
         transcript = drawer._transcript.toPlainText()
         if QUESTION not in transcript:
             raise RuntimeError("The requested account question is not visible.")
-        capture.screen("02-grounded-answer")
+        capture.screen("03-grounded-answer")
+
+        evidence_toggles = [
+            button
+            for button in drawer.findChildren(QPushButton, "AskFinEvidenceToggle")
+            if button.isVisibleTo(drawer)
+        ]
+        if len(evidence_toggles) != 1:
+            raise RuntimeError(
+                "The grounded answer must expose one evidence action; "
+                f"found {len(evidence_toggles)}."
+            )
+        evidence_toggles[0].click()
+        _wait(
+            app,
+            lambda: (
+                evidence_toggles[0].isChecked()
+                and evidence_toggles[0].text().startswith("Hide evidence")
+            ),
+            "the answer evidence details to expand",
+        )
+        capture.screen("04-evidence-expanded")
 
         unavailable = LocalAiSetupStatus(
             state=LocalAiSetupState.SERVICE_NOT_RUNNING,
@@ -207,7 +237,7 @@ def main(output_directory: str | None = None) -> int:
                 "Unavailable Ask Fin must show one clear connection message; "
                 f"found {len(unavailable_messages)}."
             )
-        capture.screen("03-unavailable-single-message")
+        capture.screen("05-unavailable-single-message")
 
         drawer._retry_button.click()
         _wait(
@@ -222,9 +252,7 @@ def main(output_directory: str | None = None) -> int:
             "Retry to restore the real local Ollama session",
         )
 
-        answer = drawer._conversation_by_review[
-            financial._review.review_id
-        ][-1][1]
+        answer = drawer._conversation_by_review[financial._review.review_id][-1][1]
         print("Automatic-enable digest environment: absent")
         print(f"Question: {QUESTION}")
         print("Real local Ask Fin answer:")
@@ -242,6 +270,4 @@ def main(output_directory: str | None = None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(
-        main(sys.argv[1] if len(sys.argv) > 1 else None)
-    )
+    raise SystemExit(main(sys.argv[1] if len(sys.argv) > 1 else None))

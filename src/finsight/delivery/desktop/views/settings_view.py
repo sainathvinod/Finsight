@@ -164,6 +164,7 @@ class SettingsView(QWidget):
         back = QPushButton("← Back")
         back.setProperty("role", "quiet")
         back.setAccessibleName("Back to previous FinSight page")
+        back.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         back.clicked.connect(self.backRequested.emit)
         self.back_button = back
         content_layout.addWidget(back, 0, Qt.AlignmentFlag.AlignLeft)

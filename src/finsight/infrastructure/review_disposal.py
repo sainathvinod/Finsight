@@ -74,6 +74,23 @@ class ScopedReviewDisposalSqlite:
         "v2_review_completion_events": (
             "SELECT COUNT(*) FROM v2_review_completion_events WHERE review_id=?"
         ),
+        "v2_validation_attempt_events": (
+            "SELECT COUNT(*) FROM v2_validation_attempt_events "
+            "WHERE confirmation_id IN (SELECT confirmation_id FROM "
+            "v2_validation_rule_set_confirmations WHERE review_id=?)"
+        ),
+        "v2_validation_confirmation_run_links": (
+            "SELECT COUNT(*) FROM v2_validation_confirmation_run_links "
+            "WHERE confirmation_id IN (SELECT confirmation_id FROM "
+            "v2_validation_rule_set_confirmations WHERE review_id=?)"
+        ),
+        "v2_validation_rule_set_confirmations": (
+            "SELECT COUNT(*) FROM v2_validation_rule_set_confirmations "
+            "WHERE review_id=?"
+        ),
+        "v2_rule_proposal_draft_events": (
+            "SELECT COUNT(*) FROM v2_rule_proposal_draft_events WHERE review_id=?"
+        ),
         "v2_optional_validation_findings": (
             "SELECT COUNT(*) FROM v2_optional_validation_findings WHERE run_id IN "
             "(SELECT run_id FROM v2_validation_runs WHERE review_id=?)"
@@ -220,6 +237,22 @@ class ScopedReviewDisposalSqlite:
         ),
         "v2_review_completion_events": (
             "DELETE FROM v2_review_completion_events WHERE review_id=?"
+        ),
+        "v2_validation_attempt_events": (
+            "DELETE FROM v2_validation_attempt_events "
+            "WHERE confirmation_id IN (SELECT confirmation_id FROM "
+            "v2_validation_rule_set_confirmations WHERE review_id=?)"
+        ),
+        "v2_validation_confirmation_run_links": (
+            "DELETE FROM v2_validation_confirmation_run_links "
+            "WHERE confirmation_id IN (SELECT confirmation_id FROM "
+            "v2_validation_rule_set_confirmations WHERE review_id=?)"
+        ),
+        "v2_validation_rule_set_confirmations": (
+            "DELETE FROM v2_validation_rule_set_confirmations WHERE review_id=?"
+        ),
+        "v2_rule_proposal_draft_events": (
+            "DELETE FROM v2_rule_proposal_draft_events WHERE review_id=?"
         ),
         "v2_optional_validation_findings": (
             "DELETE FROM v2_optional_validation_findings WHERE run_id IN "
@@ -430,6 +463,23 @@ class ScopedReviewDisposalSqlite:
         ),
         "v2_review_completion_events": (
             "SELECT completion_id FROM v2_review_completion_events WHERE review_id=?"
+        ),
+        "v2_validation_attempt_events": (
+            "SELECT event_id FROM v2_validation_attempt_events "
+            "WHERE confirmation_id IN (SELECT confirmation_id FROM "
+            "v2_validation_rule_set_confirmations WHERE review_id=?)"
+        ),
+        "v2_validation_confirmation_run_links": (
+            "SELECT confirmation_id FROM v2_validation_confirmation_run_links "
+            "WHERE confirmation_id IN (SELECT confirmation_id FROM "
+            "v2_validation_rule_set_confirmations WHERE review_id=?)"
+        ),
+        "v2_validation_rule_set_confirmations": (
+            "SELECT confirmation_id FROM v2_validation_rule_set_confirmations "
+            "WHERE review_id=?"
+        ),
+        "v2_rule_proposal_draft_events": (
+            "SELECT event_id FROM v2_rule_proposal_draft_events WHERE review_id=?"
         ),
         "v2_optional_validation_findings": (
             "SELECT finding_id FROM v2_optional_validation_findings WHERE run_id IN "

@@ -5,14 +5,16 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QDialog,
     QFrame,
-    QInputDialog,
-    QMessageBox,
     QProgressBar,
     QPushButton,
     QTableView,
     QTableWidget,
     QWidget,
 )
+
+import finsight.delivery.desktop.views.financial_review_view as financial_view
+
+from finsight.delivery.desktop.components import InAppTextPromptDialog
 
 from finsight.domain.source_intake import SourceRole
 
@@ -778,17 +780,21 @@ def test_guided_mvp_runs_to_completion_and_reopens_read_only(
     )
     duplicate_finding_id = financial._selected_finding["finding_id"]
     monkeypatch.setattr(
-        QInputDialog,
-        "getText",
-        lambda *_args, **_kwargs: (
-            "Reviewer acknowledged the recorded duplicate evidence.",
-            True,
+        InAppTextPromptDialog,
+        "exec",
+        lambda _dialog: QDialog.DialogCode.Accepted,
+    )
+    monkeypatch.setattr(
+        InAppTextPromptDialog,
+        "text_value",
+        lambda _dialog: (
+            "Reviewer acknowledged the recorded duplicate evidence."
         ),
     )
     monkeypatch.setattr(
-        QMessageBox,
-        "information",
-        lambda *_args, **_kwargs: QMessageBox.StandardButton.Ok,
+        financial_view,
+        "show_in_app_message",
+        lambda *_args, **_kwargs: QDialog.DialogCode.Accepted,
     )
     financial._finding_status_control.setCurrentText("Acknowledged")
     financial._change_finding_status()

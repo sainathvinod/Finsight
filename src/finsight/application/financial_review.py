@@ -345,6 +345,552 @@ class FinancialReviewService:
     def evaluate(self, dataset: WorkingFinancialDataset):
         return self._engine.evaluate(dataset, self.rule_manifest(dataset.review_id))
 
+    def record_revalidation_entry(self, review_id: str) -> dict[str, Any]:
+        """Audit direct entry from retained results into Rules/Revalidate."""
+
+        self._require_review(review_id)
+        latest = self._repo.latest_run(review_id)
+        basis = self._repo.generation_basis(review_id)
+        if latest is None or basis is None:
+            raise FinancialReviewError(
+                "A retained Validation Run and verified working data are required."
+            )
+        timestamp = self._clock.now()
+        payload = {
+            "prior_run_id": latest["run_id"],
+            "prior_rule_set_id": latest["rule_set_id"],
+            "source_generation_id": basis["generation_id"],
+            "dataset_fingerprint": basis["dataset_fingerprint"],
+            "reason": "REVIEW_RULES_AND_REVALIDATE_SELECTED",
+        }
+        with self._uow.atomic():
+            self._audit.append(
+                review_id=review_id,
+                event_type="revalidation_entered",
+                actor=self._actor,
+                occurred_at=timestamp,
+                correlation_id="corr_" + self._id(),
+                payload=payload,
+                scopes=(
+                    AuditScope("Review", review_id),
+                    AuditScope("ValidationRun", latest["run_id"]),
+                ),
+            )
+        return payload
+
+    def validation_rule_set_proposal(
+        self, review_id: str, dataset: WorkingFinancialDataset
+    ) -> dict[str, Any]:
+        """Build the exact review-local proposal shown before validation."""
+
+        review = self._require_review(review_id)
+        basis = self._repo.generation_basis(review_id)
+        if basis is None or basis["dataset_fingerprint"] != dataset.fingerprint:
+            raise FinancialReviewError(
+                "Data reverification required. The working data no longer "
+                "matches the verified Budget and GED data."
+            )
+        if review.status not in {
+            ReviewStatus.DATA_REVIEWED,
+            ReviewStatus.VALIDATION_COMPLETE,
+            ReviewStatus.REVIEWED,
+            ReviewStatus.CLOSED,
+        }:
+            raise FinancialReviewError(
+                "Reviewed data must be confirmed before a Rule Set can be confirmed."
+            )
+        rule_set_id = self._repo.current_rule_set_id(review_id)
+        if not rule_set_id:
+            raise FinancialReviewError(
+                "No governed Rule Set Version is assigned to this review."
+            )
+        history = self._repo.rule_set_history(review_id)
+        rule_set = next(
+            (
+                item
+                for item in history
+                if item["rule_set_id"] == rule_set_id
+            ),
+            None,
+        )
+        if rule_set is None:
+            raise FinancialReviewError(
+                "The proposed Rule Set Version cannot be inspected."
+            )
+        rules: list[dict[str, Any]] = []
+        for member in self._repo.rule_set_members(rule_set_id):
+            definition = self._repo.rule_version(
+                member["rule_id"], member["rule_version"]
+            )
+            if definition is None:
+                raise FinancialReviewError(
+                    "A required Rule Version is missing from the proposed Rule Set."
+                )
+            lifecycle = str(definition.get("lifecycle_status") or "ACTIVE")
+            # The immutable Rule Set member is authoritative for this review.
+            # A later global retirement/supersession must not silently remove a
+            # version that remains pinned to an existing workspace; doing so
+            # would break historical replay and protected-baseline continuity.
+            included = bool(member["enabled"])
+            status = (
+                "Active"
+                if included
+                else ("Retired" if lifecycle == "RETIRED" else "Disabled")
+            )
+            rules.append(
+                {
+                    "ordinal": int(member["ordinal"]),
+                    "rule_id": str(definition["rule_id"]),
+                    "rule_version": str(definition["version"]),
+                    "name": str(definition["name"]),
+                    "baseline_status": str(definition["baseline_status"]),
+                    "status": status,
+                    "included": included,
+                    "severity": str(definition["severity"]),
+                    "evaluator_key": str(definition["evaluator_key"]),
+                    "parameters": dict(definition.get("parameters") or {}),
+                    "required_fields": list(
+                        definition.get("required_fields") or ()
+                    ),
+                    "grouping_keys": list(
+                        definition.get("grouping_keys") or ()
+                    ),
+                    "content_hash": str(definition.get("content_hash") or ""),
+                }
+            )
+        bound_versions = {
+            (item["rule_id"], item["rule_version"])
+            for item in rules
+        }
+        exclusions = {
+            (str(item["rule_id"]), str(item["rule_version"])): item
+            for item in self._repo.current_rule_proposal_draft_exclusions(
+                review_id
+            )
+        }
+        draft_candidates = []
+        for definition in self._repo.latest_optional_rule_versions():
+            identity = (
+                str(definition["rule_id"]),
+                str(definition["version"]),
+            )
+            if (
+                identity in bound_versions
+                or definition.get("lifecycle_status")
+                not in {"DRAFT", "TESTED"}
+            ):
+                continue
+            draft_candidates.append(
+                {
+                    "rule_id": identity[0],
+                    "rule_version": identity[1],
+                    "name": str(definition["name"]),
+                    "status": str(definition["lifecycle_status"]).title(),
+                    "excluded": identity in exclusions,
+                }
+            )
+        unresolved = [
+            item for item in draft_candidates if not item["excluded"]
+        ]
+        included_rules = [item for item in rules if item["included"]]
+        protected_ids = {
+            item["rule_id"]
+            for item in included_rules
+            if item["baseline_status"] == "PROTECTED_BASELINE"
+        }
+        expected_protected = {
+            "CORE-01",
+            "CORE-02",
+            "CORE-03",
+            "CORE-04",
+            "CORE-05",
+        }
+        readiness_reasons = []
+        if protected_ids != expected_protected:
+            readiness_reasons.append(
+                "All five protected core rules must be active."
+            )
+        if unresolved:
+            names = ", ".join(item["name"] for item in unresolved)
+            readiness_reasons.append(
+                f"{len(unresolved)} draft rule(s) are unresolved: {names}. "
+                "Test and activate each rule, or exclude it from the proposed Rule Set."
+            )
+        latest = self._repo.latest_run(review_id)
+        prior_rules: dict[str, dict[str, Any]] = {}
+        if latest is not None:
+            prior_projection = self._repo.run_projection(
+                review_id, latest["run_id"]
+            )
+            if prior_projection is not None:
+                prior_rules = {
+                    str(item["rule_id"]): item
+                    for item in prior_projection["executions"]
+                }
+        current_by_id = {
+            item["rule_id"]: item for item in included_rules
+        }
+        changes: list[dict[str, Any]] = []
+        for rule_id in sorted(set(current_by_id) - set(prior_rules)):
+            item = current_by_id[rule_id]
+            changes.append(
+                {
+                    "kind": "ADDED",
+                    "rule_id": rule_id,
+                    "label": f"+ {item['name']} v{item['rule_version']} activated",
+                }
+            )
+        for rule_id in sorted(set(prior_rules) - set(current_by_id)):
+            item = prior_rules[rule_id]
+            changes.append(
+                {
+                    "kind": "REMOVED",
+                    "rule_id": rule_id,
+                    "label": f"− {item['rule_name']} v{item['version']} disabled or retired",
+                }
+            )
+        for rule_id in sorted(set(prior_rules) & set(current_by_id)):
+            before = prior_rules[rule_id]
+            after = current_by_id[rule_id]
+            if str(before["version"]) != after["rule_version"]:
+                changes.append(
+                    {
+                        "kind": "VERSION_CHANGED",
+                        "rule_id": rule_id,
+                        "label": (
+                            f"~ {after['name']} v{before['version']} → "
+                            f"v{after['rule_version']}"
+                        ),
+                    }
+                )
+        same_rule_set = bool(
+            latest is not None and latest["rule_set_id"] == rule_set_id
+        )
+        proposal = {
+            "review_id": review_id,
+            "reporting_period": dataset.reporting_period,
+            "department_number": dataset.department_number,
+            "department_name": dataset.department_name,
+            "working_data_label": (
+                f"{dataset.reporting_period} verified Budget and GED data"
+            ),
+            "budget_filename": basis["budget_filename"],
+            "ged_filename": basis["ged_filename"],
+            "budget_record_count": int(basis["budget_record_count"]),
+            "ged_transaction_count": int(basis["ged_transaction_count"]),
+            "dataset_fingerprint": dataset.fingerprint,
+            "source_generation_id": basis["generation_id"],
+            "source_data_version": (
+                f"{basis['generation_id']}:{dataset.fingerprint}"
+            ),
+            "rule_set_id": rule_set_id,
+            "rule_set_version": str(rule_set["version"]),
+            "rules": rules,
+            "included_rules": included_rules,
+            "excluded_drafts": [
+                item for item in draft_candidates if item["excluded"]
+            ],
+            "draft_candidates": draft_candidates,
+            "unresolved_drafts": unresolved,
+            "counts": {
+                "protected_core": sum(
+                    item["baseline_status"] == "PROTECTED_BASELINE"
+                    for item in included_rules
+                ),
+                "enabled_optional": sum(
+                    item["baseline_status"] != "PROTECTED_BASELINE"
+                    for item in included_rules
+                ),
+                "draft": len(unresolved),
+                "disabled_included": 0,
+                "disabled_available": sum(
+                    not item["included"] for item in rules
+                ),
+            },
+            "changes": changes,
+            "prior_run_id": latest["run_id"] if latest else None,
+            "prior_rule_set_id": latest["rule_set_id"] if latest else None,
+            "same_rule_set_rerun": same_rule_set,
+            "ready": not readiness_reasons,
+            "readiness_reasons": readiness_reasons,
+        }
+        proposal["proposal_hash"] = _digest(proposal)
+        return proposal
+
+    def confirm_validation_rule_set(
+        self,
+        review_id: str,
+        dataset: WorkingFinancialDataset,
+        *,
+        proposal_hash: str,
+    ) -> dict[str, Any]:
+        """Seal the exact proposed rules and reviewed data before execution."""
+
+        proposal = self.validation_rule_set_proposal(review_id, dataset)
+        if not proposal["ready"]:
+            raise FinancialReviewError(" ".join(proposal["readiness_reasons"]))
+        if proposal["proposal_hash"] != proposal_hash:
+            raise FinancialReviewError(
+                "The proposed Rule Set changed before confirmation. Review it again."
+            )
+        timestamp = self._clock.now()
+        confirmation = {
+            "confirmation_id": "ruleconfirm_" + self._id(),
+            "run_id": "run_" + self._id(),
+            "review_id": review_id,
+            "rule_set_id": proposal["rule_set_id"],
+            "rule_set_version": proposal["rule_set_version"],
+            "dataset_fingerprint": proposal["dataset_fingerprint"],
+            "source_generation_id": proposal["source_generation_id"],
+            "source_data_version": proposal["source_data_version"],
+            "prior_run_id": proposal["prior_run_id"],
+            "rules": proposal["rules"],
+            "excluded_drafts": proposal["excluded_drafts"],
+            "changes": proposal["changes"],
+            "actor_id": self._actor.actor_id,
+            "confirmed_at": timestamp,
+            "proposal_hash": proposal_hash,
+        }
+        confirmation["confirmation_hash"] = _digest(confirmation)
+        event = self._validation_attempt_event(
+            confirmation["confirmation_id"],
+            "CONFIRMED",
+            timestamp=timestamp,
+            reason="RULE_SET_AND_WORKING_DATA_CONFIRMED",
+            payload={
+                "rule_set_id": proposal["rule_set_id"],
+                "rule_set_version": proposal["rule_set_version"],
+                "proposal_hash": proposal_hash,
+                "dataset_fingerprint": proposal["dataset_fingerprint"],
+                "source_generation_id": proposal["source_generation_id"],
+                "prior_run_id": proposal["prior_run_id"],
+                "same_rule_set_rerun": proposal["same_rule_set_rerun"],
+                "included_rule_ids_and_versions": [
+                    {
+                        "rule_id": item["rule_id"],
+                        "rule_version": item["rule_version"],
+                    }
+                    for item in proposal["included_rules"]
+                ],
+                "excluded_drafts": proposal["excluded_drafts"],
+            },
+            ordinal=1,
+            run_id=confirmation["run_id"],
+        )
+        with self._uow.atomic():
+            self._repo.append_validation_rule_set_confirmation(confirmation)
+            self._repo.append_validation_attempt_event(event)
+            self._audit.append(
+                review_id=review_id,
+                event_type="validation_rule_set_confirmed",
+                actor=self._actor,
+                occurred_at=timestamp,
+                correlation_id="corr_" + self._id(),
+                payload={
+                    "confirmation_id": confirmation["confirmation_id"],
+                    "run_id": confirmation["run_id"],
+                    "confirmation_hash": confirmation["confirmation_hash"],
+                    **event["payload"],
+                },
+                scopes=(
+                    AuditScope("Review", review_id),
+                    AuditScope("RuleSet", proposal["rule_set_id"]),
+                ),
+            )
+        return self._repo.validation_rule_set_confirmation(
+            confirmation["confirmation_id"]
+        )
+
+    def start_validation_attempt(
+        self,
+        confirmation_id: str,
+        dataset: WorkingFinancialDataset,
+    ):
+        """Re-verify and start one confirmed deterministic validation attempt."""
+
+        confirmation = self._require_validation_confirmation(
+            confirmation_id, dataset
+        )
+        events = confirmation["events"]
+        if not events or events[-1]["event_type"] != "CONFIRMED":
+            raise FinancialReviewError(
+                "This Rule Set confirmation has already been used. Confirm again."
+            )
+        manifest = self._repo.rule_set_manifest(confirmation["rule_set_id"])
+        if manifest is None:
+            raise FinancialReviewError(
+                "The confirmed Rule Set Version is no longer available."
+            )
+        timestamp = self._clock.now()
+        event = self._validation_attempt_event(
+            confirmation_id,
+            "STARTED",
+            timestamp=timestamp,
+            reason="DETERMINISTIC_VALIDATION_STARTED",
+            payload={
+                "rule_set_id": confirmation["rule_set_id"],
+                "dataset_fingerprint": dataset.fingerprint,
+                "prior_run_id": confirmation["prior_run_id"],
+            },
+            ordinal=2,
+            run_id=confirmation["run_id"],
+        )
+        with self._uow.atomic():
+            self._repo.append_validation_attempt_event(event)
+            self._audit.append(
+                review_id=confirmation["review_id"],
+                event_type="deterministic_validation_started",
+                actor=self._actor,
+                occurred_at=timestamp,
+                correlation_id="corr_" + self._id(),
+                payload={
+                    "confirmation_id": confirmation_id,
+                    "run_id": confirmation["run_id"],
+                    **event["payload"],
+                },
+                scopes=(
+                    AuditScope("Review", confirmation["review_id"]),
+                    AuditScope("RuleSet", confirmation["rule_set_id"]),
+                ),
+            )
+        return manifest
+
+    def record_validation_failure(
+        self, confirmation_id: str, error: BaseException
+    ) -> None:
+        confirmation = self._repo.validation_rule_set_confirmation(
+            confirmation_id
+        )
+        if confirmation is None:
+            return
+        events = confirmation["events"]
+        if not events or events[-1]["event_type"] in {"COMPLETED", "FAILED"}:
+            return
+        timestamp = self._clock.now()
+        correlation_id = "corr_" + self._id()
+        event = self._validation_attempt_event(
+            confirmation_id,
+            "FAILED",
+            timestamp=timestamp,
+            reason="DETERMINISTIC_VALIDATION_FAILED",
+            payload={
+                "prior_run_id": confirmation["prior_run_id"],
+                "rule_set_id": confirmation["rule_set_id"],
+                "failure_type": type(error).__name__,
+                "correlation_id": correlation_id,
+            },
+            ordinal=self._repo.next_validation_attempt_ordinal(
+                confirmation_id
+            ),
+            run_id=confirmation["run_id"],
+        )
+        with self._uow.atomic():
+            self._repo.append_validation_attempt_event(event)
+            self._audit.append(
+                review_id=confirmation["review_id"],
+                event_type="deterministic_validation_failed",
+                actor=self._actor,
+                occurred_at=timestamp,
+                correlation_id=correlation_id,
+                outcome="FAILED",
+                payload={
+                    "confirmation_id": confirmation_id,
+                    "run_id": confirmation["run_id"],
+                    **event["payload"],
+                },
+                scopes=(
+                    AuditScope("Review", confirmation["review_id"]),
+                    AuditScope("RuleSet", confirmation["rule_set_id"]),
+                ),
+            )
+
+    def _require_validation_confirmation(
+        self,
+        confirmation_id: str,
+        dataset: WorkingFinancialDataset,
+    ) -> dict[str, Any]:
+        confirmation = self._repo.validation_rule_set_confirmation(
+            confirmation_id
+        )
+        if confirmation is None:
+            raise FinancialReviewError(
+                "Confirm the proposed Rule Set before validation."
+            )
+        if confirmation["review_id"] != dataset.review_id:
+            raise FinancialReviewError(
+                "The Rule Set confirmation belongs to another review."
+            )
+        if confirmation["actor_id"] != self._actor.actor_id:
+            raise FinancialReviewError(
+                "The confirmation actor does not match the validation actor."
+            )
+        basis = self._repo.generation_basis(dataset.review_id)
+        latest = self._repo.latest_run(dataset.review_id)
+        current_rule_set = self._repo.current_rule_set_id(dataset.review_id)
+        if (
+            basis is None
+            or basis["dataset_fingerprint"] != dataset.fingerprint
+            or confirmation["dataset_fingerprint"] != dataset.fingerprint
+            or confirmation["source_generation_id"] != basis["generation_id"]
+        ):
+            raise FinancialReviewError(
+                "Data reverification required. The verified working data changed."
+            )
+        if current_rule_set != confirmation["rule_set_id"]:
+            raise FinancialReviewError(
+                "The Rule Set changed after confirmation. Review and confirm it again."
+            )
+        latest_run_id = latest["run_id"] if latest else None
+        if latest_run_id != confirmation["prior_run_id"]:
+            raise FinancialReviewError(
+                "A newer Validation Run exists. Review and confirm the Rule Set again."
+            )
+        current = self.validation_rule_set_proposal(
+            dataset.review_id, dataset
+        )
+        if not current["ready"]:
+            raise FinancialReviewError(
+                "The confirmed proposal is no longer ready. "
+                + " ".join(current["readiness_reasons"])
+            )
+        if _digest(current["rules"]) != _digest(confirmation["rules"]):
+            raise FinancialReviewError(
+                "The confirmed Rule Versions or configuration changed."
+            )
+        if _digest(current["excluded_drafts"]) != _digest(
+            confirmation["excluded_drafts"]
+        ):
+            raise FinancialReviewError(
+                "The confirmed draft-rule exclusions changed. Review and "
+                "confirm the proposed Rule Set again."
+            )
+        return confirmation
+
+    def _validation_attempt_event(
+        self,
+        confirmation_id: str,
+        event_type: str,
+        *,
+        timestamp: str,
+        reason: str,
+        payload: Mapping[str, Any],
+        ordinal: int,
+        run_id: str | None = None,
+    ) -> dict[str, Any]:
+        event = {
+            "event_id": "validationevt_" + self._id(),
+            "confirmation_id": confirmation_id,
+            "ordinal": ordinal,
+            "event_type": event_type,
+            "run_id": run_id,
+            "actor_id": self._actor.actor_id,
+            "occurred_at": timestamp,
+            "reason": reason,
+            "payload": dict(payload),
+        }
+        event["event_hash"] = _digest(event)
+        return event
+
     def rule_manifest(self, review_id: str):
         self._require_review(review_id)
         rule_set_id = self._repo.current_rule_set_id(review_id)
@@ -370,30 +916,54 @@ class FinancialReviewService:
         dataset: WorkingFinancialDataset,
         evaluation,
         *,
+        confirmation_id: str,
         started_at: str | None = None,
     ):
         review = self._require_review(review_id)
+        confirmation = self._repo.validation_rule_set_confirmation(
+            confirmation_id
+        )
+        if confirmation is None:
+            raise FinancialReviewError(
+                "Confirm the proposed Rule Set before validation."
+            )
+        if confirmation["review_id"] != review_id:
+            raise FinancialReviewError(
+                "The Rule Set confirmation belongs to another review."
+            )
+        if (
+            not confirmation["events"]
+            or confirmation["events"][-1]["event_type"] != "STARTED"
+        ):
+            raise FinancialReviewError(
+                "The confirmed validation attempt was not started or is no longer active."
+            )
         basis = self._repo.generation_basis(review_id)
         if basis is None or basis["dataset_fingerprint"] != dataset.fingerprint:
             raise FinancialReviewError("The validation dataset does not match the confirmed review.")
         if evaluation.dataset_fingerprint != dataset.fingerprint:
             raise FinancialReviewError("The rule results do not match the confirmed review.")
         current_rule_set = self._repo.current_rule_set_id(review_id)
-        if not current_rule_set or evaluation.rule_set_id != current_rule_set:
+        if (
+            not current_rule_set
+            or evaluation.rule_set_id != current_rule_set
+            or evaluation.rule_set_id != confirmation["rule_set_id"]
+        ):
             raise FinancialReviewError(
                 "The evaluated Rule Set Version is no longer current."
             )
         latest = self._repo.latest_run(review_id)
         is_reanalysis = latest is not None
+        latest_run_id = latest["run_id"] if latest else None
+        if latest_run_id != confirmation["prior_run_id"]:
+            raise FinancialReviewError(
+                "A newer Validation Run exists. Review and confirm the Rule Set again."
+            )
         if not is_reanalysis and review.status is not ReviewStatus.DATA_REVIEWED:
             raise FinancialReviewError(
                 "Reviewed data must be confirmed before validation."
             )
         if is_reanalysis:
-            if latest["rule_set_id"] == evaluation.rule_set_id:
-                raise FinancialReviewError(
-                    "Revalidation requires a successor Rule Set Version."
-                )
             if review.status not in {
                 ReviewStatus.VALIDATION_COMPLETE,
                 ReviewStatus.REVIEWED,
@@ -404,7 +974,7 @@ class FinancialReviewService:
                 )
         timestamp = self._clock.now()
         started = started_at or timestamp
-        run_id = "run_" + self._id()
+        run_id = confirmation["run_id"]
         generation_id = basis["generation_id"]
         reanalysis_generation = None
         if is_reanalysis:
@@ -484,6 +1054,7 @@ class FinancialReviewService:
         ledger_payload = {
             "review_id": review_id,
             "generation_id": generation_id,
+            "confirmation_id": confirmation_id,
             "rule_set_id": evaluation.rule_set_id,
             "dataset_fingerprint": evaluation.dataset_fingerprint,
             "executions": [item.__dict__ for item in evaluation.executions],
@@ -497,6 +1068,17 @@ class FinancialReviewService:
         completion_seal = _digest(
             [run_id, ledger_hash, evaluation.dataset_fingerprint, timestamp]
         )
+        revalidation_reason = (
+            (
+                "SAME_RULE_SET_RERUN"
+                if latest is not None
+                and latest["rule_set_id"] == evaluation.rule_set_id
+                else "RULESET_REANALYSIS"
+            )
+            if is_reanalysis
+            else "INITIAL_VALIDATION"
+        )
+        comparison = None
         with self._uow.atomic():
             if reanalysis_generation is not None:
                 self._generations.insert(reanalysis_generation)
@@ -568,12 +1150,16 @@ class FinancialReviewService:
                 evaluation=evaluation,
                 finding_explanations=explanations,
                 leadership_summary=leadership_summary,
-                revalidation_reason=(
-                    "RULESET_REANALYSIS"
-                    if is_reanalysis
-                    else "INITIAL_VALIDATION"
-                ),
+                revalidation_reason=revalidation_reason,
             )
+            link = {
+                "confirmation_id": confirmation_id,
+                "run_id": run_id,
+                "prior_run_id": latest_run_id,
+                "linked_at": timestamp,
+            }
+            link["link_hash"] = _digest(link)
+            self._repo.append_validation_confirmation_run_link(link)
             self._generations.advance_analytical_state(
                 generation_id, AnalyticalState.ANALYZED
             )
@@ -604,28 +1190,30 @@ class FinancialReviewService:
                     _digest([generation_id, "SUMMARIZED", run_id]),
                 ),
             )
-            if is_reanalysis:
-                self._uow.dal.conn.execute(
-                    "INSERT INTO generation_supersessions("
-                    "prior_generation_id,successor_generation_id,superseded_at,actor,reason"
-                    ") VALUES(?,?,?,?,?)",
-                    (
-                        latest["generation_id"],
-                        generation_id,
-                        timestamp,
-                        self._actor.actor_id,
-                        "RULESET_REANALYSIS",
-                    ),
+            # A successor reanalysis is a reviewable Working generation. It
+            # must not silently replace or supersede the prior Published
+            # generation; governed promotion is a separate lifecycle action.
+            publication_state = "Working" if is_reanalysis else "Published"
+            if not is_reanalysis:
+                self._cycle_lifecycle.set_published_generation(
+                    review_id, generation_id
                 )
-            self._cycle_lifecycle.set_published_generation(review_id, generation_id)
             self._uow.dal.conn.execute(
                 "UPDATE cycles SET state='Summarized' WHERE cycle_id=?", (review_id,)
             )
-            self._uow.dal.conn.execute(
-                "UPDATE v2_review_cycle_pointers SET published_generation_id=?,"
-                "current_rule_set_id=?,revision=revision+1 WHERE review_id=?",
-                (generation_id, evaluation.rule_set_id, review_id),
-            )
+            if is_reanalysis:
+                self._uow.dal.conn.execute(
+                    "UPDATE v2_review_cycle_pointers SET current_rule_set_id=?,"
+                    "revision=revision+1 WHERE review_id=?",
+                    (evaluation.rule_set_id, review_id),
+                )
+            else:
+                self._uow.dal.conn.execute(
+                    "UPDATE v2_review_cycle_pointers SET "
+                    "published_generation_id=?,current_rule_set_id=?,"
+                    "revision=revision+1 WHERE review_id=?",
+                    (generation_id, evaluation.rule_set_id, review_id),
+                )
             self._reviews.append_status(
                 ReviewStatusEvent(
                     event_id="status_" + self._id(),
@@ -642,6 +1230,55 @@ class FinancialReviewService:
                     reason="DETERMINISTIC_VALIDATION_COMPLETE",
                 )
             )
+            if latest_run_id is not None:
+                comparison = self._repo.compare_runs(
+                    review_id, latest_run_id, run_id
+                )
+            comparison_summary = {
+                "findings_added": len(
+                    (comparison or {}).get("findings_added", ())
+                ),
+                "findings_removed": len(
+                    (comparison or {}).get("findings_removed", ())
+                ),
+                "findings_changed": len(
+                    (comparison or {}).get("findings_changed", ())
+                ),
+                "findings_unchanged": len(
+                    (comparison or {}).get("findings_unchanged", ())
+                ),
+                "rules_added": len(
+                    (comparison or {}).get("rules_added", ())
+                ),
+                "rules_removed": len(
+                    (comparison or {}).get("rules_removed", ())
+                ),
+                "rules_changed": len(
+                    (comparison or {}).get("rules_changed", ())
+                ),
+                "rules_unchanged": len(
+                    (comparison or {}).get("rules_unchanged", ())
+                ),
+            }
+            completed_event = self._validation_attempt_event(
+                confirmation_id,
+                "COMPLETED",
+                timestamp=timestamp,
+                reason=revalidation_reason,
+                run_id=run_id,
+                ordinal=self._repo.next_validation_attempt_ordinal(
+                    confirmation_id
+                ),
+                payload={
+                    "prior_run_id": latest_run_id,
+                    "new_run_id": run_id,
+                    "rule_set_id": evaluation.rule_set_id,
+                    "generation_id": generation_id,
+                    "publication_state": publication_state,
+                    "comparison": comparison_summary,
+                },
+            )
+            self._repo.append_validation_attempt_event(completed_event)
             self._audit.append(
                 review_id=review_id,
                 event_type="deterministic_validation_completed",
@@ -649,9 +1286,13 @@ class FinancialReviewService:
                 occurred_at=timestamp,
                 correlation_id="corr_" + self._id(),
                 payload={
+                    "confirmation_id": confirmation_id,
                     "run_id": run_id,
+                    "prior_run_id": latest_run_id,
                     "generation_id": generation_id,
                     "rule_set_id": evaluation.rule_set_id,
+                    "revalidation_reason": revalidation_reason,
+                    "publication_state": publication_state,
                     "dataset_fingerprint": evaluation.dataset_fingerprint,
                     "ledger_hash": ledger_hash,
                     "completion_seal": completion_seal,
@@ -663,11 +1304,54 @@ class FinancialReviewService:
                     AuditScope("ValidationRun", run_id),
                 ),
             )
-        return self._repo.run_projection(review_id)
+            if comparison is not None:
+                self._audit.append(
+                    review_id=review_id,
+                    event_type="validation_result_comparison_recorded",
+                    actor=self._actor,
+                    occurred_at=timestamp,
+                    correlation_id="corr_" + self._id(),
+                    payload={
+                        "confirmation_id": confirmation_id,
+                        "prior_run_id": latest_run_id,
+                        "new_run_id": run_id,
+                        "prior_rule_set_id": comparison[
+                            "prior_rule_set_id"
+                        ],
+                        "current_rule_set_id": comparison[
+                            "current_rule_set_id"
+                        ],
+                        "comparison": comparison_summary,
+                    },
+                    scopes=(
+                        AuditScope("Review", review_id),
+                        AuditScope("ValidationRun", latest_run_id),
+                        AuditScope("ValidationRun", run_id),
+                    ),
+                )
+        projection = self._repo.run_projection(review_id)
+        if projection is not None:
+            projection["comparison"] = comparison
+            projection["confirmation"] = (
+                self._repo.validation_rule_set_confirmation(
+                    confirmation_id
+                )
+            )
+        return projection
 
     def results(self, review_id: str):
         self._require_review(review_id)
-        return self._repo.run_projection(review_id)
+        projection = self._repo.run_projection(review_id)
+        if (
+            projection is not None
+            and projection.get("predecessor_run_id")
+        ):
+            projection["comparison"] = self._repo.compare_runs(
+                review_id,
+                projection["predecessor_run_id"],
+                projection["run_id"],
+            )
+        return projection
 
     def validation_history(self, review_id: str):
         self._require_review(review_id)

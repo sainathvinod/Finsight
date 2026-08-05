@@ -6,6 +6,27 @@ class FixedClock:
     def now(self) -> str:
         return "2026-07-17T00:00:00Z"   # injected clock (ADR-003: deterministic)
 
+
+def persist_confirmed_validation(financial, review_id, dataset):
+    """Exercise the governed confirmation/start/persist validation boundary."""
+
+    proposal = financial.validation_rule_set_proposal(review_id, dataset)
+    confirmation = financial.confirm_validation_rule_set(
+        review_id,
+        dataset,
+        proposal_hash=proposal["proposal_hash"],
+    )
+    manifest = financial.start_validation_attempt(
+        confirmation["confirmation_id"], dataset
+    )
+    evaluation = financial.evaluate_manifest(dataset, manifest)
+    return financial.persist_evaluation(
+        review_id,
+        dataset,
+        evaluation,
+        confirmation_id=confirmation["confirmation_id"],
+    )
+
 def build_synthetic_ged(path: str):
     # SYNTHETIC data only. Exactly designed to yield ONE finding (account 6100).
     wb = openpyxl.Workbook(); ws = wb.active; ws.title = "GED"

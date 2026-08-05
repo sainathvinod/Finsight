@@ -1,7 +1,7 @@
 from finsight.app import build_query_services
 from finsight.domain.review_management import ReviewStatus
 from finsight.domain.source_intake import SourceRole
-from tests.support import FixedClock
+from tests.support import FixedClock, persist_confirmed_validation
 
 
 FIXTURES = "initiatives/configurable-rule-engine-v2/fixtures"
@@ -35,9 +35,8 @@ def test_integrated_review_persists_sealed_results_and_reopens(tmp_path):
     )
     assert confirmed.status is ReviewStatus.DATA_REVIEWED
 
-    evaluation = services.financial_review.evaluate(dataset)
-    projection = services.financial_review.persist_evaluation(
-        review.review_id, dataset, evaluation
+    projection = persist_confirmed_validation(
+        services.financial_review, review.review_id, dataset
     )
     assert projection["metrics"]["rule_results"] == 986
     assert len(projection["findings"]) == 5

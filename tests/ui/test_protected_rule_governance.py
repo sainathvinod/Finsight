@@ -4,14 +4,13 @@ from types import SimpleNamespace
 
 import pytest
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QDialog, QMessageBox
+from PySide6.QtWidgets import QDialog
 
 import finsight.delivery.desktop.views.rules_repository_view as rules_view
 
 from finsight.delivery.desktop.views.rules_repository_view import (
-    PROTECTED_RULE_DELETE_MESSAGE,
-    PROTECTED_RULE_DELETE_TITLE,
     ProtectedChangeDialog,
+    ProtectedCoreActionDialog,
     ProtectedDecisionDialog,
     RulesRepositoryView,
     WorkspaceBaselineDecisionDialog,
@@ -176,6 +175,7 @@ class _Controller:
         self.upgrade_requests = list(upgrade_requests)
         self.for_decision = None
         self.upgrade_for_decision = None
+        self.revalidation_entries = []
 
     def review_management_availability(self):
         return SimpleNamespace(role_labels=self.roles)
@@ -195,6 +195,83 @@ class _Controller:
 
     def validation_history(self, _review_id):
         return []
+
+    def record_revalidation_entry(self, review_id):
+        self.revalidation_entries.append(review_id)
+
+    def validation_rule_set_proposal(self, _dataset):
+        rules = list(self.bound_rules("review-001")["rules"])
+        unresolved = [
+            {
+                "rule_id": str(rule["rule_id"]),
+                "rule_version": str(rule["version"]),
+                "name": str(rule["name"]),
+                "status": str(rule["lifecycle_status"]).title(),
+            }
+            for rule in rules
+            if rule.get("lifecycle_status") in {"DRAFT", "TESTED"}
+            and not rule.get("excluded_from_proposed_set")
+        ]
+        active = [
+            rule
+            for rule in rules
+            if rule.get("bound") and rule.get("enabled", True)
+        ]
+        return {
+            "ready": not unresolved,
+            "proposal_hash": "a" * 64,
+            "rule_set_id": "ruleset-review-001-1",
+            "rule_set_version": 1,
+            "rules": [
+                {
+                    "rule_id": rule["rule_id"],
+                    "rule_version": rule["version"],
+                    "name": rule["name"],
+                    "baseline_status": rule["baseline_status"],
+                    "status": rule["lifecycle_status"].title(),
+                    "configuration": rule.get("parameters", {}),
+                }
+                for rule in active
+            ],
+            "unresolved_drafts": unresolved,
+            "excluded_drafts": [],
+            "readiness_reasons": (
+                ["Resolve or explicitly exclude every draft rule."]
+                if unresolved
+                else []
+            ),
+            "counts": {
+                "protected_core": sum(
+                    rule.get("baseline_status") == "PROTECTED_BASELINE"
+                    for rule in active
+                ),
+                "enabled_optional": sum(
+                    rule.get("baseline_status") != "PROTECTED_BASELINE"
+                    for rule in active
+                ),
+                "draft": len(unresolved),
+                "disabled": 0,
+                "retired": 0,
+            },
+            "working_data": {
+                "department_name": "Applications Enginee",
+                "department_number": "00-0245",
+                "period": "May 2026",
+                "budget_records": 71,
+                "ged_transactions": 258,
+                "source_files": [
+                    "Sample_Budget_Report.xlsx",
+                    "Sample_GED_Report.xlsx",
+                ],
+            },
+            "prior_run_id": None,
+            "same_rule_set_as_prior_run": False,
+            "changes_from_prior_run": {
+                "added": [],
+                "removed": [],
+                "changed": [],
+            },
+        }
 
     def protected_change_requests(self, *, for_decision=False):
         self.for_decision = for_decision
@@ -392,9 +469,9 @@ def test_optional_rule_ui_dispatches_versioned_lifecycle_and_shows_history(
         rules_view, "OptionalRuleDialog", AcceptedRuleDialog
     )
     monkeypatch.setattr(
-        QMessageBox,
-        "information",
-        lambda *_args, **_kwargs: QMessageBox.StandardButton.Ok,
+        rules_view.InAppMessageDialog,
+        "exec",
+        lambda _dialog: QDialog.DialogCode.Accepted,
     )
     view = RulesRepositoryView(controller)
     qtbot.addWidget(view)
@@ -412,9 +489,9 @@ def test_optional_rule_ui_dispatches_versioned_lifecycle_and_shows_history(
     view._toggle_enabled()
     view._rule_table.setCurrentItem(view._rule_table.topLevelItem(5))
     monkeypatch.setattr(
-        QMessageBox,
-        "question",
-        lambda *_args, **_kwargs: QMessageBox.StandardButton.Yes,
+        rules_view.InAppMessageDialog,
+        "exec",
+        lambda _dialog: QDialog.DialogCode.Accepted,
     )
     view._delete_selected()
 
@@ -445,17 +522,26 @@ def test_protected_rule_delete_explains_control_without_deleting(
     view.open_review(_review(), object())
     captured = {}
 
-    def fake_exec(message_box):
-        captured["title"] = message_box.windowTitle()
-        captured["text"] = message_box.text()
-        captured["details"] = message_box.informativeText()
-        return QMessageBox.StandardButton.Cancel
+    def fake_exec(dialog):
+        captured["title"] = dialog.windowTitle()
+        captured["message"] = dialog.message_label.text()
+        captured["actions"] = {
+            dialog.return_button.text(),
+            dialog.propose_button.text(),
+            dialog.optional_button.text(),
+        }
+        return QDialog.DialogCode.Rejected
 
-    monkeypatch.setattr(QMessageBox, "exec", fake_exec)
+    monkeypatch.setattr(ProtectedCoreActionDialog, "exec", fake_exec)
     view._delete_selected()
 
-    assert PROTECTED_RULE_DELETE_TITLE == "This is a protected core rule"
-    assert "cannot be deleted" in PROTECTED_RULE_DELETE_MESSAGE
+    assert captured["title"] == "Protected core rule"
+    assert "cannot be deleted or disabled" in captured["message"]
+    assert captured["actions"] == {
+        "Return to Rule",
+        "Propose New Version",
+        "Add Optional Rule",
+    }
     assert controller.delete_calls == []
 
 

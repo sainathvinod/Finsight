@@ -8,7 +8,7 @@ from finsight.application.rule_management import (
     RuleManagementService,
 )
 from finsight.domain.source_intake import SourceRole
-from tests.support import FixedClock
+from tests.support import FixedClock, persist_confirmed_validation
 
 
 FIXTURES = "initiatives/configurable-rule-engine-v2/fixtures"
@@ -55,9 +55,7 @@ def _rule_service(financial_review):
 
 
 def _persist_and_close(financial, review_id, dataset):
-    financial.persist_evaluation(
-        review_id, dataset, financial.evaluate(dataset)
-    )
+    persist_confirmed_validation(financial, review_id, dataset)
     financial.complete_review(review_id)
     return financial.results(review_id)
 
@@ -98,6 +96,281 @@ def _historical_result_content(projection):
         "findings": projection["findings"],
         "metrics": projection["metrics"],
     }
+
+
+def test_same_rule_set_rerun_is_confirmed_versioned_and_comparable(tmp_path):
+    services, review, dataset = _confirmed_review(tmp_path)
+    financial = services.financial_review
+    initial = persist_confirmed_validation(
+        financial, review.review_id, dataset
+    )
+
+    proposal = financial.validation_rule_set_proposal(
+        review.review_id, dataset
+    )
+    assert proposal["ready"] is True
+    assert proposal["same_rule_set_rerun"] is True
+    assert proposal["prior_run_id"] == initial["run_id"]
+    assert proposal["counts"] == {
+        "protected_core": 5,
+        "enabled_optional": 0,
+        "draft": 0,
+        "disabled_included": 0,
+        "disabled_available": 0,
+    }
+    confirmation = financial.confirm_validation_rule_set(
+        review.review_id,
+        dataset,
+        proposal_hash=proposal["proposal_hash"],
+    )
+    assert confirmation["actor_id"]
+    assert confirmation["run_id"].startswith("run_")
+    assert confirmation["source_generation_id"]
+    assert confirmation["source_data_version"].endswith(dataset.fingerprint)
+    assert {
+        (item["rule_id"], item["rule_version"])
+        for item in confirmation["rules"]
+        if item["included"]
+    } == {
+        (item["rule_id"], item["version"])
+        for item in initial["executions"]
+    }
+
+    manifest = financial.start_validation_attempt(
+        confirmation["confirmation_id"], dataset
+    )
+    successor = financial.persist_evaluation(
+        review.review_id,
+        dataset,
+        financial.evaluate_manifest(dataset, manifest),
+        confirmation_id=confirmation["confirmation_id"],
+    )
+    assert successor["run_id"] != initial["run_id"]
+    assert successor["generation_id"] != initial["generation_id"]
+    assert successor["rule_set_id"] == initial["rule_set_id"]
+    assert successor["revalidation_reason"] == "SAME_RULE_SET_RERUN"
+    assert successor["publication_state"] == "Working"
+    pointers = financial._uow.dal.conn.execute(
+        "SELECT working_generation_id,published_generation_id "
+        "FROM v2_review_cycle_pointers WHERE review_id=?",
+        (review.review_id,),
+    ).fetchone()
+    assert pointers == (successor["generation_id"], initial["generation_id"])
+    assert financial._uow.dal.conn.execute(
+        "SELECT COUNT(*) FROM generation_supersessions"
+    ).fetchone()[0] == 0
+    assert len(financial.validation_history(review.review_id)) == 2
+    comparison = successor["comparison"]
+    assert comparison["rules_added"] == []
+    assert comparison["rules_removed"] == []
+    assert len(comparison["rules_unchanged"]) == 5
+    assert comparison["findings_added"] == []
+    assert comparison["findings_removed"] == []
+    assert len(comparison["findings_unchanged"]) == len(
+        initial["findings"]
+    )
+
+
+def test_governed_review_disposal_removes_confirmation_and_draft_ledgers(
+    tmp_path,
+):
+    services, review, dataset = _confirmed_review(tmp_path)
+    financial = services.financial_review
+    rules = _rule_service(financial)
+    draft = rules.create_optional_draft(
+        name="Large Transaction Review",
+        purpose="Require each GED Amount to remain within the configured limit.",
+        severity="Medium",
+        operator="LTE",
+        threshold="1000000.00",
+    )
+    rules.set_draft_excluded_from_proposed_set(
+        review.review_id,
+        draft["rule_id"],
+        draft["version"],
+        excluded=True,
+    )
+    persist_confirmed_validation(financial, review.review_id, dataset)
+
+    inventory = services.review_management.prepare_disposal(
+        review.review_id
+    )
+    for table in (
+        "v2_rule_proposal_draft_events",
+        "v2_validation_rule_set_confirmations",
+        "v2_validation_attempt_events",
+        "v2_validation_confirmation_run_links",
+    ):
+        assert inventory.inventory[table] >= 1
+
+    receipt = services.review_management.confirm_disposal(
+        review.review_id, inventory.confirmation_token
+    )
+
+    for table in (
+        "v2_rule_proposal_draft_events",
+        "v2_validation_rule_set_confirmations",
+        "v2_validation_attempt_events",
+        "v2_validation_confirmation_run_links",
+    ):
+        assert receipt.deleted_counts[table] >= 1
+    assert review.review_id not in {
+        item.review_id for item in services.review_management.list_reviews()
+    }
+
+
+def test_explicit_draft_exclusion_unblocks_run_and_never_executes(tmp_path):
+    services, review, dataset = _confirmed_review(tmp_path)
+    financial = services.financial_review
+    rules = _rule_service(financial)
+    draft = rules.create_optional_draft(
+        name="Ignore Missing Content",
+        purpose="Exercise explicit proposal exclusion.",
+        severity="Medium",
+        operator="LTE",
+        threshold="5000.00",
+    )
+
+    blocked = financial.validation_rule_set_proposal(
+        review.review_id, dataset
+    )
+    assert blocked["ready"] is False
+    assert blocked["unresolved_drafts"][0]["rule_id"] == draft["rule_id"]
+    rules.set_draft_excluded_from_proposed_set(
+        review.review_id,
+        draft["rule_id"],
+        draft["version"],
+        excluded=True,
+    )
+    ready = financial.validation_rule_set_proposal(
+        review.review_id, dataset
+    )
+    assert ready["ready"] is True
+    assert ready["excluded_drafts"][0]["rule_id"] == draft["rule_id"]
+    projection = persist_confirmed_validation(
+        financial, review.review_id, dataset
+    )
+    assert draft["rule_id"] not in {
+        item["rule_id"] for item in projection["executions"]
+    }
+    assert draft["rule_id"] not in {
+        item["rule_id"] for item in projection["findings"]
+    }
+    event_types = [
+        event.event_type
+        for event in financial._audit.events(stream_type="RULE_GOVERNANCE")
+    ]
+    assert "optional_rule_excluded_from_proposed_set" in event_types
+    assert "validation_rule_set_confirmed" in {
+        event.event_type
+        for event in financial._audit.events(review_id=review.review_id)
+    }
+
+
+def test_confirmation_fails_closed_if_rule_set_changes_before_start(tmp_path):
+    services, review, dataset = _confirmed_review(tmp_path)
+    financial = services.financial_review
+    proposal = financial.validation_rule_set_proposal(
+        review.review_id, dataset
+    )
+    confirmation = financial.confirm_validation_rule_set(
+        review.review_id,
+        dataset,
+        proposal_hash=proposal["proposal_hash"],
+    )
+    rules = _rule_service(financial)
+    draft = rules.create_optional_draft(
+        name="Changed after confirmation",
+        purpose="Prove stale confirmations fail closed.",
+        severity="Low",
+        operator="LTE",
+        threshold="1000000.00",
+    )
+    rules.test_draft(
+        review.review_id, dataset, draft["rule_id"], draft["version"]
+    )
+    rules.activate_optional_version(
+        review.review_id, draft["rule_id"], draft["version"]
+    )
+
+    with pytest.raises(
+        Exception, match="Rule Set changed after confirmation"
+    ):
+        financial.start_validation_attempt(
+            confirmation["confirmation_id"], dataset
+        )
+
+
+def test_confirmation_fails_closed_when_draft_disposition_changes(tmp_path):
+    services, review, dataset = _confirmed_review(tmp_path)
+    financial = services.financial_review
+    proposal = financial.validation_rule_set_proposal(
+        review.review_id, dataset
+    )
+    confirmation = financial.confirm_validation_rule_set(
+        review.review_id,
+        dataset,
+        proposal_hash=proposal["proposal_hash"],
+    )
+    rules = _rule_service(financial)
+    rules.create_optional_draft(
+        name="Created after confirmation",
+        purpose="Prove a newly unresolved draft invalidates confirmation.",
+        severity="Low",
+        operator="LTE",
+        threshold="1000000.00",
+    )
+
+    with pytest.raises(Exception, match="no longer ready"):
+        financial.start_validation_attempt(
+            confirmation["confirmation_id"], dataset
+        )
+
+
+def test_failed_validation_attempt_is_audited_without_losing_prior_run(
+    tmp_path,
+):
+    services, review, dataset = _confirmed_review(tmp_path)
+    financial = services.financial_review
+    initial = persist_confirmed_validation(
+        financial, review.review_id, dataset
+    )
+    proposal = financial.validation_rule_set_proposal(
+        review.review_id, dataset
+    )
+    confirmation = financial.confirm_validation_rule_set(
+        review.review_id,
+        dataset,
+        proposal_hash=proposal["proposal_hash"],
+    )
+    financial.start_validation_attempt(
+        confirmation["confirmation_id"], dataset
+    )
+    financial.record_validation_failure(
+        confirmation["confirmation_id"], RuntimeError("synthetic failure")
+    )
+
+    events = financial._repo.validation_attempt_events(
+        confirmation["confirmation_id"]
+    )
+    assert [item["event_type"] for item in events] == [
+        "CONFIRMED",
+        "STARTED",
+        "FAILED",
+    ]
+    assert {item["run_id"] for item in events} == {
+        confirmation["run_id"]
+    }
+    assert financial.results(review.review_id)["run_id"] == initial["run_id"]
+    audit = financial._audit.events(review_id=review.review_id)
+    failure = next(
+        item
+        for item in audit
+        if item.event_type == "deterministic_validation_failed"
+    )
+    assert failure.outcome == "FAILED"
+    assert failure.payload["prior_run_id"] == initial["run_id"]
+    assert failure.payload["run_id"] == confirmation["run_id"]
 
 
 def test_optional_rule_lifecycle_is_versioned_tested_and_bound(tmp_path):
@@ -163,6 +436,12 @@ def test_optional_rule_lifecycle_is_versioned_tested_and_bound(tmp_path):
     )
     assert visible_active["bound"] is True
     assert visible_active["enabled"] is True
+    superseded = services.financial_review._repo.rule_version(
+        successor["rule_id"], draft["version"]
+    )
+    assert superseded["lifecycle_status"] == "RETIRED"
+    assert superseded["display_lifecycle_status"] == "SUPERSEDED"
+    assert superseded["lifecycle_reason"] == "SUPERSEDED_BY_1.0.1"
 
     disabled = rules.set_optional_enabled(
         review.review_id, successor["rule_id"], False
@@ -266,8 +545,8 @@ def test_invalid_optional_rule_edit_does_not_create_a_successor_version(tmp_path
 def test_rule_set_reanalysis_retains_prior_run_and_comparison(tmp_path):
     services, review, dataset = _confirmed_review(tmp_path)
     financial = services.financial_review
-    initial = financial.persist_evaluation(
-        review.review_id, dataset, financial.evaluate(dataset)
+    initial = persist_confirmed_validation(
+        financial, review.review_id, dataset
     )
     financial.complete_review(review.review_id)
     rules = _rule_service(financial)
@@ -285,8 +564,8 @@ def test_rule_set_reanalysis_retains_prior_run_and_comparison(tmp_path):
         review.review_id, draft["rule_id"], draft["version"]
     )
 
-    successor = financial.persist_evaluation(
-        review.review_id, dataset, financial.evaluate(dataset)
+    successor = persist_confirmed_validation(
+        financial, review.review_id, dataset
     )
     financial.complete_review(review.review_id)
 
@@ -394,6 +673,12 @@ def test_optional_rule_revalidation_pipeline_is_versioned_and_reproducible(
     rules.activate_optional_version(
         review.review_id, successor["rule_id"], successor["version"]
     )
+    predecessor = financial._repo.rule_version(
+        draft["rule_id"], draft["version"]
+    )
+    assert predecessor["lifecycle_status"] == "RETIRED"
+    assert predecessor["display_lifecycle_status"] == "SUPERSEDED"
+    assert predecessor["lifecycle_reason"] == "SUPERSEDED_BY_1.0.1"
     edited = _persist_and_close(financial, review.review_id, dataset)
 
     edited_execution = _optional_execution(edited, successor["rule_id"])

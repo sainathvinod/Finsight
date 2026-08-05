@@ -15,7 +15,12 @@ from finsight.delivery.desktop.components.appearance_control import (
 from finsight.delivery.desktop.components.inline_message import InlineMessage
 from finsight.delivery.desktop.components.confirmation_dialogs import (
     DeleteReviewDialog,
+    DialogVariant,
     GovernedSaveDialog,
+    InAppDialog,
+    InAppMessageDialog,
+    InAppTextPromptDialog,
+    show_in_app_message,
 )
 from finsight.delivery.desktop.components.charts import FinancialChartCard
 from finsight.delivery.desktop.components.iconography import (
@@ -29,6 +34,8 @@ __all__ = [
     "DetailInspector", "WorkflowRail", "AuditTimeline", "AuditTimelineRow", "ReviewProgress",
     "AppearanceControl", "AppearanceMenuButton",
     "InlineMessage",
+    "DialogVariant", "InAppDialog", "InAppMessageDialog", "InAppTextPromptDialog",
+    "show_in_app_message",
     "GovernedSaveDialog", "DeleteReviewDialog",
     "FinancialChartCard",
     "IconBadge", "content_icon",

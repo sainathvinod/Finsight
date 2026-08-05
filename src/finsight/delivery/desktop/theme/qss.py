@@ -108,6 +108,7 @@ QWidget#SourceIntake,
 QWidget#FinancialReview,
 QWidget#RulesRepository,
 QWidget#AppearanceSettings,
+QWidget#PrivateAskFinDrawer,
 QWidget#Workflow1Workspace,
 QWidget#Workflow1PageCanvas,
 QWidget#Workflow1Content,
@@ -123,6 +124,7 @@ QWidget#SourceIntake QLabel,
 QWidget#FinancialReview QLabel,
 QWidget#RulesRepository QLabel,
 QWidget#AppearanceSettings QLabel,
+QWidget#PrivateAskFinDrawer QLabel,
 QDialog QLabel {{
     background: transparent;
     color: {window_text};
@@ -142,7 +144,13 @@ QWidget[role="noticeCard"],
 QWidget[role="reviewProgress"],
 QWidget[role="chartCard"],
 QWidget[role="evidencePanel"],
-QWidget[role="landingIconBadge"] {{
+QWidget[role="landingIconBadge"],
+QWidget[role="askFinPrivacy"],
+QWidget[role="askFinInitial"],
+QWidget[role="chatBubble"],
+QWidget[role="chatEvidence"],
+QWidget[role="chatEvidenceItem"],
+QWidget[role="askFinComposerBar"] {{
     background: {base};
     color: {text};
     border: 2px solid {window_text};
@@ -609,6 +617,203 @@ QPushButton[role="assistant"]:hover,
 QToolButton[role="assistant"]:hover {{
     background: {p.assistant_hover};
     border-color: {p.assistant_hover};
+}}
+
+/* Embedded Ask Fin conversation */
+QWidget#PrivateAskFinDrawer {{
+    background: {p.canvas};
+    border-left: 1px solid {p.border};
+}}
+QFrame[role="askFinPrivacy"] {{
+    background: {p.assistant_subtle};
+    border: 1px solid {p.assistant};
+    border-radius: {t.RADIUS_MD}px;
+}}
+QLabel[role="askFinPrivacyText"] {{
+    color: {p.assistant_hover if not p.is_dark else p.assistant};
+    font-size: {points(t.FS_SMALL)};
+    font-weight: 700;
+}}
+QScrollArea#AskFinConversationScroll,
+QWidget#AskFinMessageCanvas,
+QWidget[role="chatMessageRow"] {{
+    background: transparent;
+    border: none;
+}}
+QFrame[role="askFinInitial"] {{
+    background: {p.surface};
+    border: 1px solid {p.border};
+    border-radius: {t.RADIUS_MD}px;
+}}
+QLabel[role="chatWelcome"] {{
+    color: {p.text_primary};
+    font-size: {points(t.FS_TITLE)};
+    font-weight: 700;
+}}
+QPushButton[role="askFinPrompt"] {{
+    min-height: 38px;
+    padding: {t.SP_2}px {t.SP_3}px;
+    text-align: left;
+    background: {p.surface_subtle};
+    color: {p.text_primary};
+    border: 1px solid {p.border};
+    border-radius: {t.RADIUS_MD}px;
+}}
+QPushButton[role="askFinPrompt"]:hover {{
+    background: {p.assistant_subtle};
+    border-color: {p.assistant};
+}}
+QFrame[role="chatBubble"] {{
+    background: {p.surface_raised};
+    border: 1px solid {p.border};
+    border-radius: {t.RADIUS_MD}px;
+}}
+QFrame[role="chatBubble"][speaker="user"] {{
+    background: {p.accent};
+    border-color: {p.accent};
+}}
+QFrame[role="chatBubble"][speaker="assistant"][state="loading"] {{
+    background: {p.assistant_subtle};
+    border-color: {p.assistant};
+}}
+QFrame[role="chatBubble"][speaker="assistant"][state="refused"],
+QFrame[role="chatBubble"][speaker="assistant"][state="unanswerable"] {{
+    border-left: 4px solid {p.warning};
+}}
+QLabel[role="chatSpeaker"] {{
+    color: {p.text_secondary};
+    font-size: {points(t.FS_LABEL)};
+    font-weight: 700;
+}}
+QLabel[role="chatSpeaker"][speaker="user"],
+QLabel[role="chatBody"][speaker="user"] {{
+    color: {p.text_on_accent};
+}}
+QLabel[role="chatBody"] {{
+    color: {p.text_primary};
+    font-size: {points(t.FS_BASE)};
+}}
+QWidget[role="chatResponseBody"],
+QWidget[role="chatFact"],
+QWidget[role="chatBullet"],
+QWidget[role="chatFollowUps"],
+QWidget[role="chatEvidenceGroup"],
+QWidget[role="chatEvidenceDetail"] {{
+    background: transparent;
+    border: none;
+}}
+QLabel[role="chatSectionHeading"] {{
+    color: {p.text_primary};
+    font-size: {points(t.FS_BASE)};
+    font-weight: 700;
+    padding-top: {t.SP_1}px;
+}}
+QLabel[role="chatFactLabel"] {{
+    color: {p.text_primary};
+    font-size: {points(t.FS_BASE)};
+    font-weight: 700;
+}}
+QLabel[role="chatBulletMarker"] {{
+    color: {p.assistant};
+    font-size: {points(t.FS_BASE)};
+    font-weight: 700;
+}}
+QFrame[role="chatBubble"][speaker="user"] QLabel[role="chatSectionHeading"],
+QFrame[role="chatBubble"][speaker="user"] QLabel[role="chatFactLabel"],
+QFrame[role="chatBubble"][speaker="user"] QLabel[role="chatBulletMarker"] {{
+    color: {p.text_on_accent};
+}}
+QLabel[role="chatLoading"] {{
+    color: {p.text_secondary};
+    font-size: {points(t.FS_BASE)};
+    font-style: italic;
+}}
+QLabel[role="chatGrounding"] {{
+    color: {p.success};
+    font-size: {points(t.FS_LABEL)};
+    font-weight: 650;
+}}
+QFrame[role="chatEvidence"] {{
+    background: {p.surface_subtle};
+    border: 1px solid {p.border};
+    border-radius: {t.RADIUS_SM}px;
+}}
+QLabel[role="chatEvidenceRun"] {{
+    color: {p.text_secondary};
+    font-size: {points(t.FS_LABEL)};
+}}
+QLabel[role="chatEvidenceGroupHeading"] {{
+    color: {p.text_primary};
+    font-size: {points(t.FS_SMALL)};
+    font-weight: 700;
+    padding-top: {t.SP_1}px;
+}}
+QFrame[role="chatEvidenceItem"] {{
+    background: {p.surface};
+    border: 1px solid {p.border};
+    border-radius: {t.RADIUS_SM}px;
+}}
+QLabel[role="chatEvidenceLabel"] {{
+    color: {p.text_primary};
+    font-size: {points(t.FS_SMALL)};
+    font-weight: 650;
+}}
+QLabel[role="chatEvidenceMetadata"] {{
+    color: {p.text_secondary};
+    font-size: {points(t.FS_LABEL)};
+}}
+QLabel[role="chatEvidenceDetailLabel"] {{
+    color: {p.text_secondary};
+    font-size: {points(t.FS_LABEL)};
+    font-weight: 700;
+}}
+QLabel[role="chatEvidenceDetailValue"] {{
+    color: {p.text_primary};
+    font-size: {points(t.FS_LABEL)};
+}}
+QLabel[role="chatFollowUpHeading"] {{
+    color: {p.text_secondary};
+    font-size: {points(t.FS_LABEL)};
+    font-weight: 700;
+}}
+QPushButton[role="askFinFollowUp"] {{
+    min-height: 30px;
+    padding: {t.SP_1}px {t.SP_2}px;
+    text-align: left;
+    background: {p.assistant_subtle};
+    color: {p.assistant_hover if not p.is_dark else p.text_primary};
+    border: 1px solid {p.assistant};
+    border-radius: {t.RADIUS_MD}px;
+    font-size: {points(t.FS_SMALL)};
+}}
+QPushButton[role="askFinFollowUp"]:hover {{
+    background: {p.surface_hover};
+    border-color: {p.assistant_hover};
+}}
+QPushButton[role="askFinFollowUp"]:focus {{
+    border: 2px solid {p.focus_ring};
+}}
+QPushButton[role="askFinFollowUp"]:disabled {{
+    color: {p.text_muted};
+    border-color: {p.border};
+    background: {p.surface_subtle};
+}}
+QFrame[role="askFinComposerBar"] {{
+    background: {p.surface};
+    border: 1px solid {p.border_strong};
+    border-radius: {t.RADIUS_MD}px;
+}}
+QPlainTextEdit#AskFinComposerInput {{
+    background: transparent;
+    color: {p.text_primary};
+    border: none;
+    padding: {t.SP_1}px;
+    selection-background-color: {p.accent_subtle};
+    selection-color: {p.text_primary};
+}}
+QPlainTextEdit#AskFinComposerInput:focus {{
+    border: 2px solid {p.focus_ring};
+    border-radius: {t.RADIUS_SM}px;
 }}
 QPushButton[role="metricButton"] {{
     min-height: 58px;

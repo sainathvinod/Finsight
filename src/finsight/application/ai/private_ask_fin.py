@@ -4,11 +4,13 @@ The service is intentionally separate from the deterministic Rule Engine.  It
 can explain only sealed V2 projections and fingerprint-matched source records.
 It has no external retrieval seam and no provider fallback.
 """
+
 from __future__ import annotations
 
 import re
 import time
 from dataclasses import replace
+from decimal import Decimal, InvalidOperation
 from typing import Any, Callable, Mapping, Optional, Sequence
 
 from finsight.application.ai.errors import (
@@ -39,7 +41,19 @@ from finsight.application.ai.private_grounding import (
     PrivateGroundingError,
     PrivateGroundingScopeError,
 )
-from finsight.application.ai.private_prompt import build_private_prompt
+from finsight.application.ai.private_intent import (
+    AskFinIntent,
+    AskFinIntentClassification,
+    application_help_response,
+    clarification_response,
+    classify_ask_fin_intent,
+    social_response,
+)
+from finsight.application.ai.private_prompt import (
+    build_deterministic_grounded_answer,
+    build_private_prompt,
+)
+from finsight.application.ai.private_response import build_business_response
 from finsight.application.ai.validation import ResponseValidator
 from finsight.diagnostics import get_logger
 from finsight.domain.ai.contracts import ProviderConfiguration
@@ -57,15 +71,152 @@ LOCAL_MODEL_OUTAGE = (
     "Explain This and all deterministic financial results remain available."
 )
 INSUFFICIENT_EVIDENCE = (
-    "I do not have enough recorded evidence in this review to answer that question."
+    "I don’t have enough verified information in this review to answer that. "
+    "I can show the available findings, source evidence, or supported review "
+    "details instead."
 )
+
+
+def _apply_selected_context_intent(
+    classification: AskFinIntentClassification,
+    context: Optional[AskFinContext],
+) -> AskFinIntentClassification:
+    """Keep broad natural-language requests inside the selected object scope."""
+
+    if context is None or classification.intent is not AskFinIntent.REVIEW_SUMMARY:
+        return classification
+    scoped_intent = {
+        "account": AskFinIntent.ACCOUNT,
+        "vendor": AskFinIntent.VENDOR,
+        "department": AskFinIntent.DEPARTMENT,
+        "transaction": AskFinIntent.GED_TRANSACTION,
+        "finding": AskFinIntent.FINDINGS_SUMMARY,
+    }.get(context.object_type.casefold())
+    if scoped_intent is None:
+        return classification
+    return AskFinIntentClassification(
+        scoped_intent,
+        uses_prior_context=True,
+    )
+
+
+_GENERIC_CONTEXT_EVIDENCE = re.compile(
+    r"^\s*(?:show|open|give|display)\s+(?:me\s+)?(?:the\s+)?"
+    r"(?:supporting\s+|source\s+)?(?:evidence|sources?|rows?)"
+    r"(?:\s+(?:for|behind)\s+(?:this|that|it))?[\s?.!]*$",
+    re.IGNORECASE,
+)
+_SPECIFIC_CONTEXT_KINDS = frozenset(
+    {"account", "vendor", "department", "transaction", "finding"}
+)
+_MISSING_OR_DUPLICATE_GED = re.compile(
+    r"\b(?:missing|required|duplicate)\b.*\b(?:ged|amount|field|data|"
+    r"transaction|journal|invoice)\b|"
+    r"\bged\b.*\b(?:missing|required|duplicate)\b",
+    re.IGNORECASE,
+)
+_SUPPORTED_FINDINGS_PLAN = re.compile(
+    r"\b(?:what(?:'s|\s+is)\s+wrong|look\s+at\s+first|inspect\s+first|"
+    r"highest[-\s]priority|most\s+important|top\s+findings?|priorities|"
+    r"needs?\s+attention|why\s+is\s+(?:this|the\s+review)\s+incomplete|"
+    r"summar(?:y|ize).*\bfindings?|which\s+findings?|"
+    r"explain.*\bfinding|why.*\bfinding)\b",
+    re.IGNORECASE,
+)
+
+
+def _selected_context_for_question(
+    classification: AskFinIntentClassification,
+    context: Optional[AskFinContext],
+    question: str,
+) -> Optional[AskFinContext]:
+    """Use the last object scope only for a genuine follow-up."""
+
+    if context is None:
+        return None
+    kind = context.object_type.casefold()
+    if kind not in _SPECIFIC_CONTEXT_KINDS:
+        # A broad review summary is not a specific evidence scope.
+        return None
+    if classification.intent is AskFinIntent.CLARIFICATION_FOLLOW_UP:
+        return context
+    if (
+        classification.intent is AskFinIntent.EVIDENCE
+        and _GENERIC_CONTEXT_EVIDENCE.fullmatch(question)
+    ):
+        return context
+    lowered = question.casefold()
+    context_identifiers = {
+        context.object_id.casefold(),
+        context.object_id.split("|")[-1].casefold(),
+    }
+    if any(
+        len(identifier) >= 3 and identifier in lowered
+        for identifier in context_identifiers
+    ):
+        return context
+    if re.search(
+        rf"\b(?:this|that|selected)\s+{re.escape(kind)}\b",
+        question,
+        re.IGNORECASE,
+    ):
+        return context
+    if re.fullmatch(
+        r"\s*(?:why|explain\s+this|tell\s+me\s+more|show\s+me\s+more)"
+        r"[\s?.!]*",
+        question,
+        re.IGNORECASE,
+    ):
+        return context
+    return None
+
+
+def _supports_verified_review_plan(
+    question: str,
+    grounding: PrivateAskFinGrounding,
+    classification: AskFinIntentClassification,
+) -> bool:
+    """Select only questions covered by a verified active-review plan.
+
+    Common review summaries, finding explanations, and evidence requests are
+    already fully represented by exact application-authored claims. They do
+    not make local-model formatting or latency an answer gate. Entity-specific
+    and genuinely unsupported requests retain the normal model and hard-fail
+    paths.
+    """
+
+    if (
+        grounding.mode is not AskFinMode.FINANCIAL_REVIEW
+        or not grounding.validation_run_id
+    ):
+        return False
+    if classification.intent in {
+        AskFinIntent.REVIEW_SUMMARY,
+        AskFinIntent.EVIDENCE,
+        AskFinIntent.CLARIFICATION_FOLLOW_UP,
+    }:
+        return True
+    if classification.intent is AskFinIntent.FINDINGS_SUMMARY:
+        return (
+            _SUPPORTED_FINDINGS_PLAN.search(question) is not None
+            or (
+                grounding.context is not None
+                and grounding.context.object_type.casefold() == "finding"
+            )
+        )
+    return (
+        classification.intent is AskFinIntent.GED_TRANSACTION
+        and _MISSING_OR_DUPLICATE_GED.search(question) is not None
+    )
+
+
 PREVALIDATION_FINANCIAL = (
     "Validation results are not available yet. Complete the review and run "
     "validation first. I can help you get to that step."
 )
 DECISION_REFUSAL = (
-    "I can’t make or authorize that decision. I can summarize the recorded "
-    "facts, show the supporting evidence, explain the applicable rule, and "
+    "I can’t make or authorize that decision. I can summarize the facts, "
+    "show the evidence, explain the applicable rule, and "
     "outline considerations for an authorized reviewer."
 )
 SAFE_RESPONSE_FAILURE = (
@@ -289,9 +440,12 @@ _PROHIBITED_ANSWER_LANGUAGE = re.compile(
 )
 
 _FINANCIAL_TOKEN = re.compile(
-    r"(?:[-−+]?\$[\d,]+(?:\.\d+)?|[-+]?\d+(?:\.\d+)?%|"
+    r"(?:[-−+]?\$(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?|"
+    r"[-+]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?%|"
     r"\b\d{4}-\d{2}-\d{2}\b|"
-    r"(?<![\w])[-+]?\d[\d,]*(?:\.\d+)?(?![\w]))"
+    r"\bv?\d+\.\d+\.\d+\b|"
+    r"(?<![A-Za-z0-9_-])[-+]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?"
+    r"(?![A-Za-z0-9_-]))"
 )
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+|\n+")
 _INLINE_CITATION = re.compile(r"\[([a-z][a-z-]*:[^\[\]\s]+)\]")
@@ -323,6 +477,7 @@ _CLAIM_PREDICATES = frozenset(
         "source_row",
         "utilization",
         "variance",
+        "version",
         "actual",
     }
 )
@@ -355,14 +510,45 @@ def _string_fact_leaves(
         and path
         and (
             path[-1].casefold().endswith("_count")
-            or path[-1].casefold() in {"findings", "source_row", "row"}
-            or (
-                len(path) >= 2
-                and path[-2].casefold().endswith("_rows")
-            )
+            or path[-1].casefold()
+            in {
+                "count",
+                "duplicate_transactions",
+                "findings",
+                "missing_required_data",
+                "source_row",
+                "row",
+            }
+            or (len(path) >= 2 and path[-2].casefold().endswith("_rows"))
         )
     ):
         output.append((".".join(path), str(value)))
+    elif (
+        isinstance(value, (int, float, Decimal))
+        and not isinstance(value, bool)
+        and len(path) >= 2
+        and path[-2].casefold() in {"fields", "original_fields"}
+        and path[-1].casefold()
+        in {
+            "invoice_amt",
+            "amount",
+            "bgt",
+            "atd",
+            "etc",
+            "eac",
+            "delta",
+        }
+    ):
+        output.append((".".join(path), str(value)))
+        try:
+            output.append(
+                (
+                    ".".join(path),
+                    f"${Decimal(str(value)):,.2f}",
+                )
+            )
+        except (InvalidOperation, ValueError):
+            pass
     elif isinstance(value, Mapping):
         for key, item in value.items():
             output.extend(_string_fact_leaves(item, path + (str(key),)))
@@ -393,6 +579,7 @@ def _path_role(path: str) -> Optional[str]:
         "budget": "bgt",
         "budget_label": "bgt",
         "actual_ged": "actual",
+        "actual_spend": "actual",
         "ged_label": "actual",
         "summed_ged_amount": "actual",
         "summed_ged_amount_label": "actual",
@@ -410,10 +597,14 @@ def _path_role(path: str) -> Optional[str]:
         "actual_variance": "variance",
         "actual_variance_label": "variance",
         "actual_variance_percentage_label": "variance",
+        "variance_percentage": "variance",
         "variance": "variance",
         "variance_label": "variance",
         "budget_utilization": "utilization",
         "budget_utilization_label": "utilization",
+        "count": "count",
+        "duplicate_transactions": "count",
+        "missing_required_data": "count",
         "amount": "amount",
         "amount_label": "amount",
         "invoice_amt": "invoice_amount",
@@ -421,6 +612,7 @@ def _path_role(path: str) -> Optional[str]:
         "invoice_amt_label": "invoice_amount",
         "invoice_amount_label": "invoice_amount",
         "findings": "count",
+        "rule_version": "version",
     }
     if leaf in exact:
         return exact[leaf]
@@ -478,16 +670,33 @@ _ROLE_PATTERNS: tuple[tuple[str, re.Pattern[str], int], ...] = (
         ),
         3,
     ),
+    ("amount", re.compile(r"\b(?:duplicate-copy\s+)?exposure\b", re.IGNORECASE), 2),
     ("account", re.compile(r"\baccount\b", re.IGNORECASE), 2),
     ("department", re.compile(r"\bdepartment\b|\bdept\b", re.IGNORECASE), 2),
-    ("source_row", re.compile(r"\bsource\s+row\b|\brow\b", re.IGNORECASE), 2),
+    (
+        "source_row",
+        re.compile(r"\bsource\s+rows?\b|\brows?\b", re.IGNORECASE),
+        2,
+    ),
     ("date", re.compile(r"\bdate\b", re.IGNORECASE), 2),
     (
         "period",
-        re.compile(r"\breporting\s+period\b|\bfiscal\s+period\b|\bperiod\b", re.IGNORECASE),
+        re.compile(
+            r"\breporting\s+period\b|\bfiscal\s+period\b|\bperiod\b", re.IGNORECASE
+        ),
         2,
     ),
-    ("count", re.compile(r"\bcount\b|\btransactions?\b|\bfindings?\b", re.IGNORECASE), 3),
+    (
+        "count",
+        re.compile(
+            r"\bcount\b|\btransactions?\b|\bfindings?\b|"
+            r"\bmissing\b|\brequired\s+(?:data|values?)\b|"
+            r"\brule\s+results?\b",
+            re.IGNORECASE,
+        ),
+        3,
+    ),
+    ("version", re.compile(r"\bversion\b", re.IGNORECASE), 1),
 )
 
 
@@ -495,6 +704,14 @@ def _context_role(text: str, start: int, end: int) -> Optional[str]:
     token = text[start:end]
     if re.fullmatch(r"\d{4}-\d{2}-\d{2}", token):
         return "date"
+    if re.fullmatch(r"\d{4}", token) and re.search(
+        r"\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|"
+        r"Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|"
+        r"Nov(?:ember)?|Dec(?:ember)?)\s+$",
+        text[max(0, start - 12) : start],
+        re.IGNORECASE,
+    ):
+        return "period"
     candidates: list[tuple[int, int, str]] = []
     for role, pattern, priority in _ROLE_PATTERNS:
         for match in pattern.finditer(text):
@@ -557,7 +774,17 @@ def _supports_directional_claim(
 ) -> bool:
     normalized = sentence.casefold()
     for phrase, expected_fragments in (
-        ("over budget", ("over_budget", "variance", "actual", "explanation")),
+        (
+            "over budget",
+            (
+                "over_budget",
+                "variance",
+                "actual",
+                "explanation",
+                "what_happened",
+                "highest_priority_findings",
+            ),
+        ),
         ("under budget", ("variance", "actual", "explanation")),
     ):
         if phrase not in normalized:
@@ -566,9 +793,12 @@ def _supports_directional_claim(
         for path, value in leaves:
             path_normalized = path.casefold()
             if any(fragment in path_normalized for fragment in expected_fragments):
-                if phrase in value.casefold() or (
-                    phrase == "over budget" and "exceeded bgt" in value.casefold()
-                ) or "over_budget" in path_normalized:
+                if (
+                    phrase in value.casefold()
+                    or (phrase == "over budget" and "exceeded bgt" in value.casefold())
+                    or (phrase == "over budget" and "overrun" in value.casefold())
+                    or "over_budget" in path_normalized
+                ):
                     supported = True
                     break
         if not supported:
@@ -796,6 +1026,136 @@ def _supports_status_claim(
     return True
 
 
+def _citation_evidence_details(
+    record: GroundedFinSightRecord,
+) -> Mapping[str, Any]:
+    """Project readable evidence fields from one already-verified record."""
+
+    facts = record.facts
+    kind = record.object_type.casefold()
+    details: dict[str, Any] = {
+        key: value
+        for key, value in dict(record.navigation_target).items()
+        if value not in (None, "")
+    }
+    if kind in {"transaction", "budget-source"}:
+        fields = facts.get("fields")
+        cells = facts.get("cells")
+        if not isinstance(fields, Mapping):
+            fields = {}
+        if not isinstance(cells, Mapping):
+            cells = {}
+        primary_field = "amount" if kind == "transaction" else "bgt"
+        details.update(
+            {
+                "source_file": facts.get("source_file"),
+                "source_role": facts.get("source_role"),
+                "worksheet": facts.get("worksheet"),
+                "source_row": facts.get("source_row"),
+                "field": primary_field,
+                "cell": cells.get(primary_field),
+                "account_number": fields.get("account_number"),
+                "account_name": fields.get("account_name"),
+                "vendor": fields.get("vendor_name"),
+                "transaction_reference": fields.get("journal_number"),
+                "amount": fields.get(primary_field),
+            }
+        )
+        details["cells"] = dict(cells)
+        details["fields"] = dict(fields)
+    elif kind in {"finding", "rule-result"}:
+        explanation = facts.get("explain_this")
+        supporting: Mapping[str, Any] = {}
+        technical: Mapping[str, Any] = {}
+        transactions: Sequence[Any] = ()
+        if isinstance(explanation, Mapping):
+            supporting_value = explanation.get("supporting_evidence")
+            technical_value = explanation.get("technical_details")
+            if isinstance(supporting_value, Mapping):
+                supporting = supporting_value
+            if isinstance(technical_value, Mapping):
+                technical = technical_value
+            transaction_value = explanation.get("contributing_transactions")
+            if isinstance(transaction_value, (list, tuple)):
+                transactions = transaction_value
+        lineage = supporting.get("lineage")
+        first_lineage = (
+            next(
+                (item for item in lineage if isinstance(item, Mapping)),
+                {},
+            )
+            if isinstance(lineage, (list, tuple))
+            else {}
+        )
+        first_transaction = next(
+            (item for item in transactions if isinstance(item, Mapping)),
+            {},
+        )
+        vendors = supporting.get("vendors")
+        vendor_label = (
+            ", ".join(str(item) for item in vendors if str(item))
+            if isinstance(vendors, (list, tuple))
+            else ""
+        )
+        details.update(
+            {
+                "source_file": (
+                    first_lineage.get("source_file")
+                    or first_lineage.get("workbook")
+                ),
+                "source_role": first_lineage.get("source_role"),
+                "worksheet": (
+                    first_lineage.get("worksheet")
+                    or first_lineage.get("sheet")
+                ),
+                "source_row": first_lineage.get(
+                    "row", first_lineage.get("source_row")
+                ),
+                "field": (
+                    first_lineage.get("field")
+                    or first_lineage.get("field_name")
+                ),
+                "cell": first_lineage.get("cell"),
+                "account_number": supporting.get("account_number"),
+                "account_name": supporting.get("account_name"),
+                "vendor": vendor_label or first_transaction.get("vendor"),
+                "transaction_reference": first_transaction.get(
+                    "journal_or_invoice_reference"
+                ),
+                "amount": (
+                    supporting.get("variance")
+                    or first_transaction.get("amount_label")
+                ),
+                "rule_name": (
+                    technical.get("rule_name")
+                    or facts.get("rule_name")
+                ),
+                "rule_version": (
+                    technical.get("rule_version")
+                    or facts.get("rule_version")
+                ),
+                "validation_run_id": (
+                    technical.get("validation_run_id")
+                    or facts.get("validation_run_id")
+                ),
+                "lineage": list(lineage or ()),
+                "contributing_transactions": list(transactions),
+            }
+        )
+    elif kind == "account":
+        details.update(
+            {
+                "account_number": facts.get("account_number"),
+                "account_name": facts.get("account_name"),
+                "amount": facts.get("summed_ged_amount_label"),
+                "vendors": list(facts.get("vendors") or ()),
+            }
+        )
+    return {
+        key: value for key, value in details.items() if value not in (None, "")
+    }
+
+
 class PrivateAskFinService:
     """Private local explanation service over one authorized V2 review."""
 
@@ -837,9 +1197,7 @@ class PrivateAskFinService:
     ) -> PrivateAskFinSession:
         self._authorize(user_id, review_id)
         self._require_active_review(review_id)
-        grounding = self._grounding.context(
-            review_id, selected_context=context
-        )
+        grounding = self._grounding.context(review_id, selected_context=context)
         greeting = (
             HELP_GREETING
             if grounding.mode is AskFinMode.APPLICATION_HELP
@@ -859,23 +1217,104 @@ class PrivateAskFinService:
     def ask(self, request: PrivateAskFinRequest) -> PrivateAskFinResult:
         started = self._monotonic()
         grounding: Optional[PrivateAskFinGrounding] = None
+        trigger = decision_boundary_trigger(request.question)
+        classification = classify_ask_fin_intent(
+            request.question,
+            has_context=request.context is not None,
+            prohibited=trigger is not None,
+        )
+        selected_context = _selected_context_for_question(
+            classification,
+            request.context,
+            request.question,
+        )
+        classification = _apply_selected_context_intent(
+            classification,
+            selected_context,
+        )
         try:
             self._authorize(request.user_id, request.review_id)
             self._require_active_review(request.review_id)
-            if request.context and request.context.review_id != request.review_id:
+        except Exception:
+            # Authorization failures and unknown review identifiers fail closed.
+            return self._complete(
+                request,
+                started,
+                grounding,
+                status=PrivateAskFinStatus.REFUSED,
+                answer="Ask Fin is not authorized for this review.",
+                failure_state="authorization_denied",
+                classification=classification,
+            )
+
+        if request.context and request.context.review_id != request.review_id:
+            return self._complete(
+                request,
+                started,
+                grounding,
+                status=PrivateAskFinStatus.REFUSED,
+                answer=INSUFFICIENT_EVIDENCE,
+                failure_state="context_review_mismatch",
+                refusal_trigger="cross_review_context",
+                classification=classification,
+            )
+
+        if trigger:
+            return self._complete(
+                request,
+                started,
+                grounding,
+                status=PrivateAskFinStatus.REFUSED,
+                answer=DECISION_REFUSAL,
+                refusal_trigger=trigger,
+                classification=classification,
+            )
+
+        if classification.intent is AskFinIntent.GREETING_SOCIAL:
+            return self._complete(
+                request,
+                started,
+                grounding,
+                status=PrivateAskFinStatus.OK,
+                answer=social_response(request.question),
+                classification=classification,
+            )
+
+        if classification.intent is AskFinIntent.APPLICATION_HELP:
+            return self._complete(
+                request,
+                started,
+                grounding,
+                status=PrivateAskFinStatus.OK,
+                answer=application_help_response(request.question),
+                classification=classification,
+            )
+
+        if classification.intent is AskFinIntent.UNSUPPORTED:
+            if classification.clarification_required:
                 return self._complete(
                     request,
                     started,
                     grounding,
-                    status=PrivateAskFinStatus.REFUSED,
-                    answer=DECISION_REFUSAL,
-                    failure_state="context_review_mismatch",
-                    refusal_trigger="cross_review_context",
+                    status=PrivateAskFinStatus.OK,
+                    answer=clarification_response(request.question),
+                    classification=classification,
                 )
+            return self._complete(
+                request,
+                started,
+                grounding,
+                status=PrivateAskFinStatus.UNANSWERABLE,
+                answer=INSUFFICIENT_EVIDENCE,
+                failure_state="unsupported_question",
+                classification=classification,
+            )
+
+        try:
             grounding = self._grounding.context(
                 request.review_id,
                 question=request.question,
-                selected_context=request.context,
+                selected_context=selected_context,
             )
         except PrivateGroundingScopeError:
             return self._complete(
@@ -886,6 +1325,7 @@ class PrivateAskFinService:
                 answer=INSUFFICIENT_EVIDENCE,
                 failure_state="scope_denied",
                 refusal_trigger="cross_review_scope",
+                classification=classification,
             )
         except PrivateGroundingError:
             return self._complete(
@@ -895,9 +1335,9 @@ class PrivateAskFinService:
                 status=PrivateAskFinStatus.UNANSWERABLE,
                 answer=INSUFFICIENT_EVIDENCE,
                 failure_state="sealed_grounding_unavailable",
+                classification=classification,
             )
         except Exception:
-            # Authorization failures and unknown review identifiers fail closed.
             return self._complete(
                 request,
                 started,
@@ -905,17 +1345,27 @@ class PrivateAskFinService:
                 status=PrivateAskFinStatus.REFUSED,
                 answer="Ask Fin is not authorized for this review.",
                 failure_state="authorization_denied",
+                classification=classification,
             )
 
-        trigger = decision_boundary_trigger(request.question)
-        if trigger:
+        if (
+            selected_context is not None
+            and request.context is not None
+            and request.context.validation_run_id
+            and request.context.validation_run_id != grounding.validation_run_id
+        ):
             return self._complete(
                 request,
                 started,
                 grounding,
                 status=PrivateAskFinStatus.REFUSED,
-                answer=DECISION_REFUSAL,
-                refusal_trigger=trigger,
+                answer=(
+                    "That follow-up belongs to an earlier validation run. "
+                    "Open the current result and ask again."
+                ),
+                failure_state="context_validation_run_mismatch",
+                refusal_trigger="stale_validation_run_context",
+                classification=classification,
             )
 
         if (
@@ -929,6 +1379,7 @@ class PrivateAskFinService:
                 status=PrivateAskFinStatus.UNANSWERABLE,
                 answer=PREVALIDATION_FINANCIAL,
                 failure_state="validation_results_unavailable",
+                classification=classification,
             )
 
         try:
@@ -945,7 +1396,22 @@ class PrivateAskFinService:
                 failure_state=(
                     getattr(status, "reason", None) or "local_model_unavailable"
                 ),
+                provider="ollama",
             )
+
+        if _supports_verified_review_plan(
+            request.question,
+            grounding,
+            classification,
+        ):
+            planned = self._deterministic_review_response(
+                request,
+                started,
+                grounding,
+                classification=classification,
+            )
+            if planned is not None:
+                return planned
 
         prompt = build_private_prompt(grounding, request.question.strip())
         try:
@@ -958,6 +1424,7 @@ class PrivateAskFinService:
                 status=PrivateAskFinStatus.UNAVAILABLE,
                 answer=LOCAL_MODEL_OUTAGE,
                 failure_state="local_model_unavailable",
+                provider="ollama",
             )
         except ProviderError:
             return self._complete(
@@ -967,16 +1434,26 @@ class PrivateAskFinService:
                 status=PrivateAskFinStatus.FAILED,
                 answer=SAFE_RESPONSE_FAILURE,
                 failure_state="local_model_error",
+                provider="ollama",
             )
 
-        raw_model_version = str(
-            raw.metadata.get("model_version") or raw.model
-        )
+        raw_model_version = str(raw.metadata.get("model_version") or raw.model)
         try:
             validated = self._validator.validate(
                 raw.text, schema_version=prompt.schema_version
             )
         except ResponseFormatError:
+            recovered = self._deterministic_recovery(
+                request,
+                started,
+                grounding,
+                failure_state="invalid_local_model_response",
+                provider=raw.provider,
+                model=raw.model,
+                model_version=raw_model_version,
+            )
+            if recovered is not None:
+                return recovered
             return self._complete(
                 request,
                 started,
@@ -990,6 +1467,17 @@ class PrivateAskFinService:
             )
 
         if validated.unable_to_answer:
+            recovered = self._deterministic_recovery(
+                request,
+                started,
+                grounding,
+                failure_state="model_reported_insufficient_evidence",
+                provider=raw.provider,
+                model=raw.model,
+                model_version=raw_model_version,
+            )
+            if recovered is not None:
+                return recovered
             return self._complete(
                 request,
                 started,
@@ -1003,6 +1491,31 @@ class PrivateAskFinService:
             )
 
         if _unsafe_output_decision_language(validated.answer_text):
+            # The user's decision intent is rejected before the provider is
+            # invoked.  For an otherwise supported read-only question, do not
+            # let a small local model's unsolicited recommendation turn a
+            # valid review question into a refusal.  Discard the model prose
+            # and replace it only with application-authored closed claims
+            # that pass the normal citation/value verifier.
+            recovered = (
+                self._deterministic_recovery(
+                    request,
+                    started,
+                    grounding,
+                    failure_state="unsafe_model_decision_language",
+                    provider=raw.provider,
+                    model=raw.model,
+                    model_version=raw_model_version,
+                )
+                if _supports_verified_review_plan(
+                    request.question,
+                    grounding,
+                    classification,
+                )
+                else None
+            )
+            if recovered is not None:
+                return recovered
             return self._complete(
                 request,
                 started,
@@ -1021,6 +1534,25 @@ class PrivateAskFinService:
             grounding.records,
         )
         if verified is None:
+            recovered = (
+                self._deterministic_recovery(
+                    request,
+                    started,
+                    grounding,
+                    failure_state="model_response_verification_failed",
+                    provider=raw.provider,
+                    model=raw.model,
+                    model_version=raw_model_version,
+                )
+                if _supports_verified_review_plan(
+                    request.question,
+                    grounding,
+                    classification,
+                )
+                else None
+            )
+            if recovered is not None:
+                return recovered
             return self._complete(
                 request,
                 started,
@@ -1032,6 +1564,49 @@ class PrivateAskFinService:
                 model=raw.model,
                 model_version=raw_model_version,
             )
+        response_metadata = build_business_response(
+            grounding,
+            request.question,
+            classification.intent,
+        )
+        if response_metadata is not None:
+            canonical_citations = self._verify_answer(
+                response_metadata.answer_text,
+                response_metadata.citation_keys,
+                grounding.records,
+            )
+            if canonical_citations is None:
+                return self._complete(
+                    request,
+                    started,
+                    grounding,
+                    status=PrivateAskFinStatus.FAILED,
+                    answer=SAFE_RESPONSE_FAILURE,
+                    failure_state="deterministic_response_verification_failed",
+                    provider=raw.provider,
+                    model=raw.model,
+                    model_version=raw_model_version,
+                    classification=classification,
+                )
+            # The model response has passed closed-claim verification. Render
+            # the application-authored response plan so answer depth and
+            # evidence structure stay consistent across local model versions.
+            # This plan only arranges exact claims from the sealed run and is
+            # verified again above before display.
+            return self._complete(
+                request,
+                started,
+                grounding,
+                status=PrivateAskFinStatus.OK,
+                answer=response_metadata.answer_text,
+                citations=canonical_citations,
+                provider=raw.provider,
+                model=raw.model,
+                model_version=raw_model_version,
+                classification=classification,
+                resolved_context=response_metadata.resolved_context,
+                follow_up_questions=response_metadata.follow_up_questions,
+            )
         return self._complete(
             request,
             started,
@@ -1042,6 +1617,139 @@ class PrivateAskFinService:
             provider=raw.provider,
             model=raw.model,
             model_version=raw_model_version,
+            classification=classification,
+            resolved_context=(
+                response_metadata.resolved_context
+                if response_metadata is not None
+                else grounding.context
+            ),
+            follow_up_questions=(
+                response_metadata.follow_up_questions
+                if response_metadata is not None
+                else grounding.suggested_questions[:4]
+            ),
+        )
+
+    def _deterministic_review_response(
+        self,
+        request: PrivateAskFinRequest,
+        started: float,
+        grounding: PrivateAskFinGrounding,
+        *,
+        classification: AskFinIntentClassification,
+    ) -> Optional[PrivateAskFinResult]:
+        """Return an active-run response without making model prose a gate."""
+
+        business_response = build_business_response(
+            grounding,
+            request.question,
+            classification.intent,
+        )
+        if business_response is None:
+            return None
+        verified = self._verify_answer(
+            business_response.answer_text,
+            business_response.citation_keys,
+            grounding.records,
+        )
+        if verified is None:
+            return self._complete(
+                request,
+                started,
+                grounding,
+                status=PrivateAskFinStatus.FAILED,
+                answer=SAFE_RESPONSE_FAILURE,
+                failure_state="deterministic_response_verification_failed",
+                provider="finsight",
+                model="deterministic-review-v1",
+                classification=classification,
+            )
+        return self._complete(
+            request,
+            started,
+            grounding,
+            status=PrivateAskFinStatus.OK,
+            answer=business_response.answer_text,
+            citations=verified,
+            provider="finsight",
+            model="deterministic-review-v1",
+            model_version="deterministic-review-v1",
+            classification=classification,
+            resolved_context=business_response.resolved_context,
+            follow_up_questions=business_response.follow_up_questions,
+        )
+
+    def _deterministic_recovery(
+        self,
+        request: PrivateAskFinRequest,
+        started: float,
+        grounding: PrivateAskFinGrounding,
+        *,
+        failure_state: str,
+        provider: str,
+        model: str,
+        model_version: str,
+    ) -> Optional[PrivateAskFinResult]:
+        classification = classify_ask_fin_intent(
+            request.question,
+            has_context=request.context is not None,
+        )
+        selected_context = _selected_context_for_question(
+            classification,
+            request.context,
+            request.question,
+        )
+        classification = _apply_selected_context_intent(
+            classification,
+            selected_context,
+        )
+        business_response = build_business_response(
+            grounding,
+            request.question,
+            classification.intent,
+        )
+        if business_response is not None:
+            answer = business_response.answer_text
+            citation_keys = business_response.citation_keys
+            resolved_context = business_response.resolved_context
+            follow_up_questions = business_response.follow_up_questions
+        else:
+            if classification.intent is AskFinIntent.EVIDENCE:
+                # Evidence requests must resolve to a specific recorded object
+                # through the current-run business-response plan.  The older
+                # generic closed-claim fallback can summarize review records,
+                # but using it here would make an unknown explicit target
+                # appear answerable with unrelated evidence.
+                return None
+            candidate = build_deterministic_grounded_answer(
+                grounding, request.question
+            )
+            if candidate is None:
+                return None
+            answer, citation_keys = candidate
+            resolved_context = grounding.context
+            follow_up_questions = grounding.suggested_questions[:4]
+        verified = self._verify_answer(
+            answer,
+            citation_keys,
+            grounding.records,
+        )
+        if verified is None:
+            return None
+        return self._complete(
+            request,
+            started,
+            grounding,
+            status=PrivateAskFinStatus.OK,
+            answer=answer,
+            citations=verified,
+            failure_state=f"{failure_state}_recovered_from_closed_claims",
+            provider=provider,
+            model=model,
+            model_version=model_version,
+            classification=classification,
+            resolved_context=resolved_context,
+            follow_up_questions=follow_up_questions,
         )
 
     def _verify_answer(
@@ -1104,6 +1812,7 @@ class PrivateAskFinService:
                 object_id=by_key[key].object_id,
                 label=by_key[key].label,
                 navigation_target=dict(by_key[key].navigation_target),
+                evidence_details=_citation_evidence_details(by_key[key]),
             )
             for key in citation_keys
         )
@@ -1119,22 +1828,50 @@ class PrivateAskFinService:
         citations: Sequence[PrivateCitation] = (),
         refusal_trigger: Optional[str] = None,
         failure_state: Optional[str] = None,
-        provider: str = "ollama",
+        provider: str = "finsight",
         model: str = "",
         model_version: str = "",
+        classification: Optional[AskFinIntentClassification] = None,
+        resolved_context: Optional[AskFinContext] = None,
+        follow_up_questions: Sequence[str] = (),
     ) -> PrivateAskFinResult:
         elapsed = max(0, int((self._monotonic() - started) * 1000))
-        effective_model = model or self._config.model
-        mode = (
-            grounding.mode
-            if grounding is not None
-            else AskFinMode.APPLICATION_HELP
+        effective_model = model or (
+            "deterministic-intent-v1"
+            if provider == "finsight"
+            else self._config.model
         )
+        mode = grounding.mode if grounding is not None else AskFinMode.APPLICATION_HELP
         retrieved = (
             tuple(item.citation_key for item in grounding.records)
             if grounding is not None
             else ()
         )
+        effective_classification = classification or classify_ask_fin_intent(
+            request.question,
+            has_context=request.context is not None,
+            prohibited=decision_boundary_trigger(request.question) is not None,
+        )
+        selected_context = _selected_context_for_question(
+            effective_classification,
+            request.context,
+            request.question,
+        )
+        effective_classification = _apply_selected_context_intent(
+            effective_classification,
+            selected_context,
+        )
+        effective_context = resolved_context
+        if effective_context is None and grounding is not None:
+            effective_context = grounding.context
+        if effective_context is not None and grounding is not None:
+            effective_context = AskFinContext(
+                review_id=effective_context.review_id,
+                object_type=effective_context.object_type,
+                object_id=effective_context.object_id,
+                label=effective_context.label,
+                validation_run_id=grounding.validation_run_id,
+            )
         result = PrivateAskFinResult(
             status=status,
             mode=mode,
@@ -1155,6 +1892,9 @@ class PrivateAskFinService:
             prompt_version=PRIVATE_ASK_FIN_PROMPT_VERSION,
             latency_ms=elapsed,
             retrieved_record_keys=retrieved,
+            intent=effective_classification.intent.value,
+            resolved_context=effective_context,
+            follow_up_questions=tuple(follow_up_questions)[:4],
         )
         if not self._append_audit(request, grounding, result):
             # A displayed model answer without its mandatory local audit would
@@ -1195,6 +1935,7 @@ class PrivateAskFinService:
                         else None
                     ),
                     "mode": result.mode.value,
+                    "intent": result.intent,
                     "question": request.question,
                     "retrieved_records": list(result.retrieved_record_keys),
                     "provider": result.provider,
@@ -1207,6 +1948,20 @@ class PrivateAskFinService:
                     "latency_ms": result.latency_ms,
                     "failure_state": result.failure_state,
                     "status": result.status.value,
+                    "resolved_context": (
+                        {
+                            "review_id": result.resolved_context.review_id,
+                            "validation_run_id": (
+                                result.resolved_context.validation_run_id
+                            ),
+                            "object_type": result.resolved_context.object_type,
+                            "object_id": result.resolved_context.object_id,
+                            "label": result.resolved_context.label,
+                        }
+                        if result.resolved_context is not None
+                        else None
+                    ),
+                    "follow_up_questions": list(result.follow_up_questions),
                     "grounding_review_id": (
                         grounding.review_id if grounding is not None else None
                     ),
@@ -1238,7 +1993,9 @@ class PrivateAskFinService:
 
     def _require_private_local_configuration(self) -> None:
         if self._config.provider != "ollama":
-            raise ValueError("Private Ask Fin requires the verified local Ollama provider.")
+            raise ValueError(
+                "Private Ask Fin requires the verified local Ollama provider."
+            )
         if is_cloud_style_model_alias(self._config.model):
             raise ValueError(
                 "Private Ask Fin rejects cloud or remote Ollama model aliases."

@@ -364,11 +364,19 @@ class FinancialReviewRepositorySqlite:
         for key in ("parameters", "required_fields", "grouping_keys"):
             value[key] = json.loads(value[key])
         lifecycle = self._dal.conn.execute(
-            "SELECT status FROM v2_rule_lifecycle_events "
+            "SELECT status,reason FROM v2_rule_lifecycle_events "
             "WHERE rule_id=? AND rule_version=? ORDER BY ordinal DESC LIMIT 1",
             (rule_id, version),
         ).fetchone()
         value["lifecycle_status"] = lifecycle[0] if lifecycle else None
+        value["lifecycle_reason"] = lifecycle[1] if lifecycle else None
+        value["display_lifecycle_status"] = (
+            "SUPERSEDED"
+            if lifecycle
+            and lifecycle[0] == "RETIRED"
+            and str(lifecycle[1]).startswith("SUPERSEDED_BY_")
+            else value["lifecycle_status"]
+        )
         return value
 
     def latest_rule_version(self, rule_id: str) -> dict[str, Any] | None:
@@ -406,6 +414,53 @@ class FinancialReviewRepositorySqlite:
             value
             for rule_id, version in rows
             if (value := self.rule_version(rule_id, version)) is not None
+        ]
+
+    def append_rule_proposal_draft_event(
+        self, value: Mapping[str, Any]
+    ) -> None:
+        self._dal.conn.execute(
+            "INSERT INTO v2_rule_proposal_draft_events("
+            "event_id,review_id,rule_id,rule_version,action,actor_id,"
+            "occurred_at,reason,event_hash) VALUES(?,?,?,?,?,?,?,?,?)",
+            (
+                value["event_id"],
+                value["review_id"],
+                value["rule_id"],
+                value["rule_version"],
+                value["action"],
+                value["actor_id"],
+                value["occurred_at"],
+                value["reason"],
+                value["event_hash"],
+            ),
+        )
+
+    def current_rule_proposal_draft_exclusions(
+        self, review_id: str
+    ) -> list[dict[str, Any]]:
+        rows = self._dal.conn.execute(
+            "SELECT e.rule_id,e.rule_version,e.action,e.actor_id,e.occurred_at,"
+            "e.reason FROM v2_rule_proposal_draft_events e WHERE e.review_id=? "
+            "AND e.rowid=(SELECT MAX(newer.rowid) "
+            "FROM v2_rule_proposal_draft_events newer "
+            "WHERE newer.review_id=e.review_id AND newer.rule_id=e.rule_id "
+            "AND newer.rule_version=e.rule_version) "
+            "ORDER BY e.occurred_at,e.rule_id,e.rule_version",
+            (review_id,),
+        ).fetchall()
+        keys = (
+            "rule_id",
+            "rule_version",
+            "action",
+            "actor_id",
+            "occurred_at",
+            "reason",
+        )
+        return [
+            dict(zip(keys, row))
+            for row in rows
+            if row[2] == "EXCLUDED"
         ]
 
     def current_protected_rule(self, rule_id: str) -> dict[str, Any] | None:
@@ -1479,6 +1534,157 @@ class FinancialReviewRepositorySqlite:
             ),
         )
 
+    def append_validation_rule_set_confirmation(
+        self, value: Mapping[str, Any]
+    ) -> None:
+        self._dal.conn.execute(
+            "INSERT INTO v2_validation_rule_set_confirmations("
+            "confirmation_id,run_id,review_id,rule_set_id,rule_set_version,"
+            "dataset_fingerprint,source_generation_id,source_data_version,"
+            "prior_run_id,rules_json,excluded_drafts_json,changes_json,"
+            "actor_id,confirmed_at,confirmation_hash) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                value["confirmation_id"],
+                value["run_id"],
+                value["review_id"],
+                value["rule_set_id"],
+                str(value["rule_set_version"]),
+                value["dataset_fingerprint"],
+                value["source_generation_id"],
+                value["source_data_version"],
+                value.get("prior_run_id"),
+                _json(value["rules"]),
+                _json(value.get("excluded_drafts", ())),
+                _json(value.get("changes", ())),
+                value["actor_id"],
+                value["confirmed_at"],
+                value["confirmation_hash"],
+            ),
+        )
+
+    def validation_rule_set_confirmation(
+        self, confirmation_id: str
+    ) -> dict[str, Any] | None:
+        row = self._dal.conn.execute(
+            "SELECT confirmation_id,run_id,review_id,rule_set_id,rule_set_version,"
+            "dataset_fingerprint,source_generation_id,source_data_version,"
+            "prior_run_id,rules_json,excluded_drafts_json,changes_json,"
+            "actor_id,confirmed_at,confirmation_hash "
+            "FROM v2_validation_rule_set_confirmations WHERE confirmation_id=?",
+            (confirmation_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        keys = (
+            "confirmation_id",
+            "run_id",
+            "review_id",
+            "rule_set_id",
+            "rule_set_version",
+            "dataset_fingerprint",
+            "source_generation_id",
+            "source_data_version",
+            "prior_run_id",
+            "rules",
+            "excluded_drafts",
+            "changes",
+            "actor_id",
+            "confirmed_at",
+            "confirmation_hash",
+        )
+        value = dict(zip(keys, row))
+        for key in ("rules", "excluded_drafts", "changes"):
+            value[key] = json.loads(value[key])
+        value["events"] = self.validation_attempt_events(confirmation_id)
+        return value
+
+    def append_validation_attempt_event(
+        self, value: Mapping[str, Any]
+    ) -> None:
+        self._dal.conn.execute(
+            "INSERT INTO v2_validation_attempt_events("
+            "event_id,confirmation_id,ordinal,event_type,run_id,actor_id,"
+            "occurred_at,reason,payload_json,event_hash) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?)",
+            (
+                value["event_id"],
+                value["confirmation_id"],
+                int(value["ordinal"]),
+                value["event_type"],
+                value.get("run_id"),
+                value["actor_id"],
+                value["occurred_at"],
+                value["reason"],
+                _json(value.get("payload", {})),
+                value["event_hash"],
+            ),
+        )
+
+    def next_validation_attempt_ordinal(self, confirmation_id: str) -> int:
+        row = self._dal.conn.execute(
+            "SELECT COALESCE(MAX(ordinal),0)+1 FROM v2_validation_attempt_events "
+            "WHERE confirmation_id=?",
+            (confirmation_id,),
+        ).fetchone()
+        return int(row[0])
+
+    def validation_attempt_events(
+        self, confirmation_id: str
+    ) -> list[dict[str, Any]]:
+        rows = self._dal.conn.execute(
+            "SELECT event_id,confirmation_id,ordinal,event_type,run_id,actor_id,"
+            "occurred_at,reason,payload_json,event_hash "
+            "FROM v2_validation_attempt_events WHERE confirmation_id=? "
+            "ORDER BY ordinal",
+            (confirmation_id,),
+        ).fetchall()
+        keys = (
+            "event_id",
+            "confirmation_id",
+            "ordinal",
+            "event_type",
+            "run_id",
+            "actor_id",
+            "occurred_at",
+            "reason",
+            "payload",
+            "event_hash",
+        )
+        output = []
+        for row in rows:
+            value = dict(zip(keys, row))
+            value["ordinal"] = int(value["ordinal"])
+            value["payload"] = json.loads(value["payload"])
+            output.append(value)
+        return output
+
+    def append_validation_confirmation_run_link(
+        self, value: Mapping[str, Any]
+    ) -> None:
+        self._dal.conn.execute(
+            "INSERT INTO v2_validation_confirmation_run_links("
+            "confirmation_id,run_id,prior_run_id,linked_at,link_hash) "
+            "VALUES(?,?,?,?,?)",
+            (
+                value["confirmation_id"],
+                value["run_id"],
+                value.get("prior_run_id"),
+                value["linked_at"],
+                value["link_hash"],
+            ),
+        )
+
+    def validation_confirmation_for_run(
+        self, run_id: str
+    ) -> dict[str, Any] | None:
+        row = self._dal.conn.execute(
+            "SELECT confirmation_id FROM v2_validation_confirmation_run_links "
+            "WHERE run_id=?",
+            (run_id,),
+        ).fetchone()
+        return self.validation_rule_set_confirmation(row[0]) if row else None
+
     def persist_validation(
         self,
         *,
@@ -2086,6 +2292,18 @@ class FinancialReviewRepositorySqlite:
             if item.get("review_required", True)
         ]
         run["leadership_summary"] = leadership
+        pointers = self._dal.conn.execute(
+            "SELECT working_generation_id,published_generation_id "
+            "FROM v2_review_cycle_pointers WHERE review_id=?",
+            (review_id,),
+        ).fetchone()
+        if pointers and pointers[1] == run["generation_id"]:
+            run["publication_state"] = "Published"
+        elif pointers and pointers[0] == run["generation_id"]:
+            run["publication_state"] = "Working"
+        else:
+            run["publication_state"] = "Historical"
+        run["confirmation"] = self.validation_confirmation_for_run(run_id)
         return run
 
     def _rule_presentation(
@@ -2181,6 +2399,9 @@ class FinancialReviewRepositorySqlite:
         added_rules = sorted(set(current_rules) - set(prior_rules))
         removed_rules = sorted(set(prior_rules) - set(current_rules))
         changed_rules = []
+        unchanged_rules = []
+        rule_status_changes = []
+        rule_version_changes = []
         for rule_id in sorted(set(prior_rules) & set(current_rules)):
             before = prior_rules[rule_id]
             after = current_rules[rule_id]
@@ -2192,9 +2413,18 @@ class FinancialReviewRepositorySqlite:
                 "not_evaluated_count",
             )
             if any(before[field] != after[field] for field in fields):
-                changed_rules.append(
-                    {"rule_id": rule_id, "before": before, "after": after}
-                )
+                change = {
+                    "rule_id": rule_id,
+                    "before": before,
+                    "after": after,
+                }
+                changed_rules.append(change)
+                if before["status"] != after["status"]:
+                    rule_status_changes.append(change)
+                if before["version"] != after["version"]:
+                    rule_version_changes.append(change)
+            else:
+                unchanged_rules.append(after)
         def finding_identity(item: Mapping[str, Any]) -> tuple[Any, ...]:
             return (
                 item["rule_id"],
@@ -2210,6 +2440,8 @@ class FinancialReviewRepositorySqlite:
             finding_identity(item): item for item in current["findings"]
         }
         changed_findings = []
+        unchanged_findings = []
+        finding_status_changes = []
         for key in sorted(set(prior_findings) & set(current_findings)):
             before = prior_findings[key]
             after = current_findings[key]
@@ -2220,16 +2452,26 @@ class FinancialReviewRepositorySqlite:
                 "actual",
                 "explanation",
                 "recommended_action",
+                "review_status",
+                "review_required",
             )
             if any(before.get(field) != after.get(field) for field in fields):
-                changed_findings.append(
-                    {
-                        "rule_id": after["rule_id"],
-                        "source_records": after["source_records"],
-                        "before": before,
-                        "after": after,
-                    }
-                )
+                change = {
+                    "rule_id": after["rule_id"],
+                    "source_records": after["source_records"],
+                    "before": before,
+                    "after": after,
+                }
+                changed_findings.append(change)
+                if (
+                    before.get("review_status")
+                    != after.get("review_status")
+                    or before.get("review_required")
+                    != after.get("review_required")
+                ):
+                    finding_status_changes.append(change)
+            else:
+                unchanged_findings.append(after)
         added_keys = set(current_findings) - set(prior_findings)
         removed_keys = set(prior_findings) - set(current_findings)
         findings_added = [
@@ -2238,6 +2480,53 @@ class FinancialReviewRepositorySqlite:
         findings_removed = [
             prior_findings[key] for key in sorted(removed_keys)
         ]
+        optional_rule_ids = {
+            rule_id
+            for rule_id, item in {**prior_rules, **current_rules}.items()
+            if item.get("baseline_status") != "PROTECTED_BASELINE"
+        }
+        optional_rule_effects = []
+        for rule_id in sorted(optional_rule_ids):
+            before = prior_rules.get(rule_id)
+            after = current_rules.get(rule_id)
+            added_count = sum(
+                item["rule_id"] == rule_id for item in findings_added
+            )
+            removed_count = sum(
+                item["rule_id"] == rule_id for item in findings_removed
+            )
+            changed_count = sum(
+                item["rule_id"] == rule_id for item in changed_findings
+            )
+            unchanged_count = sum(
+                item["rule_id"] == rule_id for item in unchanged_findings
+            )
+            if before is None:
+                effect = "ADDED"
+            elif after is None:
+                effect = "REMOVED"
+            elif (
+                before["version"] != after["version"]
+                or before["status"] != after["status"]
+                or added_count
+                or removed_count
+                or changed_count
+            ):
+                effect = "CHANGED"
+            else:
+                effect = "UNCHANGED"
+            optional_rule_effects.append(
+                {
+                    "rule_id": rule_id,
+                    "effect": effect,
+                    "before": before,
+                    "after": after,
+                    "findings_added": added_count,
+                    "findings_removed": removed_count,
+                    "findings_changed": changed_count,
+                    "findings_unchanged": unchanged_count,
+                }
+            )
         return {
             "review_id": review_id,
             "prior_run_id": prior_run_id,
@@ -2247,10 +2536,20 @@ class FinancialReviewRepositorySqlite:
             "rules_added": added_rules,
             "rules_removed": removed_rules,
             "rules_changed": changed_rules,
+            "rules_unchanged": unchanged_rules,
+            "rule_status_changes": rule_status_changes,
+            "rule_version_changes": rule_version_changes,
             "findings_added": findings_added,
             "findings_removed": findings_removed,
             "findings_resolved": findings_removed,
             "findings_changed": changed_findings,
+            "findings_unchanged": unchanged_findings,
+            "finding_status_changes": finding_status_changes,
+            "status_changes": [
+                *rule_status_changes,
+                *finding_status_changes,
+            ],
+            "optional_rule_effects": optional_rule_effects,
         }
 
     def append_completion(self, value: Mapping[str, Any]) -> None:

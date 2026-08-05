@@ -29,6 +29,10 @@ from finsight.infrastructure.migrations import (
     m0013_finding_explanations_and_review_status,
 )
 from finsight.infrastructure.migrations import m0014_private_ask_fin_audit
+from finsight.infrastructure.migrations import (
+    m0015_validation_rule_set_confirmation,
+)
+from finsight.infrastructure.migrations import m0016_validation_run_identity
 
 Migration = Tuple[int, str, Callable[[sqlite3.Connection], None]]
 
@@ -96,6 +100,16 @@ MIGRATIONS: List[Migration] = [
         m0014_private_ask_fin_audit.VERSION,
         m0014_private_ask_fin_audit.NAME,
         m0014_private_ask_fin_audit.up,
+    ),
+    (
+        m0015_validation_rule_set_confirmation.VERSION,
+        m0015_validation_rule_set_confirmation.NAME,
+        m0015_validation_rule_set_confirmation.up,
+    ),
+    (
+        m0016_validation_run_identity.VERSION,
+        m0016_validation_run_identity.NAME,
+        m0016_validation_run_identity.up,
     ),
 ]
 

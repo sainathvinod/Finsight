@@ -7,7 +7,7 @@ import pytest
 from finsight.app import build_query_services
 from finsight.domain.finding_explanations import FindingReviewStatus
 from finsight.domain.source_intake import SourceRole
-from tests.support import FixedClock
+from tests.support import FixedClock, persist_confirmed_validation
 
 
 FIXTURES = "initiatives/configurable-rule-engine-v2/fixtures"
@@ -41,10 +41,10 @@ def _validated_review(tmp_path):
         dataset,
         attestation_text="Reviewed for deterministic explanations.",
     )
-    projection = services.financial_review.persist_evaluation(
+    projection = persist_confirmed_validation(
+        services.financial_review,
         review.review_id,
         dataset,
-        services.financial_review.evaluate(dataset),
     )
     return database, services, review, projection
 

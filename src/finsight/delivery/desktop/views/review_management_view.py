@@ -21,7 +21,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QMessageBox,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -35,9 +34,11 @@ from finsight.application.failure_contracts import safe_failure_message
 from finsight.delivery.desktop.components import (
     AdaptiveSidebar,
     DeleteReviewDialog,
+    DialogVariant,
     IconBadge,
     NavItem,
     ReviewProgress,
+    show_in_app_message,
 )
 from finsight.domain.review_management import ReviewStatus
 from finsight.delivery.desktop.theme import tokens as t
@@ -1262,7 +1263,12 @@ class ReviewManagementView(QWidget):
             preview = self._c.prepare_review_disposal(review.review_id)
         except Exception as exc:
             message = self._safe_error_message(exc)
-            QMessageBox.warning(self, "Review not deleted", message)
+            show_in_app_message(
+                self,
+                "Review not deleted",
+                message,
+                variant=DialogVariant.WARNING,
+            )
             return
         dialog = DeleteReviewDialog(review.period.label, self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
@@ -1279,14 +1285,19 @@ class ReviewManagementView(QWidget):
             self._c.confirm_review_disposal(review.review_id, token)
         except Exception as exc:
             message = self._safe_error_message(exc)
-            QMessageBox.warning(self, "Review not deleted", message)
+            show_in_app_message(
+                self,
+                "Review not deleted",
+                message,
+                variant=DialogVariant.WARNING,
+            )
             return
         if (
             self._current_review is not None
             and self._current_review.review_id == review.review_id
         ):
             self._current_review = None
-        QMessageBox.information(
+        show_in_app_message(
             self,
             "Review deleted",
             f"The {review.period.label} review was permanently deleted. "

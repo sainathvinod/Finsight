@@ -26,10 +26,8 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHeaderView,
     QHBoxLayout,
-    QInputDialog,
     QLabel,
     QLineEdit,
-    QMessageBox,
     QProgressBar,
     QPushButton,
     QScrollArea,
@@ -50,10 +48,14 @@ from finsight.application.failure_contracts import safe_failure_message
 from finsight.delivery.desktop.components import (
     AdaptiveSidebar,
     DeleteReviewDialog,
+    DialogVariant,
     FinancialChartCard,
     GovernedSaveDialog,
+    InAppDialog,
+    InAppTextPromptDialog,
     NavItem,
     ReviewProgress,
+    show_in_app_message,
 )
 from finsight.delivery.desktop.theme import tokens as t
 from finsight.domain.review_management import ReviewStatus
@@ -1020,8 +1022,11 @@ class FinancialReviewView(QWidget):
                     int(event["current_correction_count"]),
                 )
         except Exception as exc:
-            QMessageBox.critical(
-                self, "Changes not saved", _safe_error(exc)
+            show_in_app_message(
+                self,
+                "Changes not saved",
+                _safe_error(exc),
+                variant=DialogVariant.ERROR,
             )
             return
         self._pending.clear()
@@ -1105,23 +1110,17 @@ class FinancialReviewView(QWidget):
         source_file = self._c.financial_source_file_name(
             self._review.review_id, details["source_role"]
         )
-        dialog = QDialog(self)
-        dialog.setObjectName("SourceDetailsDialog")
-        dialog.setWindowTitle("Source Details")
-        dialog.setAccessibleName("Source Details")
-        dialog.setModal(True)
-        dialog.resize(620, 430)
-        layout = QVBoxLayout(dialog)
-        layout.setContentsMargins(t.SP_5, t.SP_5, t.SP_5, t.SP_5)
-        layout.setSpacing(t.SP_3)
-        layout.addWidget(_label("Source Details", "sectionHeader"))
-        layout.addWidget(
-            _label(
-                "See where the selected reviewed value came from.",
-                "sectionSub",
-                wrap=True,
-            )
+        dialog = InAppDialog(
+            "Source Details",
+            "See where the selected reviewed value came from.",
+            variant=DialogVariant.INFORMATION,
+            parent=self,
+            object_name="SourceDetailsDialog",
+            minimum_width=620,
         )
+        dialog.setAccessibleName("Source Details")
+        dialog.resize(620, 430)
+        layout = dialog.content_layout
         detail_card, detail_layout = _card()
         grid = QGridLayout()
         rows = (
@@ -1163,7 +1162,6 @@ class FinancialReviewView(QWidget):
         technical.setVisible(False)
         layout.addWidget(technical)
 
-        actions = QHBoxLayout()
         technical_toggle = QPushButton("View technical details")
         technical_toggle.setObjectName("SourceTechnicalDetailsToggle")
         technical_toggle.setProperty("role", "quiet")
@@ -1184,17 +1182,16 @@ class FinancialReviewView(QWidget):
             technical_toggle.setAccessibleName(label)
 
         technical_toggle.toggled.connect(toggle_technical)
-        actions.addWidget(technical_toggle)
-        actions.addStretch(1)
-        close = QPushButton("Close")
+        dialog.actions_layout.insertWidget(1, technical_toggle)
+        close = dialog.add_action(
+            "Close",
+            role="primary",
+            accessible_name="Close source details",
+            accept=True,
+            default=True,
+        )
         close.setObjectName("CloseSourceDetailsButton")
-        close.setProperty("role", "primary")
-        close.setAccessibleName("Close source details")
-        close.clicked.connect(dialog.accept)
-        close.setDefault(True)
-        actions.addWidget(close)
-        layout.addLayout(actions)
-        close.setFocus()
+        dialog.set_safe_focus(close)
         dialog.exec()
         self._source_details.setFocus()
 
@@ -1203,7 +1200,11 @@ class FinancialReviewView(QWidget):
             return
         table, index = self._current_table_and_index()
         if not index.isValid():
-            QMessageBox.information(self, "Revert value", "Select a data cell first.")
+            show_in_app_message(
+                self,
+                "Revert value",
+                "Select a data cell first.",
+            )
             return
         source = table.model().mapToSource(index)
         item = table.model().sourceModel().itemFromIndex(source)
@@ -1225,8 +1226,11 @@ class FinancialReviewView(QWidget):
                 int(event["current_correction_count"]),
             )
         except Exception as exc:
-            QMessageBox.critical(
-                self, "Value not reverted", _safe_error(exc)
+            show_in_app_message(
+                self,
+                "Value not reverted",
+                _safe_error(exc),
+                variant=DialogVariant.ERROR,
             )
             return
         self._populate_verify_tables()
@@ -1236,10 +1240,16 @@ class FinancialReviewView(QWidget):
         self._update_attestation()
 
     def _show_history(self):
-        dialog = QDialog(self)
-        dialog.setWindowTitle("Reviewed Data Change History")
+        dialog = InAppDialog(
+            "Reviewed Data Change History",
+            "Review every saved change to the working financial data.",
+            variant=DialogVariant.INFORMATION,
+            parent=self,
+            object_name="ReviewedDataChangeHistoryDialog",
+            minimum_width=900,
+        )
         dialog.resize(900, 420)
-        layout = QVBoxLayout(dialog)
+        layout = dialog.content_layout
         table = QTableWidget()
         table.verticalHeader().setVisible(False)
         headers = (
@@ -1273,11 +1283,14 @@ class FinancialReviewView(QWidget):
                 table.setItem(row_number, column, QTableWidgetItem(str(value)))
         table.resizeColumnsToContents()
         layout.addWidget(table)
-        close = QPushButton("Close")
-        close.setProperty("role", "primary")
-        close.setAccessibleName("Close change history")
-        close.clicked.connect(dialog.accept)
-        layout.addWidget(close, 0, Qt.AlignmentFlag.AlignRight)
+        close = dialog.add_action(
+            "Close",
+            role="primary",
+            accessible_name="Close change history",
+            accept=True,
+            default=True,
+        )
+        dialog.set_safe_focus(close)
         dialog.exec()
 
     def _apply_search(self, text=None):
@@ -1322,20 +1335,17 @@ class FinancialReviewView(QWidget):
         self._continue_validation.setEnabled(False)
 
     def _open_confirmation(self):
-        dialog = QDialog(self)
-        dialog.setWindowTitle("Confirm data for validation")
-        dialog.setModal(True)
-        dialog.resize(620, 420)
-        layout = QVBoxLayout(dialog)
-        layout.addWidget(_label("Confirm data for validation", "sectionHeader"))
-        layout.addWidget(
-            _label(
-                "Confirm this reviewed working copy. FinSight will preserve its "
-                "source evidence, then show the exact rules that will run.",
-                "sectionSub",
-                wrap=True,
-            )
+        dialog = InAppDialog(
+            "Confirm data for validation",
+            "Confirm this reviewed working copy. FinSight will preserve its "
+            "source evidence, then show the exact rules that will run.",
+            variant=DialogVariant.CONFIRMATION,
+            parent=self,
+            object_name="ConfirmReviewedDataDialog",
+            minimum_width=620,
         )
+        dialog.resize(620, 420)
+        layout = dialog.content_layout
         summary, summary_layout = _card()
         for title, value in (
             ("Budget records", f"{len(self._dataset.budget_details):,}"),
@@ -1357,27 +1367,31 @@ class FinancialReviewView(QWidget):
             row.addWidget(_label(value, "kvVal", wrap=True))
             summary_layout.addLayout(row)
         layout.addWidget(summary)
-        actions = QHBoxLayout()
-        back = QPushButton("Go back and review")
-        back.setProperty("role", "secondary")
-        back.setAccessibleName("Go back and review extracted data")
-        back.clicked.connect(dialog.reject)
-        actions.addWidget(back)
-        actions.addStretch(1)
-        begin = QPushButton("Continue to Review Rules")
-        begin.setProperty("role", "primary")
-        begin.setAccessibleName("Continue to Review Rules")
-        begin.clicked.connect(dialog.accept)
-        actions.addWidget(begin)
-        layout.addLayout(actions)
+        back = dialog.add_action(
+            "Go back and review",
+            role="secondary",
+            accessible_name="Go back and review extracted data",
+            reject=True,
+            default=True,
+        )
+        dialog.add_action(
+            "Continue to Review Rules",
+            role="primary",
+            accessible_name="Continue to Review Rules",
+            accept=True,
+        )
+        dialog.set_safe_focus(back)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             try:
                 self._review = self._c.confirm_financial_data(
                     self._dataset, self._attestation.text()
                 )
             except Exception as exc:
-                QMessageBox.critical(
-                    self, "Data not confirmed", _safe_error(exc)
+                show_in_app_message(
+                    self,
+                    "Data not confirmed",
+                    _safe_error(exc),
+                    variant=DialogVariant.ERROR,
                 )
                 return
             self.rulesRequested.emit(self._review, self._dataset, False)
@@ -2608,7 +2622,9 @@ class FinancialReviewView(QWidget):
             f"Financial Review · {basis['reporting_period']}"
         )
         self._results_subtitle.setText(
-            f"{basis['department_name']} · {basis['department_number']}"
+            f"{basis['department_name']} · {basis['department_number']} · "
+            f"{projection.get('publication_state', 'Recorded')} · "
+            f"Validation Run {projection['run_id']}"
         )
         self._results_period.setText(str(basis["reporting_period"]))
         self._results_files.setText(
@@ -2632,6 +2648,19 @@ class FinancialReviewView(QWidget):
             )
         )
         self._complete_button.setVisible(not bool(completion))
+        revalidation_available = self._dataset is not None
+        self._review_rules_button.setEnabled(revalidation_available)
+        revalidation_help = (
+            "Open the current Rule Set and create another Validation Run "
+            "using the verified working data."
+            if revalidation_available
+            else "Verified working data could not be reconstructed. Reopen "
+            "the review or restore the unchanged source files before revalidation."
+        )
+        self._review_rules_button.setToolTip(revalidation_help)
+        self._review_rules_button.setAccessibleDescription(
+            revalidation_help
+        )
         self._results_progress.set_step(
             5,
             completed_steps={6} if completion else set(),
@@ -2648,6 +2677,20 @@ class FinancialReviewView(QWidget):
                 wrap=True,
             )
         )
+        comparison = projection.get("comparison")
+        if comparison:
+            identity_layout.addWidget(
+                _label(
+                    "New Validation Run compared with prior run · "
+                    f"{len(comparison.get('findings_added', ()))} findings added · "
+                    f"{len(comparison.get('findings_removed', ()))} removed · "
+                    f"{len(comparison.get('findings_changed', ()))} changed · "
+                    f"{len(comparison.get('findings_unchanged', ()))} unchanged. "
+                    "The prior run remains preserved.",
+                    "cardDetail",
+                    wrap=True,
+                )
+            )
         details_button = QPushButton("Review Details")
         details_button.setProperty("role", "quiet")
         details_button.setCheckable(True)
@@ -3563,7 +3606,7 @@ class FinancialReviewView(QWidget):
     def _ask_fin_about_selected_vendor(self) -> None:
         vendor = self._selected_vendor_name()
         if not vendor:
-            QMessageBox.information(
+            show_in_app_message(
                 self,
                 "Ask Fin",
                 "Select a vendor first.",
@@ -4035,7 +4078,7 @@ class FinancialReviewView(QWidget):
     def _open_selected_ged_details(self) -> None:
         table = getattr(self, "_ged_results_table", None)
         if table is None or not table.currentIndex().isValid():
-            QMessageBox.information(
+            show_in_app_message(
                 self,
                 "GED Transaction Details",
                 "Select a GED transaction first.",
@@ -4058,23 +4101,17 @@ class FinancialReviewView(QWidget):
             for item in self._projection["findings"]
             if record_id in item["source_records"]
         ]
-        dialog = QDialog(self)
-        dialog.setObjectName("GEDTransactionDetailsDialog")
-        dialog.setWindowTitle("GED Transaction Details")
-        dialog.setAccessibleName("GED Transaction Details")
-        dialog.setModal(True)
-        dialog.resize(820, 680)
-        layout = QVBoxLayout(dialog)
-        layout.setContentsMargins(t.SP_5, t.SP_5, t.SP_5, t.SP_5)
-        layout.setSpacing(t.SP_3)
-        layout.addWidget(_label("GED Transaction Details", "sectionHeader"))
-        layout.addWidget(
-            _label(
-                f"Source row {record.row_number} · "
-                "recorded values and preserved source lineage",
-                "sectionSub",
-            )
+        dialog = InAppDialog(
+            "GED Transaction Details",
+            f"Source row {record.row_number} · recorded values and preserved "
+            "source lineage",
+            variant=DialogVariant.INFORMATION,
+            parent=self,
+            object_name="GEDTransactionDetailsDialog",
+            minimum_width=820,
         )
+        dialog.resize(820, 680)
+        layout = dialog.content_layout
         summary, summary_layout = _card()
         summary_grid = QGridLayout()
         summary_values = (
@@ -4190,7 +4227,6 @@ class FinancialReviewView(QWidget):
             4, QHeaderView.ResizeMode.ResizeToContents
         )
         layout.addWidget(evidence, 1)
-        actions = QHBoxLayout()
         open_account = QPushButton("Open Related Account")
         open_account.setProperty("role", "secondary")
         open_account.setAccessibleName(
@@ -4205,7 +4241,7 @@ class FinancialReviewView(QWidget):
                 ),
             )
         )
-        actions.addWidget(open_account)
+        dialog.actions_layout.insertWidget(1, open_account)
         if row_findings:
             open_finding = QPushButton("Open Related Finding")
             open_finding.setProperty("role", "secondary")
@@ -4217,7 +4253,7 @@ class FinancialReviewView(QWidget):
                     ),
                 )
             )
-            actions.addWidget(open_finding)
+            dialog.actions_layout.insertWidget(2, open_finding)
         ask_fin = QPushButton("Ask Fin")
         ask_fin.setProperty("role", "assistant")
         ask_fin.setAccessibleName(
@@ -4233,13 +4269,17 @@ class FinancialReviewView(QWidget):
                 ),
             )
         )
-        actions.addWidget(ask_fin)
-        actions.addStretch(1)
-        close = QPushButton("Close")
-        close.setProperty("role", "primary")
-        close.clicked.connect(dialog.accept)
-        actions.addWidget(close)
-        layout.addLayout(actions)
+        dialog.actions_layout.insertWidget(
+            dialog.actions_layout.count(), ask_fin
+        )
+        close = dialog.add_action(
+            "Close",
+            role="primary",
+            accessible_name="Close GED transaction details",
+            accept=True,
+            default=True,
+        )
+        dialog.set_safe_focus(close)
         dialog.exec()
 
     def _populate_rule_results_tab(self) -> None:
@@ -4268,9 +4308,11 @@ class FinancialReviewView(QWidget):
                     f"{len(comparison['rules_added'])} rule(s) added · "
                     f"{len(comparison['rules_removed'])} removed · "
                     f"{len(comparison['rules_changed'])} changed · "
+                    f"{len(comparison.get('rules_unchanged', ())) } unchanged · "
                     f"{len(comparison['findings_added'])} finding(s) added · "
                     f"{len(comparison.get('findings_removed', comparison['findings_resolved']))} removed · "
-                    f"{len(comparison.get('findings_changed', ())) } changed. "
+                    f"{len(comparison.get('findings_changed', ())) } changed · "
+                    f"{len(comparison.get('findings_unchanged', ())) } unchanged. "
                     "Both runs remain retained and historically reproducible.",
                     "cardDetail",
                     wrap=True,
@@ -4300,6 +4342,36 @@ class FinancialReviewView(QWidget):
                     or "None",
                 ),
                 (
+                    "Rules unchanged",
+                    ", ".join(
+                        item["rule_id"]
+                        for item in comparison.get(
+                            "rules_unchanged", ()
+                        )
+                    )
+                    or "None",
+                ),
+                (
+                    "Rule version changes",
+                    ", ".join(
+                        item["rule_id"]
+                        for item in comparison.get(
+                            "rule_version_changes", ()
+                        )
+                    )
+                    or "None",
+                ),
+                (
+                    "Status changes",
+                    ", ".join(
+                        item["rule_id"]
+                        for item in comparison.get(
+                            "status_changes", ()
+                        )
+                    )
+                    or "None",
+                ),
+                (
                     "Findings added",
                     ", ".join(
                         item["rule_id"]
@@ -4323,6 +4395,26 @@ class FinancialReviewView(QWidget):
                     ", ".join(
                         item["rule_id"]
                         for item in comparison.get("findings_changed", ())
+                    )
+                    or "None",
+                ),
+                (
+                    "Findings unchanged",
+                    ", ".join(
+                        item["rule_id"]
+                        for item in comparison.get(
+                            "findings_unchanged", ()
+                        )
+                    )
+                    or "None",
+                ),
+                (
+                    "Optional rule effects",
+                    ", ".join(
+                        f"{item['rule_id']}: {item['effect'].title()}"
+                        for item in comparison.get(
+                            "optional_rule_effects", ()
+                        )
                     )
                     or "None",
                 ),
@@ -5047,31 +5139,29 @@ class FinancialReviewView(QWidget):
         target = self._finding_status_control.currentText()
         current = str(finding.get("review_status") or "New")
         if target == current:
-            QMessageBox.information(
+            show_in_app_message(
                 self,
                 "Review status unchanged",
                 f"This finding is already {target}.",
             )
             return
-        reason, accepted = QInputDialog.getText(
-            self,
+        prompt = InAppTextPromptDialog(
             "Update Finding Status",
             (
                 f"Reason for changing this finding from {current} to "
                 f"{target}:"
             ),
+            parent=self,
+            placeholder="Record the review rationale.",
+            accept_text="Update Status",
+            required_message=(
+                "Enter a reason so the review-status change is auditable."
+            ),
         )
-        if not accepted:
+        if prompt.exec() != QDialog.DialogCode.Accepted:
             self._finding_status_control.setCurrentText(current)
             return
-        if not reason.strip():
-            QMessageBox.warning(
-                self,
-                "Reason required",
-                "Enter a reason so the review-status change is auditable.",
-            )
-            self._finding_status_control.setCurrentText(current)
-            return
+        reason = prompt.text_value()
         try:
             self._c.financial_update_finding_status(
                 self._review.review_id,
@@ -5083,15 +5173,18 @@ class FinancialReviewView(QWidget):
                 self._review.review_id
             )
         except Exception as exc:
-            QMessageBox.warning(
-                self, "Status not updated", _safe_error(exc)
+            show_in_app_message(
+                self,
+                "Status not updated",
+                _safe_error(exc),
+                variant=DialogVariant.WARNING,
             )
             self._finding_status_control.setCurrentText(current)
             return
         self._projection = refreshed
         self._populate_results()
         self._open_results_tab(self._finding_list_tab)
-        QMessageBox.information(
+        show_in_app_message(
             self,
             "Review status updated",
             f"The finding is now {target}. The original validation result "
@@ -5417,7 +5510,7 @@ class FinancialReviewView(QWidget):
     ) -> None:
         index = table.currentIndex()
         if not index.isValid():
-            QMessageBox.information(
+            show_in_app_message(
                 self,
                 "View Finding",
                 "Select an affected source row first.",
@@ -5435,7 +5528,7 @@ class FinancialReviewView(QWidget):
             None,
         )
         if finding is None:
-            QMessageBox.information(
+            show_in_app_message(
                 self,
                 "View Finding",
                 "The selected row has no recorded finding.",
@@ -5693,7 +5786,16 @@ class FinancialReviewView(QWidget):
             "are available for verification."
         )
 
-    def _start_validation(self):
+    def _start_validation(self, confirmation):
+        validation_review_id = self._review.review_id
+
+        def is_current_validation_context() -> bool:
+            return bool(
+                self._review is not None
+                and self._review.review_id == validation_review_id
+                and self._c.active_review_id == validation_review_id
+            )
+
         self._stack.setCurrentIndex(self.VALIDATING)
         self._crumb.setText("Validate")
         self._context.setText(
@@ -5705,11 +5807,19 @@ class FinancialReviewView(QWidget):
         self._validation_finished = False
         self._set_stage(self._validation_labels, self._validation_bar, 0)
         self._validation_timer.start()
+        included_rules = [
+            item
+            for item in (confirmation or {}).get("rules", ())
+            if item.get("included")
+        ]
         self._announce(
-            "Deterministic validation started. Five protected baseline rules will run."
+            "Deterministic validation started with the confirmed Rule Set: "
+            f"{len(included_rules)} active rules."
         )
 
         def done(projection):
+            if not is_current_validation_context():
+                return
             self._projection = projection
             try:
                 self._review = next(
@@ -5731,22 +5841,41 @@ class FinancialReviewView(QWidget):
             self._validation_finished = True
 
         def failed(exc):
+            if not is_current_validation_context():
+                return
             self._validation_timer.stop()
             self._show_error(self._validation_error, _safe_error(exc))
 
         self._c.validate_financial_async(
-            self._dataset, lambda _stage: None, done, failed
+            self._dataset,
+            lambda _stage: None,
+            done,
+            failed,
+            confirmation_id=str(confirmation["confirmation_id"]),
         )
 
-    def start_validation_from_rules(self, review, dataset, *, revalidation=False):
+    def start_validation_from_rules(
+        self,
+        review,
+        dataset,
+        *,
+        revalidation=False,
+        confirmation=None,
+    ):
         """Resume the journey after the versioned Rules Repository step."""
 
         self._review = review
         self._dataset = dataset
+        if confirmation is None:
+            self._show_error(
+                self._validation_error,
+                "Confirm the proposed Rule Set before validation.",
+            )
+            return
         if revalidation and hasattr(self._c, "revalidate_financial_async"):
             self._start_revalidation()
             return
-        self._start_validation()
+        self._start_validation(confirmation)
 
     def return_from_rules(self, *, revalidation: bool = False) -> None:
         if revalidation and self._projection is not None:
@@ -5788,8 +5917,11 @@ class FinancialReviewView(QWidget):
             )
             self._projection = self._c.financial_results(self._review.review_id)
         except Exception as exc:
-            QMessageBox.critical(
-                self, "Review not completed", _safe_error(exc)
+            show_in_app_message(
+                self,
+                "Review not completed",
+                _safe_error(exc),
+                variant=DialogVariant.ERROR,
             )
             return
         completion = self._projection["completion"]
@@ -5818,8 +5950,11 @@ class FinancialReviewView(QWidget):
         try:
             preview = self._c.prepare_review_disposal(self._review.review_id)
         except Exception as exc:
-            QMessageBox.warning(
-                self, "Review not deleted", _safe_error(exc)
+            show_in_app_message(
+                self,
+                "Review not deleted",
+                _safe_error(exc),
+                variant=DialogVariant.WARNING,
             )
             return
         token = getattr(preview, "confirmation_token", "")
@@ -5831,11 +5966,14 @@ class FinancialReviewView(QWidget):
         try:
             self._c.confirm_review_disposal(self._review.review_id, token)
         except Exception as exc:
-            QMessageBox.warning(
-                self, "Review not deleted", _safe_error(exc)
+            show_in_app_message(
+                self,
+                "Review not deleted",
+                _safe_error(exc),
+                variant=DialogVariant.WARNING,
             )
             return
-        QMessageBox.information(
+        show_in_app_message(
             self,
             "Review deleted",
             f"The {self._review.period.label} review was permanently deleted. "
@@ -5848,7 +5986,7 @@ class FinancialReviewView(QWidget):
 
     def _show_ask_fin(self):
         if self._review is None:
-            QMessageBox.information(
+            show_in_app_message(
                 self,
                 "Ask Fin",
                 "Create or open a review before starting a private Ask Fin "

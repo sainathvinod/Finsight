@@ -248,7 +248,7 @@ Review ID is the stable inherited ReviewCycle identity. Before verification, mut
 
 Explicit confirmation of a compatible Working Candidate creates and seals the next monotonically increasing Review Version as the user-facing identity of exactly one inherited ReviewGeneration with the same sequence number. Its `creation_reason` is `INITIAL_VERIFICATION` for the first confirmed basis, `SOURCE_REVERIFICATION` when source bytes or reviewed Current Validation Values change, or `EXTRACTOR_REVERIFICATION` when the extractor basis changes. It records fresh verification Actor/time, verified fingerprint, extractor version, source fingerprints, correction basis, creator Actor/time, and predecessor when applicable.
 
-A governed rule-set or configuration change over an unchanged verified basis creates a working successor Review Version/ReviewGeneration with `RULESET_REANALYSIS` or `CONFIG_REANALYSIS`. It inherits the original verification Actor/time, verified fingerprint, extractor version, source fingerprints, and correction basis; records the verification-basis and predecessor generations plus its separate creator/time; and never claims that a new human verification occurred. Exact replay with unchanged data, rules, and configuration recomputes and compares the §2.6 projection, appends a Replay Verification Event, and creates neither a Review Version nor another authoritative Validation Run. Promotion creates neither.
+A confirmed request to **Create New Validation Run** over an unchanged verified basis creates a working successor Review Version/ReviewGeneration with `RULESET_REANALYSIS` or `CONFIG_REANALYSIS`, including when the same active Rule Set is intentionally rerun. It inherits the original verification Actor/time, verified fingerprint, extractor version, source fingerprints, and correction basis; records the verification-basis and predecessor generations plus its separate creator/time; and never claims that a new human verification occurred. The distinct **Exact Replay** verification operation recomputes and compares the §2.6 projection, appends a Replay Verification Event, and creates neither a Review Version nor another authoritative Validation Run. Promotion creates neither.
 
 A Review Version/ReviewGeneration owns zero authoritative Validation Runs before validation starts and exactly one thereafter; a second authoritative run is prohibited. Validation Run ID uniquely identifies that execution and binds Review ID/version/generation, Rule Set Version, initiating Actor ID, input/verified fingerprint, start timestamp, completion timestamp, and terminal persistence status. Protected Baseline Version is the immutable globally effective manifest containing exactly one governed rule/configuration version for each protected Rule ID plus severity/status-policy versions and effective timestamp. Rule Set Version is the immutable workspace-scoped ordered manifest of one Protected Baseline Version and the exact selected Rule IDs, rule versions, configuration versions, binding versions, enabled states, classifications, and status-policy version. A Validation Run pins one existing Rule Set Version; multiple generations may reference it while configuration is unchanged. Validation Timestamp is the persisted Validation Run completion timestamp.
 
@@ -711,13 +711,13 @@ Every review-specific response is represented as atomic Claim Records. Each Clai
 - **Status:** Draft
 
 ### FR-151 — Rule-change impact comparison
-- **Statement (EARS):** WHEN a user creates a governed `RULESET_REANALYSIS` or `CONFIG_REANALYSIS` over an unchanged verified basis, THE SYSTEM SHALL identify which Rule Results and Findings were added, removed, or changed between the predecessor and successor runs.
+- **Statement (EARS):** WHEN a user creates a governed `RULESET_REANALYSIS` or `CONFIG_REANALYSIS` over an unchanged verified basis, THE SYSTEM SHALL identify which rules and Findings were added, removed, changed, or unchanged; identify rule-version and result-status changes; and identify optional-rule effects between the predecessor and successor runs.
 - **Rationale:** Users need to see the consequence of a rule change without overwriting either result set.
 - **Source:** stakeholder (AR-01; Product Owner brief §7); extends root FR-079 and FR-107.
 - **Priority:** Should
 - **Dependencies:** First-release reporting contract §2.13; FR-149, FR-153, FR-171.
 - **Acceptance criteria:**
-  - Given two runs differing only by rule-set version, When compared, Then added, removed, and changed outcomes are identified with both versions.
+  - Given any two linked runs, When compared, Then added, removed, changed, and unchanged rules and Findings, rule-version changes, result-status changes, and optional-rule effects are identified with both run and Rule Set versions.
   - Given the successor is created, When its provenance is inspected, Then it inherits the predecessor's original verification basis, records the reanalysis initiator separately, and remains working/unpublished until FR-202 succeeds.
   - Given either run is missing, When comparison is requested, Then no inferred comparison is shown.
 - **Traces to:** TBD at `/sdd:decompose`
@@ -733,7 +733,7 @@ Every review-specific response is represented as atomic Claim Records. Each Clai
 - **Dependencies:** FR-128, FR-139, FR-142, FR-143.
 - **Acceptance criteria:**
   - Given all gates pass, When validation starts, Then the Validation Run binds the selected Review Version, Rule Set Version, initiating Actor ID, and Current Validation Values.
-  - Given a selected Review Version, When validation is requested after its authoritative run already exists, Then no second authoritative run is created; exact replay follows FR-173.
+  - Given a selected Review Version whose authoritative run already exists, When a new Validation Run is confirmed, Then a successor Review Version is created under FR-173; no second authoritative run is added to the selected version.
   - Given the Working Dataset or rule set changes during a run, When the run completes, Then its records still reference the immutable versions captured at start.
 - **Traces to:** TBD at `/sdd:decompose`
 - **Status:** Draft
@@ -1017,8 +1017,9 @@ Every review-specific response is represented as atomic Claim Records. Each Clai
 - **Dependencies:** FR-149, FR-151, FR-171, FR-172.
 - **Acceptance criteria:**
   - Given the Rule Set Version or governed configuration changes while the verified basis is identical, When reanalysis starts, Then one working successor at `Data Reviewed` records `RULESET_REANALYSIS` or `CONFIG_REANALYSIS`, inherits the exact original verification basis, and separately records the initiator.
+  - Given data, rules, and configuration are unchanged, When a Reviewer explicitly confirms **Create New Validation Run**, Then one successor `RULESET_REANALYSIS` Review Version and one linked Validation Run are created against the same pinned Rule Set while every prior run remains unchanged.
   - Given source bytes, reviewed Current Validation Values, or extractor basis changes, When re-evaluation starts, Then a Working Candidate is created under FR-196 and fresh confirmation is required before a successor generation exists.
-  - Given data, rules, and configuration are all unchanged, When exact replay is requested, Then the system recomputes and compares the §2.6 projection, appends one Replay Verification Event with actor/time/outcome, and creates no Review Version or authoritative Validation Run.
+  - Given data, rules, and configuration are all unchanged, When the distinct Exact Replay verification operation is requested, Then the system recomputes and compares the §2.6 projection, appends one Replay Verification Event with actor/time/outcome, and creates no Review Version or authoritative Validation Run.
   - Given the rerun completes with different results, When the original opens, Then its original versions and outputs remain unchanged.
 - **Traces to:** TBD at `/sdd:decompose`
 - **Status:** Draft

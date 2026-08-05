@@ -1,5 +1,7 @@
 import pytest
-from PySide6.QtWidgets import QDialog, QMessageBox
+from PySide6.QtWidgets import QDialog
+
+import finsight.delivery.desktop.views.review_management_view as management_view
 
 from finsight.delivery.desktop.components import DeleteReviewDialog
 
@@ -24,9 +26,9 @@ def test_past_review_delete_uses_governed_confirmation_and_refreshes(
         lambda _dialog: QDialog.DialogCode.Accepted,
     )
     monkeypatch.setattr(
-        QMessageBox,
-        "information",
-        lambda *_args, **_kwargs: QMessageBox.StandardButton.Ok,
+        management_view,
+        "show_in_app_message",
+        lambda *_args, **_kwargs: QDialog.DialogCode.Accepted,
     )
     management._delete_review(review)
 

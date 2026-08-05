@@ -64,7 +64,7 @@ def test_fresh_db_has_all_new_tables_and_head_version():
     conn = head_db()
     tabs = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert NEW_TABLES.issubset(tabs)
-    assert current_version(conn) == 14
+    assert current_version(conn) == 16
 
 
 def test_additive_columns_present():

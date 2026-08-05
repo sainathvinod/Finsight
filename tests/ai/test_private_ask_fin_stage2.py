@@ -303,8 +303,9 @@ def test_help_mode_greeting_suggestions_and_grounded_answer():
     result = service.ask(_request("How do I create a financial review?"))
     assert result.status is PrivateAskFinStatus.OK
     assert result.mode is AskFinMode.APPLICATION_HELP
-    assert result.citations[0].object_type == "help"
-    assert provider.calls == 1
+    assert not result.citations
+    assert provider.calls == 0
+    assert result.provider == "finsight"
     assert audit.records[-1]["mode"] == "application_help"
 
 
@@ -331,9 +332,10 @@ def test_global_application_help_needs_no_active_review_or_financial_retrieval()
     assert session.mode is AskFinMode.APPLICATION_HELP
     assert result.status is PrivateAskFinStatus.OK
     assert result.review_id == ""
-    assert result.citations[0].review_id == ""
+    assert not result.citations
     assert financial.result_calls == []
-    assert provider.calls == 1
+    assert provider.calls == 0
+    assert result.provider == "finsight"
     assert audit.records[-1]["review_id"] == ""
 
 
@@ -425,7 +427,9 @@ def test_evidence_request_for_an_authorized_decision_is_not_misclassified():
         )
     )
     assert result.status is PrivateAskFinStatus.OK
-    assert provider.calls == 1
+    assert provider.calls == 0
+    assert result.provider == "finsight"
+    assert result.model == "deterministic-review-v1"
 
 
 def test_ollama_unavailable_has_exact_outage_and_no_fallback():
@@ -844,7 +848,7 @@ def test_local_audit_has_required_attributable_metadata():
     assert entry["provider"] == "ollama"
     assert entry["model"] == "local-test:1"
     assert entry["model_version"] == "local-test:1"
-    assert entry["prompt_version"] == "stage2-private-v4"
+    assert entry["prompt_version"] == "stage2-private-v6"
     assert entry["response"] == result.answer_text
     assert entry["citations"] == [ACCOUNT_KEY]
     assert entry["latency_ms"] >= 0

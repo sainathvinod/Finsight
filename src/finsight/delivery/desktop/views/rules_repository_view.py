@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from decimal import Decimal, InvalidOperation
 from typing import Any
 import uuid
 
@@ -19,7 +20,6 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
-    QMessageBox,
     QPlainTextEdit,
     QPushButton,
     QScrollArea,
@@ -34,6 +34,9 @@ from PySide6.QtWidgets import (
 
 from finsight.delivery.desktop.components import (
     AdaptiveSidebar,
+    DialogVariant,
+    InAppDialog,
+    InAppMessageDialog,
     NavItem,
     ReviewProgress,
 )
@@ -111,34 +114,21 @@ def _card() -> tuple[QFrame, QVBoxLayout]:
     return card, layout
 
 
-class OptionalRuleDialog(QDialog):
+class OptionalRuleDialog(InAppDialog):
     """Bounded optional-rule editor; arbitrary expressions are not accepted."""
 
     def __init__(self, existing: dict[str, Any] | None = None, parent=None):
-        super().__init__(parent)
-        self.setObjectName("OptionalRuleDialog")
-        self.setWindowTitle(
-            "Edit Optional Rule" if existing else "Add Optional Rule"
+        title = "Edit Optional Rule" if existing else "Add Optional Rule"
+        super().__init__(
+            title,
+            "Optional rules use an approved deterministic template: flag GED "
+            "transactions whose Amount exceeds a configured threshold.",
+            variant=DialogVariant.CONFIRMATION,
+            parent=parent,
+            object_name="OptionalRuleDialog",
+            minimum_width=560,
         )
-        self.setModal(True)
-        self.setMinimumWidth(560)
-        root = QVBoxLayout(self)
-        root.setContentsMargins(t.SP_5, t.SP_5, t.SP_5, t.SP_5)
-        root.setSpacing(t.SP_3)
-        root.addWidget(
-            _label(
-                "Edit Optional Rule" if existing else "Add Optional Rule",
-                "sectionHeader",
-            )
-        )
-        root.addWidget(
-            _label(
-                "MVP optional rules use an approved deterministic template: "
-                "flag GED transactions whose Amount exceeds a configured threshold.",
-                "sectionSub",
-                wrap=True,
-            )
-        )
+        root = self.content_layout
         form = QFormLayout()
         form.setHorizontalSpacing(t.SP_4)
         form.setVerticalSpacing(t.SP_3)
@@ -188,18 +178,23 @@ class OptionalRuleDialog(QDialog):
         save.clicked.connect(self._validate_and_accept)
         actions.addWidget(save)
         root.addLayout(actions)
+        self.set_safe_focus(cancel)
 
     def _validate_and_accept(self) -> None:
         try:
-            threshold = float(self.threshold.text().strip())
-        except ValueError:
-            threshold = -1
+            threshold = Decimal(self.threshold.text().strip())
+        except (InvalidOperation, ValueError):
+            threshold = Decimal("-1")
         if not self.name.text().strip() or not self.purpose.text().strip():
             self.message.setText("Enter a rule name and business purpose.")
             self.message.setVisible(True)
             return
         decimals = self.threshold.text().partition(".")[2]
-        if threshold < 0 or len(decimals) > 2:
+        if (
+            not threshold.is_finite()
+            or threshold < 0
+            or len(decimals) > 2
+        ):
             self.message.setText(
                 "Enter a positive amount threshold with no more than two decimals."
             )
@@ -215,32 +210,27 @@ class OptionalRuleDialog(QDialog):
             "evaluator_key": "ged_amount_threshold",
             "parameters": {
                 "operator": "LTE",
-                "threshold": f"{float(self.threshold.text().strip()):.2f}",
+                "threshold": format(
+                    Decimal(self.threshold.text().strip()), ".2f"
+                ),
             },
         }
 
 
-class ProtectedChangeDialog(QDialog):
+class ProtectedChangeDialog(InAppDialog):
     """Bounded authoring surface for one governed protected successor."""
 
     def __init__(self, existing: dict[str, Any], parent=None):
-        super().__init__(parent)
-        self.setObjectName("ProtectedChangeDialog")
-        self.setWindowTitle("Request Protected Rule Change")
-        self.setModal(True)
-        self.setMinimumWidth(640)
-        root = QVBoxLayout(self)
-        root.setContentsMargins(t.SP_5, t.SP_5, t.SP_5, t.SP_5)
-        root.setSpacing(t.SP_3)
-        root.addWidget(_label("Request Protected Rule Change", "sectionHeader"))
-        root.addWidget(
-            _label(
-                "This creates an immutable Tested candidate and a Pending Approval "
-                "request. A different Financial Control Approver must decide it.",
-                "sectionSub",
-                wrap=True,
-            )
+        super().__init__(
+            "Request Protected Rule Change",
+            "This creates an immutable Tested candidate and a Pending Approval "
+            "request. A different Financial Control Approver must decide it.",
+            variant=DialogVariant.PROTECTED,
+            parent=parent,
+            object_name="ProtectedChangeDialog",
+            minimum_width=640,
         )
+        root = self.content_layout
         form = QFormLayout()
         form.setHorizontalSpacing(t.SP_4)
         form.setVerticalSpacing(t.SP_3)
@@ -309,6 +299,7 @@ class ProtectedChangeDialog(QDialog):
         submit.clicked.connect(self._validate_and_accept)
         actions.addWidget(submit)
         root.addLayout(actions)
+        self.set_safe_focus(cancel)
 
     @staticmethod
     def _next_version(version: str) -> str:
@@ -351,30 +342,27 @@ class ProtectedChangeDialog(QDialog):
         }
 
 
-class ProtectedDecisionDialog(QDialog):
+class ProtectedDecisionDialog(InAppDialog):
     """Explicit, attributable approval or rejection reason."""
 
     def __init__(self, request: dict[str, Any], decision: str, parent=None):
-        super().__init__(parent)
-        self.setObjectName("ProtectedDecisionDialog")
         self._decision = decision.upper()
         verb = "Approve" if self._decision == "APPROVED" else "Reject"
-        self.setWindowTitle(f"{verb} Protected Change")
-        self.setModal(True)
-        self.setMinimumWidth(560)
-        root = QVBoxLayout(self)
-        root.setContentsMargins(t.SP_5, t.SP_5, t.SP_5, t.SP_5)
-        root.setSpacing(t.SP_3)
-        root.addWidget(_label(f"{verb} Protected Change", "sectionHeader"))
-        root.addWidget(
-            _label(
-                f"{request['rule_id']} · v{request['predecessor_version']} → "
-                f"v{request['candidate_version']}\n"
-                f"Requested by {request['requester_actor_id']}",
-                "sectionSub",
-                wrap=True,
-            )
+        super().__init__(
+            f"{verb} Protected Change",
+            f"{request['rule_id']} · v{request['predecessor_version']} → "
+            f"v{request['candidate_version']}\n"
+            f"Requested by {request['requester_actor_id']}",
+            variant=(
+                DialogVariant.CONFIRMATION
+                if self._decision == "APPROVED"
+                else DialogVariant.WARNING
+            ),
+            parent=parent,
+            object_name="ProtectedDecisionDialog",
+            minimum_width=560,
         )
+        root = self.content_layout
         self.reason = QPlainTextEdit()
         self.reason.setObjectName("ProtectedDecisionReason")
         self.reason.setAccessibleName(
@@ -403,6 +391,7 @@ class ProtectedDecisionDialog(QDialog):
         submit.clicked.connect(self._validate_and_accept)
         actions.addWidget(submit)
         root.addLayout(actions)
+        self.set_safe_focus(cancel)
 
     def _validate_and_accept(self) -> None:
         if not self.reason.toPlainText().strip():
@@ -418,31 +407,22 @@ class ProtectedDecisionDialog(QDialog):
         }
 
 
-class WorkspaceBaselineUpgradeDialog(QDialog):
+class WorkspaceBaselineUpgradeDialog(InAppDialog):
     """Explicit request to apply one effective protected baseline to a workspace."""
 
     def __init__(self, status: dict[str, Any], parent=None):
-        super().__init__(parent)
-        self.setObjectName("WorkspaceBaselineUpgradeDialog")
-        self.setWindowTitle("Request Workspace Baseline Upgrade")
-        self.setModal(True)
-        self.setMinimumWidth(620)
-        root = QVBoxLayout(self)
-        root.setContentsMargins(t.SP_5, t.SP_5, t.SP_5, t.SP_5)
-        root.setSpacing(t.SP_3)
-        root.addWidget(
-            _label("Request Workspace Baseline Upgrade", "sectionHeader")
+        super().__init__(
+            "Request Workspace Baseline Upgrade",
+            "This request preserves the current Rule Set and Validation Run. "
+            "A different Financial Control Approver must authorize the new "
+            "workspace Rule Set before a Reviewer can create the required "
+            "successor Review Version and Validation Run.",
+            variant=DialogVariant.PROTECTED,
+            parent=parent,
+            object_name="WorkspaceBaselineUpgradeDialog",
+            minimum_width=620,
         )
-        root.addWidget(
-            _label(
-                "This request preserves the current Rule Set and Validation Run. "
-                "A different Financial Control Approver must authorize the new "
-                "workspace Rule Set before a Reviewer can create the required "
-                "successor Review Version and Validation Run.",
-                "sectionSub",
-                wrap=True,
-            )
-        )
+        root = self.content_layout
         evidence, evidence_layout = _card()
         evidence.setAccessibleName("Workspace baseline upgrade evidence")
         grid = QGridLayout()
@@ -512,6 +492,7 @@ class WorkspaceBaselineUpgradeDialog(QDialog):
         submit.clicked.connect(self._validate_and_accept)
         actions.addWidget(submit)
         root.addLayout(actions)
+        self.set_safe_focus(cancel)
 
     def _validate_and_accept(self) -> None:
         if not self.reason.toPlainText().strip():
@@ -524,7 +505,7 @@ class WorkspaceBaselineUpgradeDialog(QDialog):
         return {"reason": self.reason.toPlainText().strip()}
 
 
-class WorkspaceBaselineDecisionDialog(QDialog):
+class WorkspaceBaselineDecisionDialog(InAppDialog):
     """Attributable approval or rejection of one workspace baseline upgrade."""
 
     def __init__(
@@ -533,29 +514,24 @@ class WorkspaceBaselineDecisionDialog(QDialog):
         decision: str,
         parent=None,
     ):
-        super().__init__(parent)
-        self.setObjectName("WorkspaceBaselineDecisionDialog")
         self._decision = decision.upper()
         verb = "Authorize" if self._decision == "APPROVED" else "Reject"
-        self.setWindowTitle(f"{verb} Workspace Baseline Upgrade")
-        self.setModal(True)
-        self.setMinimumWidth(600)
-        root = QVBoxLayout(self)
-        root.setContentsMargins(t.SP_5, t.SP_5, t.SP_5, t.SP_5)
-        root.setSpacing(t.SP_3)
-        root.addWidget(
-            _label(f"{verb} Workspace Baseline Upgrade", "sectionHeader")
+        super().__init__(
+            f"{verb} Workspace Baseline Upgrade",
+            f"Review {request.get('review_id', '—')}\n"
+            f"{request.get('requested_rule_set_id', '—')} → "
+            f"{request.get('target_baseline_id', '—')}\n"
+            f"Requested by {request.get('requester_actor_id', '—')}",
+            variant=(
+                DialogVariant.CONFIRMATION
+                if self._decision == "APPROVED"
+                else DialogVariant.WARNING
+            ),
+            parent=parent,
+            object_name="WorkspaceBaselineDecisionDialog",
+            minimum_width=600,
         )
-        root.addWidget(
-            _label(
-                f"Review {request.get('review_id', '—')}\n"
-                f"{request.get('requested_rule_set_id', '—')} → "
-                f"{request.get('target_baseline_id', '—')}\n"
-                f"Requested by {request.get('requester_actor_id', '—')}",
-                "sectionSub",
-                wrap=True,
-            )
-        )
+        root = self.content_layout
         root.addWidget(
             _label(
                 "Authorization creates one successor workspace Rule Set only. "
@@ -596,6 +572,7 @@ class WorkspaceBaselineDecisionDialog(QDialog):
         submit.clicked.connect(self._validate_and_accept)
         actions.addWidget(submit)
         root.addLayout(actions)
+        self.set_safe_focus(cancel)
 
     def _validate_and_accept(self) -> None:
         if not self.reason.toPlainText().strip():
@@ -611,12 +588,184 @@ class WorkspaceBaselineDecisionDialog(QDialog):
         }
 
 
+class RuleSetConfirmationDialog(InAppDialog):
+    """Inspect and explicitly confirm the exact deterministic run inputs."""
+
+    def __init__(self, proposal: dict[str, Any], parent=None):
+        super().__init__(
+            "New validation run",
+            "Confirm the verified working data and exact active Rule Set. "
+            "The prior Validation Run will remain preserved.",
+            variant=DialogVariant.CONFIRMATION,
+            parent=parent,
+            object_name="RuleSetConfirmationDialog",
+            minimum_width=780,
+        )
+        self.proposal = proposal
+        summary = QGridLayout()
+        summary.setHorizontalSpacing(t.SP_4)
+        summary.setVerticalSpacing(t.SP_2)
+        rows = (
+            ("Working data", proposal["working_data_label"]),
+            (
+                "Source reports",
+                f"{proposal['budget_filename']} · {proposal['ged_filename']}",
+            ),
+            (
+                "Rule Set",
+                f"{proposal['rule_set_id']} · v{proposal['rule_set_version']}",
+            ),
+            (
+                "Rules",
+                f"{proposal['counts']['protected_core']} protected core · "
+                f"{proposal['counts']['enabled_optional']} enabled optional · "
+                f"{proposal['counts']['draft']} unresolved draft · "
+                f"{proposal['counts']['disabled_included']} disabled included",
+            ),
+            (
+                "Prior run",
+                str(proposal.get("prior_run_id") or "First validation run"),
+            ),
+        )
+        for row, (name, value) in enumerate(rows):
+            summary.addWidget(_label(name, "kvKey"), row, 0)
+            field = _label(str(value), "kvVal", wrap=True)
+            field.setTextInteractionFlags(
+                Qt.TextInteractionFlag.TextSelectableByKeyboard
+                | Qt.TextInteractionFlag.TextSelectableByMouse
+            )
+            summary.addWidget(field, row, 1)
+        summary.setColumnStretch(1, 1)
+        self.content_layout.addLayout(summary)
+
+        change_text = (
+            "The same active Rule Set will run again against the current "
+            "verified data."
+            if proposal["same_rule_set_rerun"]
+            else "\n".join(
+                item["label"] for item in proposal["changes"]
+            )
+            or "This is the first validation run."
+        )
+        changes = _label(
+            f"Changes since prior run\n{change_text}",
+            "cardDetail",
+            wrap=True,
+        )
+        changes.setAccessibleName("Changes since the prior validation run")
+        self.content_layout.addWidget(changes)
+
+        self.rules_table = QTreeWidget()
+        self.rules_table.setObjectName("ConfirmedRuleSetTable")
+        self.rules_table.setAccessibleName(
+            "Exact active rules and versions for this validation run"
+        )
+        self.rules_table.setColumnCount(5)
+        self.rules_table.setHeaderLabels(
+            ("Rule", "Version", "Type", "Status", "Configuration")
+        )
+        self.rules_table.setRootIsDecorated(False)
+        self.rules_table.setAlternatingRowColors(True)
+        self.rules_table.setMinimumHeight(220)
+        for rule in proposal["included_rules"]:
+            parameters = rule.get("parameters") or {}
+            configuration = (
+                ", ".join(
+                    f"{name}={value}"
+                    for name, value in sorted(parameters.items())
+                )
+                or "Approved default"
+            )
+            item = QTreeWidgetItem(
+                (
+                    f"{rule['name']} ({rule['rule_id']})",
+                    str(rule["rule_version"]),
+                    (
+                        "Protected core"
+                        if rule["baseline_status"] == "PROTECTED_BASELINE"
+                        else "Optional"
+                    ),
+                    str(rule["status"]),
+                    configuration,
+                )
+            )
+            self.rules_table.addTopLevelItem(item)
+        for column in range(5):
+            self.rules_table.resizeColumnToContents(column)
+        self.rules_table.header().setSectionResizeMode(
+            0, QHeaderView.ResizeMode.Stretch
+        )
+        self.content_layout.addWidget(self.rules_table)
+
+        self.cancel_button = self.add_action(
+            "Cancel",
+            role="secondary",
+            accessible_name="Cancel validation Rule Set confirmation",
+            reject=True,
+            default=True,
+        )
+        self.run_button = self.add_action(
+            "Run Validation",
+            role="primary",
+            accessible_name="Confirm the Rule Set and run deterministic validation",
+            accept=True,
+        )
+        self.set_safe_focus(self.cancel_button)
+
+
+class ProtectedCoreActionDialog(InAppDialog):
+    """Explain a protected action without offering a destructive bypass."""
+
+    def __init__(self, rule: dict[str, Any], parent=None):
+        name = str(rule.get("name") or "This core rule")
+        super().__init__(
+            "Protected core rule",
+            f"{name} is part of FinSight’s mandatory financial-control "
+            "baseline and cannot be deleted or disabled through the ordinary "
+            "rule workflow.\n\nYou may review the rule, propose a governed "
+            "successor version, or add an optional rule for additional validation.",
+            variant=DialogVariant.PROTECTED,
+            parent=parent,
+            object_name="ProtectedCoreActionDialog",
+            minimum_width=650,
+        )
+        self.choice = "return"
+        self.return_button = self.add_action(
+            "Return to Rule",
+            role="secondary",
+            accessible_name="Return to the protected rule without changes",
+            reject=True,
+            default=True,
+        )
+        self.propose_button = self.add_action(
+            "Propose New Version",
+            role="primary",
+            accessible_name="Propose a governed successor rule version",
+        )
+        self.optional_button = self.add_action(
+            "Add Optional Rule",
+            role="secondary",
+            accessible_name="Add an optional rule instead",
+        )
+        self.propose_button.clicked.connect(
+            lambda: self._select("propose")
+        )
+        self.optional_button.clicked.connect(
+            lambda: self._select("optional")
+        )
+        self.set_safe_focus(self.return_button)
+
+    def _select(self, choice: str) -> None:
+        self.choice = choice
+        self.accept()
+
+
 class RulesRepositoryView(QWidget):
     homeRequested = Signal()
     pastReviewsRequested = Signal()
     settingsRequested = Signal()
     backRequested = Signal(object)
-    validationRequested = Signal(object, object, bool)
+    validationRequested = Signal(object, object, bool, object)
     askFinRequested = Signal()
 
     def __init__(self, controller, parent=None):
@@ -630,6 +779,8 @@ class RulesRepositoryView(QWidget):
         self._rules: list[dict[str, Any]] = []
         self._selected_rule: dict[str, Any] | None = None
         self._active_rule_set_id = ""
+        self._validation_proposal: dict[str, Any] | None = None
+        self._validation_running = False
         self._rules_ready = False
         self._can_manage_optional = False
         self._can_request_protected = False
@@ -759,6 +910,45 @@ class RulesRepositoryView(QWidget):
         )
         layout.addWidget(self._set_status)
 
+        self._draft_banner = QFrame()
+        self._draft_banner.setProperty("role", "noticeCard")
+        self._draft_banner.setAccessibleName(
+            "Unresolved draft rule validation requirement"
+        )
+        draft_layout = QVBoxLayout(self._draft_banner)
+        draft_layout.setContentsMargins(t.SP_4, t.SP_3, t.SP_4, t.SP_3)
+        draft_layout.setSpacing(t.SP_2)
+        self._draft_message = _label("", "cardDetail", wrap=True)
+        self._draft_message.setAccessibleName(
+            "Reason validation is not yet available"
+        )
+        draft_layout.addWidget(self._draft_message)
+        draft_actions = QHBoxLayout()
+        self._draft_test = QPushButton("Test Rule")
+        self._draft_test.setProperty("role", "secondary")
+        self._draft_test.clicked.connect(self._test_first_unresolved_draft)
+        draft_actions.addWidget(self._draft_test)
+        self._draft_activate = QPushButton("Activate Rule")
+        self._draft_activate.setProperty("role", "primary")
+        self._draft_activate.clicked.connect(
+            self._activate_first_unresolved_draft
+        )
+        draft_actions.addWidget(self._draft_activate)
+        self._draft_exclude = QPushButton("Exclude Draft Rule")
+        self._draft_exclude.setProperty("role", "secondary")
+        self._draft_exclude.clicked.connect(
+            self._exclude_first_unresolved_draft
+        )
+        draft_actions.addWidget(self._draft_exclude)
+        self._draft_review = QPushButton("Review Rule")
+        self._draft_review.setProperty("role", "quiet")
+        self._draft_review.clicked.connect(self._review_first_unresolved_draft)
+        draft_actions.addWidget(self._draft_review)
+        draft_actions.addStretch(1)
+        draft_layout.addLayout(draft_actions)
+        self._draft_banner.setVisible(False)
+        layout.addWidget(self._draft_banner)
+
         list_card, list_layout = _card()
         list_layout.addWidget(_label("Rules for this review", "cardTitle"))
         self._rule_table = QTreeWidget()
@@ -850,13 +1040,17 @@ class RulesRepositoryView(QWidget):
         self._enable_button.setProperty("role", "secondary")
         self._enable_button.clicked.connect(self._toggle_enabled)
         detail_actions.addWidget(self._enable_button)
-        self._activate_button = QPushButton("Save New Rule Version")
+        self._activate_button = QPushButton("Activate Rule")
         self._activate_button.setProperty("role", "primary")
         self._activate_button.setAccessibleName(
             "Activate the tested optional rule as a new rule-set version"
         )
         self._activate_button.clicked.connect(self._activate_selected)
         detail_actions.addWidget(self._activate_button)
+        self._exclude_button = QPushButton("Exclude Draft Rule")
+        self._exclude_button.setProperty("role", "secondary")
+        self._exclude_button.clicked.connect(self._toggle_draft_exclusion)
+        detail_actions.addWidget(self._exclude_button)
         self._delete_button = QPushButton("Delete")
         self._delete_button.setProperty("role", "destructive")
         self._delete_button.clicked.connect(self._delete_selected)
@@ -1291,6 +1485,8 @@ class RulesRepositoryView(QWidget):
         self._review = review
         self._dataset = dataset
         self._revalidation = revalidation
+        self._validation_proposal = None
+        self._validation_running = False
         self._context.setText(
             f"Active review: {review.period.label} · {review.status.value}"
         )
@@ -1329,6 +1525,15 @@ class RulesRepositoryView(QWidget):
             if self._can_manage_optional
             else "A Rule Administrator role is required."
         )
+        if revalidation:
+            try:
+                self._c.record_revalidation_entry(review.review_id)
+            except Exception as exc:
+                self._message.setText(
+                    "Revalidation entry could not be audited. Validation is "
+                    "unavailable until this is resolved. " + _safe_error(exc)
+                )
+                self._validation_running = True
         self.refresh()
 
     def open_governance_queue(self) -> None:
@@ -1429,6 +1634,15 @@ class RulesRepositoryView(QWidget):
             )
         else:
             self._rules = list(projection)
+        try:
+            self._validation_proposal = (
+                self._c.validation_rule_set_proposal(self._dataset)
+            )
+        except Exception as exc:
+            self._validation_proposal = None
+            self._message.setText(
+                "The proposed Rule Set is unavailable. " + _safe_error(exc)
+            )
         self._workspace_upgrade_status = {}
         if hasattr(self._c, "workspace_upgrade_status"):
             try:
@@ -1443,14 +1657,18 @@ class RulesRepositoryView(QWidget):
                     "Workspace baseline status could not be loaded. "
                     + _safe_error(exc)
                 )
-        core_count = sum(
-            rule.get("baseline_status") == "PROTECTED_BASELINE"
-            for rule in self._rules
+        counts = (self._validation_proposal or {}).get("counts", {})
+        core_count = int(counts.get("protected_core", 0))
+        optional_count = int(counts.get("enabled_optional", 0))
+        unresolved_count = len(
+            (self._validation_proposal or {}).get(
+                "unresolved_drafts", ()
+            )
         )
-        optional_count = len(self._rules) - core_count
         status_text = (
             f"Active Rule Set · {core_count} core rules · "
-            f"{optional_count} optional rules"
+            f"{optional_count} enabled optional rules · "
+            f"{unresolved_count} unresolved drafts"
         )
         self._set_status.setText(status_text)
         upgrade_available = bool(
@@ -1500,10 +1718,23 @@ class RulesRepositoryView(QWidget):
                 if rule.get("baseline_status") == "PROTECTED_BASELINE"
                 else "Optional Rule"
             )
+            lifecycle_status = str(
+                rule.get("lifecycle_status", "ACTIVE")
+            )
             status = (
-                "Disabled"
-                if rule.get("bound") and not rule.get("enabled", True)
-                else str(rule.get("lifecycle_status", "ACTIVE")).title()
+                "Retired"
+                if lifecycle_status == "RETIRED"
+                else (
+                    "Disabled"
+                    if rule.get("bound") and not rule.get("enabled", True)
+                    else (
+                    f"{str(rule.get('lifecycle_status', 'ACTIVE')).title()} · Excluded"
+                    if rule.get("excluded_from_proposed_set")
+                    else str(
+                        rule.get("lifecycle_status", "ACTIVE")
+                    ).title()
+                    )
+                )
             )
             item = QListWidgetItem(
                 f"{rule.get('name', rule.get('rule_id', 'Rule'))}\n"
@@ -1549,15 +1780,50 @@ class RulesRepositoryView(QWidget):
         self._rule_table.header().setSectionResizeMode(
             0, QHeaderView.ResizeMode.Stretch
         )
-        self._rules_ready = (
-            sum(
-                rule.get("baseline_status") == "PROTECTED_BASELINE"
-                and rule.get("enabled", True)
-                for rule in self._rules
-            )
-            >= 5
+        self._rules_ready = bool(
+            self._validation_proposal
+            and self._validation_proposal.get("ready")
+            and not self._validation_running
         )
-        self._validate.setEnabled(self._rules_ready)
+        readiness_reasons = list(
+            (self._validation_proposal or {}).get(
+                "readiness_reasons", ()
+            )
+        )
+        if self._validation_running:
+            readiness_reasons = ["Validation is already running."]
+        elif self._validation_proposal is None:
+            readiness_reasons = [
+                "The proposed Rule Set or verified data is unavailable."
+            ]
+        run_help = (
+            "Open the Rule Set confirmation before deterministic validation."
+            if self._rules_ready
+            else " ".join(readiness_reasons)
+        )
+        self._set_available(self._validate, self._rules_ready, run_help)
+        unresolved = list(
+            (self._validation_proposal or {}).get(
+                "unresolved_drafts", ()
+            )
+        )
+        self._draft_banner.setVisible(bool(unresolved))
+        if unresolved:
+            first = unresolved[0]
+            self._draft_message.setText(
+                f"{len(unresolved)} draft rule(s) are not included in "
+                f"validation. “{first['name']}” must be tested and activated, "
+                "or excluded from the proposed Rule Set, before a new "
+                "validation run can begin."
+            )
+            self._draft_activate.setEnabled(first["status"] == "Tested")
+            activate_reason = (
+                "Activate this tested Rule Version."
+                if first["status"] == "Tested"
+                else "Test this Draft Rule Version before activation."
+            )
+            self._draft_activate.setToolTip(activate_reason)
+            self._draft_activate.setAccessibleDescription(activate_reason)
         if self._rule_list.count():
             self._rule_list.setCurrentRow(0)
         if self._rule_table.topLevelItemCount():
@@ -1598,15 +1864,16 @@ class RulesRepositoryView(QWidget):
         self._comparison_card.setVisible(True)
         latest = history[-1]
         metrics = latest.get("metrics", {})
-        if self._revalidation and latest.get("rule_set_id") == self._active_rule_set_id:
+        if (
+            self._revalidation
+            and latest.get("rule_set_id") == self._active_rule_set_id
+        ):
             self._comparison.setText(
-                "The current results already use this Rule Set Version. "
-                "Create, activate, enable, disable, or retire an optional rule "
-                "before creating another validation run."
+                "Same rules will be rerun · The current active Rule Set Version "
+                "will run again against the verified working data. The prior "
+                "Validation Run and findings will remain preserved for comparison."
             )
-            self._validate.setEnabled(False)
             return
-        self._validate.setEnabled(self._rules_ready)
         self._comparison.setText(
             f"Prior run preserved · {metrics.get('rules_passed', 0)} rules passed · "
             f"{metrics.get('rules_failed', 0)} failed · "
@@ -1654,10 +1921,11 @@ class RulesRepositoryView(QWidget):
         previous_versions = tuple(rule.get("previous_versions") or ())
         if previous_versions:
             rendered_versions = ", ".join(
-                str(
-                    item.get("version", "—")
+                (
+                    f"{item.get('version', '—')} "
+                    f"({str(item.get('display_lifecycle_status') or item.get('lifecycle_status') or 'Superseded').title()})"
                     if isinstance(item, dict)
-                    else item
+                    else f"{item} (Superseded)"
                 )
                 for item in previous_versions
             )
@@ -1676,46 +1944,126 @@ class RulesRepositoryView(QWidget):
                 )
             )
         )
-        self._test_button.setEnabled(
+        can_test = (
             self._can_manage_optional
             and not protected
             and lifecycle in {"DRAFT", "TESTED"}
         )
-        self._edit_button.setEnabled(
+        self._set_available(
+            self._test_button,
+            can_test,
             (
-                self._can_request_protected
-                if protected
-                else self._can_manage_optional
-            )
+                "Run a deterministic preview without changing review results."
+                if can_test
+                else (
+                    "Protected core rules use the governed successor test flow."
+                    if protected
+                    else "Select a Draft or Tested optional rule as a Rule Administrator."
+                )
+            ),
+        )
+        can_edit = (
+            self._can_request_protected
+            if protected
+            else self._can_manage_optional
+        )
+        self._set_available(
+            self._edit_button,
+            can_edit,
+            (
+                "Create an immutable governed successor version."
+                if protected and can_edit
+                else (
+                    "Create a new immutable optional Rule Version."
+                    if can_edit
+                    else "A Rule Administrator role is required."
+                )
+            ),
         )
         self._edit_button.setText(
             "Create New Version" if protected else "Edit"
         )
-        self._enable_button.setEnabled(
+        can_toggle = (
             self._can_manage_optional
             and not protected
             and bound
             and lifecycle == "ACTIVE"
         )
-        self._delete_button.setEnabled(
+        self._set_available(
+            self._enable_button,
+            can_toggle,
+            (
+                "Enable or disable this optional rule in a new Rule Set Version."
+                if can_toggle
+                else (
+                    "Protected core rules cannot be disabled through the ordinary workflow."
+                    if protected
+                    else "Only an active, bound optional rule can be enabled or disabled."
+                )
+            ),
+        )
+        can_delete = (
             self._can_manage_optional
             and lifecycle != "RETIRED"
         )
+        self._set_available(
+            self._delete_button,
+            can_delete,
+            (
+                "Open protected-control options; no destructive bypass is available."
+                if protected and can_delete
+                else (
+                    "Retire this optional rule from future Rule Sets while preserving history."
+                    if can_delete
+                    else "A Rule Administrator role is required, or the rule is already retired."
+                )
+            ),
+        )
         if protected:
-            self._delete_button.setToolTip(
-                "Protected core rules cannot be deleted. Select Delete to "
-                "review the protected-control explanation."
-            )
+            self._delete_button.setText("Protected action")
         else:
-            self._delete_button.setToolTip(
-                "Retire this rule from future validation while preserving "
-                "historical versions and results."
-            )
-        self._activate_button.setEnabled(
+            self._delete_button.setText("Retire Rule")
+        can_activate = (
             self._can_manage_optional
             and not protected
             and lifecycle == "TESTED"
             and not bound
+        )
+        self._set_available(
+            self._activate_button,
+            can_activate,
+            (
+                "Activate this tested version in a new immutable Rule Set Version."
+                if can_activate
+                else (
+                    "Test this Draft Rule Version before activation."
+                    if not protected and lifecycle == "DRAFT"
+                    else "Only an unbound Tested optional Rule Version can be activated."
+                )
+            ),
+        )
+        can_exclude = (
+            self._can_manage_optional
+            and not protected
+            and not bound
+            and lifecycle in {"DRAFT", "TESTED"}
+        )
+        excluded = bool(rule.get("excluded_from_proposed_set"))
+        self._exclude_button.setText(
+            "Include in Proposal" if excluded else "Exclude Draft Rule"
+        )
+        self._set_available(
+            self._exclude_button,
+            can_exclude,
+            (
+                "Return this Draft to proposal review; it still cannot execute until activated."
+                if can_exclude and excluded
+                else (
+                    "Explicitly exclude this Draft from the proposed Rule Set."
+                    if can_exclude
+                    else "Only an unbound Draft or Tested optional rule can be excluded."
+                )
+            ),
         )
         self._enable_button.setText(
             "Enable" if bound and not enabled else "Disable"
@@ -1766,8 +2114,10 @@ class RulesRepositoryView(QWidget):
                 dialog.value(),
             )
         except Exception as exc:
-            QMessageBox.warning(
-                self, "Protected request not submitted", _safe_error(exc)
+            self._show_notice(
+                "Protected request not submitted",
+                _safe_error(exc),
+                DialogVariant.ERROR,
             )
             return
         self._governance_message.setText(
@@ -1797,10 +2147,10 @@ class RulesRepositoryView(QWidget):
                 target_baseline_id=candidate.get("target_baseline_id"),
             )
         except Exception as exc:
-            QMessageBox.warning(
-                self,
+            self._show_notice(
                 "Workspace upgrade not submitted",
                 _safe_error(exc),
+                DialogVariant.ERROR,
             )
             return
         target = request.get(
@@ -2251,10 +2601,10 @@ class RulesRepositoryView(QWidget):
                 request["request_id"], **dialog.value()
             )
         except Exception as exc:
-            QMessageBox.warning(
-                self,
+            self._show_notice(
                 "Workspace upgrade decision not saved",
                 _safe_error(exc),
+                DialogVariant.ERROR,
             )
             return
         self._workspace_upgrade_message.setText(
@@ -2568,14 +2918,14 @@ class RulesRepositoryView(QWidget):
                 )
             )
         except Exception as exc:
-            QMessageBox.warning(
-                self,
+            self._show_notice(
                 (
                     "Workspace upgrade decision not saved"
                     if workspace_upgrade
                     else "Protected decision not saved"
                 ),
                 _safe_error(exc),
+                DialogVariant.ERROR,
             )
             return
         if workspace_upgrade:
@@ -2609,7 +2959,11 @@ class RulesRepositoryView(QWidget):
                 self._review.review_id, dialog.value()
             )
         except Exception as exc:
-            QMessageBox.warning(self, "Rule not created", _safe_error(exc))
+            self._show_notice(
+                "Rule not created",
+                _safe_error(exc),
+                DialogVariant.ERROR,
+            )
             return
         self._message.setText(
             "Optional rule draft created. Test it before activating the new version."
@@ -2635,8 +2989,10 @@ class RulesRepositoryView(QWidget):
                 dialog.value(),
             )
         except Exception as exc:
-            QMessageBox.warning(
-                self, "Rule version not saved", _safe_error(exc)
+            self._show_notice(
+                "Rule version not saved",
+                _safe_error(exc),
+                DialogVariant.ERROR,
             )
             return
         self._message.setText(
@@ -2654,7 +3010,11 @@ class RulesRepositoryView(QWidget):
                 self._dataset,
             )
         except Exception as exc:
-            QMessageBox.warning(self, "Draft test failed", _safe_error(exc))
+            self._show_notice(
+                "Draft test failed",
+                _safe_error(exc),
+                DialogVariant.ERROR,
+            )
             return
         message = (
             f"Draft test complete: {result.get('records_evaluated', 0)} records "
@@ -2662,7 +3022,94 @@ class RulesRepositoryView(QWidget):
             "No review result was changed."
         )
         self._message.setText(message)
-        QMessageBox.information(self, "Draft Test Complete", message)
+        notice = InAppMessageDialog(
+            "Draft test complete",
+            message,
+            variant=DialogVariant.INFORMATION,
+            parent=self,
+        )
+        notice.exec()
+        rule_id = str(self._selected_rule.get("rule_id", ""))
+        self.refresh()
+        self._select_rule_by_id(rule_id)
+
+    def _toggle_draft_exclusion(self) -> None:
+        if not self._selected_rule:
+            return
+        excluded = not bool(
+            self._selected_rule.get("excluded_from_proposed_set")
+        )
+        rule_id = str(self._selected_rule["rule_id"])
+        try:
+            self._c.set_optional_draft_excluded(
+                self._review.review_id,
+                rule_id,
+                str(self._selected_rule["version"]),
+                excluded=excluded,
+            )
+        except Exception as exc:
+            self._show_notice(
+                "Draft proposal not changed",
+                _safe_error(exc),
+                DialogVariant.ERROR,
+            )
+            return
+        self._message.setText(
+            "Draft rule explicitly excluded. It will not execute in the next run."
+            if excluded
+            else "Draft rule returned to proposal review. It must be activated or excluded."
+        )
+        self.refresh()
+        self._select_rule_by_id(rule_id)
+
+    def _first_unresolved_draft(self) -> dict[str, Any] | None:
+        unresolved = list(
+            (self._validation_proposal or {}).get(
+                "unresolved_drafts", ()
+            )
+        )
+        if not unresolved:
+            return None
+        identity = unresolved[0]
+        return next(
+            (
+                rule
+                for rule in self._rules
+                if str(rule.get("rule_id")) == identity["rule_id"]
+                and str(rule.get("version"))
+                == identity["rule_version"]
+            ),
+            None,
+        )
+
+    def _select_rule_by_id(self, rule_id: str) -> None:
+        for row, rule in enumerate(self._rules):
+            if str(rule.get("rule_id")) == rule_id:
+                self._rule_list.setCurrentRow(row)
+                if row < self._rule_table.topLevelItemCount():
+                    self._rule_table.setCurrentItem(
+                        self._rule_table.topLevelItem(row)
+                    )
+                return
+
+    def _review_first_unresolved_draft(self) -> None:
+        rule = self._first_unresolved_draft()
+        if rule is None:
+            return
+        self._select_rule_by_id(str(rule["rule_id"]))
+        self._rule_name.setFocus(Qt.FocusReason.OtherFocusReason)
+
+    def _test_first_unresolved_draft(self) -> None:
+        self._review_first_unresolved_draft()
+        self._test_selected()
+
+    def _activate_first_unresolved_draft(self) -> None:
+        self._review_first_unresolved_draft()
+        self._activate_selected()
+
+    def _exclude_first_unresolved_draft(self) -> None:
+        self._review_first_unresolved_draft()
+        self._toggle_draft_exclusion()
 
     def _toggle_enabled(self) -> None:
         if not self._selected_rule:
@@ -2675,8 +3122,10 @@ class RulesRepositoryView(QWidget):
                 enabled,
             )
         except Exception as exc:
-            QMessageBox.warning(
-                self, "Rule status not changed", _safe_error(exc)
+            self._show_notice(
+                "Rule status not changed",
+                _safe_error(exc),
+                DialogVariant.ERROR,
             )
             return
         self._message.setText(
@@ -2696,8 +3145,10 @@ class RulesRepositoryView(QWidget):
                 self._selected_rule["version"],
             )
         except Exception as exc:
-            QMessageBox.warning(
-                self, "Rule version not activated", _safe_error(exc)
+            self._show_notice(
+                "Rule version not activated",
+                _safe_error(exc),
+                DialogVariant.ERROR,
             )
             return
         self._message.setText(
@@ -2713,37 +3164,41 @@ class RulesRepositoryView(QWidget):
             self._selected_rule.get("baseline_status")
             == "PROTECTED_BASELINE"
         ):
-            warning = QMessageBox(self)
-            warning.setIcon(QMessageBox.Icon.Warning)
-            warning.setWindowTitle(PROTECTED_RULE_DELETE_TITLE)
-            warning.setText(PROTECTED_RULE_DELETE_TITLE)
-            warning.setInformativeText(PROTECTED_RULE_DELETE_MESSAGE)
-            return_button = warning.addButton(
-                "Return to Rule", QMessageBox.ButtonRole.RejectRole
+            dialog = ProtectedCoreActionDialog(
+                self._selected_rule, self
             )
-            version_button = warning.addButton(
-                "Create New Version", QMessageBox.ButtonRole.ActionRole
-            )
-            warning.setDefaultButton(return_button)
-            warning.exec()
-            if warning.clickedButton() is version_button:
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+            if dialog.choice == "propose":
                 self._request_protected()
+            elif dialog.choice == "optional":
+                self._add_optional()
             return
-        choice = QMessageBox.question(
-            self,
-            "Delete optional rule?",
-            "This rule will not run in future validations. Previous results and "
-            "rule versions will remain available.\n\nDelete this optional rule "
-            "from the active rule set?",
+        name = str(
+            self._selected_rule.get("name") or "This optional rule"
         )
-        if choice != QMessageBox.StandardButton.Yes:
+        dialog = InAppMessageDialog(
+            "Retire optional rule?",
+            f"“{name}” will not run in future Rule Sets. Historical "
+            "Validation Runs and prior Rule Versions will remain unchanged.",
+            variant=DialogVariant.WARNING,
+            parent=self,
+            accept_text="Retire Optional Rule",
+            cancel_text="Cancel",
+            accept_role="destructive",
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         try:
             self._c.delete_optional_rule(
                 self._review.review_id, self._selected_rule["rule_id"]
             )
         except Exception as exc:
-            QMessageBox.warning(self, "Rule not deleted", _safe_error(exc))
+            self._show_notice(
+                "Rule not retired",
+                _safe_error(exc),
+                DialogVariant.ERROR,
+            )
             return
         self._message.setText(
             "Optional rule removed from the active set. Historical versions were preserved."
@@ -2751,9 +3206,82 @@ class RulesRepositoryView(QWidget):
         self.refresh()
 
     def _continue(self) -> None:
-        self.validationRequested.emit(
-            self._review, self._dataset, self._revalidation
+        if not self._rules_ready or self._validation_proposal is None:
+            reasons = list(
+                (self._validation_proposal or {}).get(
+                    "readiness_reasons", ()
+                )
+            )
+            self._message.setText(
+                " ".join(reasons)
+                or "The proposed Rule Set is not ready for validation."
+            )
+            return
+        try:
+            proposal = self._c.validation_rule_set_proposal(self._dataset)
+        except Exception as exc:
+            self._show_notice(
+                "Rule Set confirmation unavailable",
+                _safe_error(exc),
+                DialogVariant.ERROR,
+            )
+            self.refresh()
+            return
+        dialog = RuleSetConfirmationDialog(proposal, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        try:
+            confirmation = self._c.confirm_validation_rule_set(
+                self._dataset, proposal["proposal_hash"]
+            )
+        except Exception as exc:
+            self._show_notice(
+                "Rule Set not confirmed",
+                _safe_error(exc),
+                DialogVariant.ERROR,
+            )
+            self.refresh()
+            return
+        self._validation_running = True
+        self._set_available(
+            self._validate,
+            False,
+            "Validation is already running with the confirmed Rule Set.",
         )
+        self._message.setText(
+            f"Rule Set confirmed by {confirmation['actor_id']} at "
+            f"{confirmation['confirmed_at']}. Deterministic validation is starting."
+        )
+        self.validationRequested.emit(
+            self._review,
+            self._dataset,
+            self._revalidation,
+            confirmation,
+        )
+
+    def _show_notice(
+        self,
+        title: str,
+        message: str,
+        variant: DialogVariant = DialogVariant.INFORMATION,
+    ) -> None:
+        dialog = InAppMessageDialog(
+            title,
+            message,
+            variant=variant,
+            parent=self,
+        )
+        dialog.exec()
+
+    @staticmethod
+    def _set_available(
+        button: QPushButton, enabled: bool, explanation: str
+    ) -> None:
+        """Apply one visible and assistive explanation to action state."""
+
+        button.setEnabled(enabled)
+        button.setToolTip(explanation)
+        button.setAccessibleDescription(explanation)
 
     def current_screen(self) -> str:
         return (

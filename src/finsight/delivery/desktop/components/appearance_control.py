@@ -112,6 +112,7 @@ class AppearanceMenuButton(QToolButton):
         )
         self.setIconSize(QSize(18, 18))
         self.refresh_icon()
+        self.setMinimumWidth(self.minimumSizeHint().width())
 
         menu = QMenu(self)
         menu.setAccessibleName("Appearance options")

@@ -45,6 +45,16 @@ CONFIG = {  # synthetic ConfigVersion (values pending OQ-8; DEC-019: configurati
 }
 
 
+def load_private_ask_fin_runtime_settings(*, env=None):
+    """Resolve local-only Ask Fin settings at the composition boundary."""
+
+    from finsight.infrastructure.ai.private_config import (
+        load_private_ask_fin_settings,
+    )
+
+    return load_private_ask_fin_settings(env=env)
+
+
 @dataclass
 class Container:
     """Typed composition container — the discoverable result of build_app(). Attribute access is the

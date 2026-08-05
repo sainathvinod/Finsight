@@ -50,9 +50,9 @@ class TestMigrations(unittest.TestCase):
         conn = sqlite3.connect(self.path)
         applied = run_migrations(conn, clock=_FixedClock())
         self.assertEqual(
-            applied, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+            applied, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
         )
-        self.assertEqual(current_version(conn), 14)
+        self.assertEqual(current_version(conn), 16)
         self.assertTrue(BASELINE_TABLES.issubset(self._tables(conn)))
         self.assertIn("schema_migrations", self._tables(conn))
         self.assertIn("ai_conversations", self._tables(conn))      # 0002 applied
@@ -64,9 +64,9 @@ class TestMigrations(unittest.TestCase):
         self.assertNotIn("schema_migrations", self._tables(conn))   # genuinely pre-migration
         applied = run_migrations(conn, clock=_FixedClock())
         self.assertEqual(
-            applied, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+            applied, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
         )
-        self.assertEqual(current_version(conn), 14)
+        self.assertEqual(current_version(conn), 16)
         # data preserved exactly, including Decimal-as-text
         self.assertEqual(conn.execute("SELECT cycle_id,state FROM cycles").fetchone(), ("2026-05", "Exported"))
         evidence = conn.execute("SELECT evidence FROM findings WHERE id='F-leg-6100'").fetchone()[0]
@@ -76,12 +76,12 @@ class TestMigrations(unittest.TestCase):
         conn = sqlite3.connect(self.path)
         self.assertEqual(
             run_migrations(conn),
-            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
+            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
         )
         self.assertEqual(run_migrations(conn), [])                 # idempotent
         self.assertEqual(
             applied_versions(conn),
-            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
+            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
         )
         self.assertEqual(conn.execute("SELECT COUNT(*) FROM schema_migrations WHERE version=1").fetchone()[0], 1)
 
@@ -94,7 +94,7 @@ class TestMigrations(unittest.TestCase):
         conn = sqlite3.connect(self.path)
         self.assertEqual(
             applied_versions(conn),
-            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
+            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
         )
 
     def test_ordering_and_uniqueness_enforced(self):
@@ -127,8 +127,10 @@ class TestMigrations(unittest.TestCase):
                                              (12, "workspace_upgrade", lambda c: None),
                                              (13, "finding_explanations", lambda c: None),
                                              (14, "private_ask_fin_audit", lambda c: None),
-                                             (15, "bad", bad_up)])
-        self.assertEqual(current_version(conn), 14)
+                                             (15, "validation_rule_set_confirmation", lambda c: None),
+                                             (16, "validation_run_identity", lambda c: None),
+                                             (17, "bad", bad_up)])
+        self.assertEqual(current_version(conn), 16)
         self.assertNotIn("will_rollback", self._tables(conn))      # its DDL rolled back
 
     def test_never_resets_existing_database(self):
