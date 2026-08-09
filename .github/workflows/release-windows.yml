@@ -57,11 +57,46 @@ jobs:
         run: |
           python -c "import sqlcipher3, cryptography, openpyxl, PySide6, qtawesome, finsight; print('runtime imports OK')"
 
+      # The encrypted store is the first thing that loads native code from two independent
+      # crypto stacks in one process (sqlcipher3's statically linked SQLCipher and the
+      # cryptography wheel's OpenSSL). Exercising it on its own, with faulthandler armed, turns
+      # a bare process crash inside the suite into a named, diagnosable failure.
+      - name: Verify the encrypted store opens on Windows
+        env:
+          PYTHONPATH: src
+          FINSIGHT_TEST_MODE: "1"
+          FINSIGHT_TEST_STORE_KEY_HEX: "7ec3c9291fb94a7d396d6ffa9ff21b26dd0de9c9e3c14d381b8100a0493af0bb"
+        run: |
+          python -X faulthandler -c "
+          import faulthandler, os, sys, tempfile
+          faulthandler.enable()
+          import cryptography                                  # loaded first, as conftest does
+          from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+          Ed25519PrivateKey.generate()                         # force OpenSSL initialisation
+          print('cryptography OK', cryptography.__version__); sys.stdout.flush()
+          import sqlcipher3
+          print('sqlcipher3 imported'); sys.stdout.flush()
+          from finsight.infrastructure.secure_store import (
+              TestEnvironmentStoreKeyProvider, open_encrypted_connection)
+          db = os.path.join(tempfile.mkdtemp(), 'probe.db')
+          secure = open_encrypted_connection(db, TestEnvironmentStoreKeyProvider())
+          secure.connection.execute('CREATE TABLE t(x INTEGER)')
+          secure.connection.execute('INSERT INTO t VALUES (1)')
+          secure.connection.commit()
+          print('encrypted store round-trip OK:', secure.connection.execute('SELECT x FROM t').fetchone())
+          secure.connection.close()
+          with open(db,'rb') as fh:
+              assert fh.read(16) != b'SQLite format 3\x00', 'store is plaintext'
+          print('encryption confirmed')
+          "
+
       # Quality gates run before packaging: an installer must never be cut from a red tree.
+      # -v so that a hard process crash names the test it died on; faulthandler prints a
+      # traceback rather than leaving a bare exit code.
       - name: Run the test suite
         env:
           PYTHONPATH: src
-        run: python -m pytest -q
+        run: python -X faulthandler -m pytest -v --tb=short -p no:cacheprovider
 
       - name: Check architecture contracts
         env:
