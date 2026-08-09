@@ -62,8 +62,10 @@ Write-Host "Built: $ExePath"
 # executable composes its services and opens its encrypted store on this machine.
 Write-Host "Running packaged launch smoke"
 $env:FINSIGHT_SMOKE = "1"
-& $ExePath
-$smoke = $LASTEXITCODE
+# FinSight.exe is a windowed application: the call operator does not wait for a GUI subsystem
+# process and leaves $LASTEXITCODE unset, so the status must come from Start-Process.
+$smokeProcess = Start-Process -FilePath $ExePath -Wait -PassThru
+$smoke = $smokeProcess.ExitCode
 Remove-Item Env:\FINSIGHT_SMOKE
 if ($smoke -ne 0) { throw "Packaged launch smoke failed with exit code $smoke." }
 Write-Host "Packaged launch smoke passed"

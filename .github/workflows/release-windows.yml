@@ -130,8 +130,12 @@ jobs:
         env:
           FINSIGHT_SMOKE: "1"
         run: |
-          & "dist/FinSight/FinSight.exe"
-          if ($LASTEXITCODE -ne 0) { throw "packaged launch smoke failed with exit code $LASTEXITCODE" }
+          # FinSight.exe is a windowed (console=False) application. PowerShell's call operator
+          # does not wait for a GUI subsystem process and leaves $LASTEXITCODE unset, so the exit
+          # status has to come from Start-Process -Wait -PassThru.
+          $exe = Join-Path $PWD "dist\FinSight\FinSight.exe"
+          $p = Start-Process -FilePath $exe -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "packaged launch smoke failed with exit code $($p.ExitCode)" }
           Write-Host "packaged launch smoke passed"
 
       - name: Confirm the store was created under the user profile
@@ -180,9 +184,9 @@ jobs:
 
           Write-Host "launching the installed application..."
           $env:FINSIGHT_SMOKE = "1"
-          & $installed
-          if ($LASTEXITCODE -ne 0) { throw "installed application failed to launch (exit $LASTEXITCODE)" }
+          $launched = Start-Process -FilePath $installed -Wait -PassThru
           Remove-Item Env:\FINSIGHT_SMOKE
+          if ($launched.ExitCode -ne 0) { throw "installed application failed to launch (exit $($launched.ExitCode))" }
 
           Write-Host "uninstalling..."
           $uninstaller = Get-ChildItem $target -Filter "unins*.exe" | Select-Object -First 1
