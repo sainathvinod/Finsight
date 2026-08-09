@@ -592,7 +592,25 @@ def _is_plaintext_sqlite(path: str) -> bool:
         return False
 
 
-def _apply_cipher_profile(connection) -> None:
+def memory_security_supported(os_name: Optional[str] = None) -> bool:
+    """Whether SQLCipher's memory-sanitising allocator can be enabled on this platform.
+
+    ``cipher_memory_security`` makes SQLCipher zero and lock its working memory. On the Windows
+    build it overflows the 1 MB default main-thread stack on the first statement executed after
+    the pragma is applied — the process dies with a Windows fatal exception rather than an error.
+
+    It is disabled there deliberately. Unlike page size, KDF iterations, and the HMAC/KDF
+    algorithms, memory security is a *runtime* memory-handling setting: it does not participate in
+    the on-disk format, so the ciphertext a Windows machine writes stays byte-compatible with the
+    one macOS writes and a store remains portable between them (NFR-029). The cost is confined to
+    memory hygiene — on Windows, freed key and page buffers are not explicitly zeroed and may
+    reach the page file — and is recorded in the packaging report.
+    """
+
+    return (os.name if os_name is None else os_name) != "nt"
+
+
+def _apply_cipher_profile(connection, os_name: Optional[str] = None) -> None:
     """Apply the qualified profile before the first schema access."""
 
     connection.execute(f"PRAGMA cipher_page_size = {SQLCIPHER_PAGE_SIZE}")
@@ -602,7 +620,8 @@ def _apply_cipher_profile(connection) -> None:
     )
     connection.execute(f"PRAGMA cipher_kdf_algorithm = {SQLCIPHER_KDF_ALGORITHM}")
     connection.execute("PRAGMA cipher_plaintext_header_size = 0")
-    connection.execute("PRAGMA cipher_memory_security = ON")
+    if memory_security_supported(os_name):
+        connection.execute("PRAGMA cipher_memory_security = ON")
 
 
 def _pragma_text(connection, name: str) -> str:
@@ -610,7 +629,7 @@ def _pragma_text(connection, name: str) -> str:
     return str(row[0]) if row and row[0] is not None else ""
 
 
-def _verify_cipher_connection(connection) -> str:
+def _verify_cipher_connection(connection, os_name: Optional[str] = None) -> str:
     version = _pragma_text(connection, "cipher_version")
     status = _pragma_text(connection, "cipher_status")
     observed = {
@@ -620,12 +639,14 @@ def _verify_cipher_connection(connection) -> str:
         "cipher_kdf_algorithm": _pragma_text(connection, "cipher_kdf_algorithm"),
         "cipher_memory_security": _pragma_text(connection, "cipher_memory_security"),
     }
+    # Every on-disk format setting is asserted identically on every platform. Only the runtime
+    # memory-security expectation follows what the platform can actually run.
     expected = {
         "cipher_page_size": SQLCIPHER_PAGE_SIZE,
         "kdf_iter": SQLCIPHER_KDF_ITERATIONS,
         "cipher_hmac_algorithm": SQLCIPHER_HMAC_ALGORITHM,
         "cipher_kdf_algorithm": SQLCIPHER_KDF_ALGORITHM,
-        "cipher_memory_security": "1",
+        "cipher_memory_security": "1" if memory_security_supported(os_name) else "0",
     }
     if version != SQLCIPHER_VERSION or status != "1" or observed != expected:
         raise SecureStoreError("The database driver did not prove active SQLCipher encryption.")

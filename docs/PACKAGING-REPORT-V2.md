@@ -29,6 +29,19 @@ Python, Qt, SQLite, SQLCipher, environment variables, or terminal.
 | 3 | **Every icon would render blank.** QtAwesome ships 24 font/charmap files as package data and has no PyInstaller hook. | Collected explicitly in the spec; CI fails the build if the fonts are absent from the bundle. |
 | 4 | **Console windows would flash** in a windowed build. | Helper processes run with `CREATE_NO_WINDOW`; the executable is built `console=False`. |
 | 5 | **Migrations could silently drop out of a build.** `collect_submodules` returned nothing because `finsight` was not importable at spec-evaluation time. | The spec puts `src` on `sys.path` first; all 18 migration modules now collect. |
+| 6 | **No store could be opened on Windows at all.** `PRAGMA cipher_memory_security = ON` made SQLCipher's memory-sanitising allocator overflow the 1 MB default main-thread stack; the process died with `Windows fatal exception: stack overflow` on the first statement after the pragma — a hard crash with no Python traceback. | Memory security is enabled only where the platform can run it. See the security note below. |
+
+### Security note — SQLCipher memory security on Windows
+
+`cipher_memory_security` is a **runtime** memory-handling setting: it makes SQLCipher zero and
+lock its working memory. Unlike page size, KDF iterations, and the HMAC/KDF algorithms it does
+**not** participate in the on-disk format, so disabling it on Windows leaves the ciphertext
+byte-compatible with macOS and a store portable between them (NFR-029) — asserted by test.
+
+The cost is confined to memory hygiene: on Windows, freed key and page buffers are not explicitly
+zeroed and may reach the page file. At-rest encryption, the KDF, the HMAC, and the key-protection
+model are all unchanged. Revisit if a SQLCipher build lands whose Windows memory-security path no
+longer overflows the stack, or if the application is moved onto a thread with a larger stack.
 
 ## 4. Runtime provisioning decision (PKG-02)
 

@@ -178,6 +178,32 @@ def test_helper_processes_do_not_flash_a_console_window():
     assert secure_store._no_console_window("posix") == {}  # noqa: SLF001
 
 
+# --- cipher profile -------------------------------------------------------------------------
+
+
+def test_memory_security_is_disabled_only_on_windows():
+    """SQLCipher's memory-sanitising allocator overflows the Windows main-thread stack.
+
+    Enabling it there killed the process with a Windows fatal exception on the first statement
+    after the pragma, so no store could be opened at all.
+    """
+
+    assert secure_store.memory_security_supported("posix") is True
+    assert secure_store.memory_security_supported("nt") is False
+
+
+def test_on_disk_cipher_format_is_identical_on_every_platform():
+    """Only the runtime setting varies; the format settings must not, or stores stop being portable."""
+
+    assert secure_store.SQLCIPHER_PAGE_SIZE == "4096"
+    assert secure_store.SQLCIPHER_KDF_ITERATIONS == "256000"
+    assert secure_store.SQLCIPHER_HMAC_ALGORITHM == "HMAC_SHA512"
+    assert secure_store.SQLCIPHER_KDF_ALGORITHM == "PBKDF2_HMAC_SHA512"
+    # The profile identity recorded in the store is unchanged, so a store written on Windows
+    # still opens on macOS and vice versa (NFR-029).
+    assert secure_store.SQLCIPHER_PROFILE_ID == "SQLCIPHER-4.12.0-COMMUNITY-001"
+
+
 # --- key protection -------------------------------------------------------------------------
 
 
