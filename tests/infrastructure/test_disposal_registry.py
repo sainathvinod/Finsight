@@ -292,7 +292,12 @@ def test_startup_fails_closed_on_head_tampering(tmp_path):
     head = tmp_path / "DisposalRegistry" / r.HEAD_NAME
     value = json.loads(head.read_text("utf-8"))
     value["committed"]["tail_hash"] = "f" * 64
-    head.write_text(json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n", "utf-8")
+    # The registry reads and writes the head as bytes, so the tampered copy must be written as
+    # bytes too. write_text() translates "\n" to "\r\n" on Windows, which corrupts the record
+    # before the authentication check is reached and raises a different admission error.
+    head.write_bytes(
+        (json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
+    )
     os.chmod(head, 0o600)
     with pytest.raises(RegistryAdmissionError, match="authentication"):
         r.admit_startup()

@@ -1,4 +1,6 @@
 # Verifies: FR-189 and NFR-108 Windows/default-platform identity adapters.
+import os
+
 import pytest
 
 from finsight.infrastructure.identity import (
@@ -57,6 +59,11 @@ def test_platform_provider_uses_uid_as_stable_id_and_name_as_display_only():
     assert result.require_actor().source == "MACOS_ACCOUNT"
 
 
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="injects a POSIX platform, and the POSIX adapter reads the pwd module, "
+    "which does not exist on Windows; the Windows SID adapter is covered separately",
+)
 def test_default_provider_resolves_supported_current_platform_account():
     result = DefaultLocalIdentityProvider(platform="darwin").resolve_current_actor()
 

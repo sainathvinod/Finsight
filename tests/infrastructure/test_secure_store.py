@@ -26,6 +26,7 @@ from finsight.infrastructure.secure_store import (
     StoreKeyMaterial,
     TestEnvironmentStoreKeyProvider,
     _windows_acl_command,
+    memory_security_supported,
     enforce_store_permissions,
     open_encrypted_connection,
     platform_key_provider,
@@ -105,7 +106,9 @@ def test_qualified_cipher_and_durability_profile_is_explicit(tmp_path):
             "kdf_iter": SQLCIPHER_KDF_ITERATIONS,
             "cipher_hmac_algorithm": SQLCIPHER_HMAC_ALGORITHM,
             "cipher_kdf_algorithm": SQLCIPHER_KDF_ALGORITHM,
-            "cipher_memory_security": "1",
+            # Runtime-only setting: disabled on Windows, where SQLCipher's memory-sanitising
+            # allocator overflows the main-thread stack. The on-disk format is unaffected.
+            "cipher_memory_security": "1" if memory_security_supported() else "0",
             "foreign_keys": "1",
             "journal_mode": "wal",
             "synchronous": "2",
@@ -261,7 +264,11 @@ def test_windows_acl_targets_deployment_group_not_current_user(tmp_path):
     assert "*S-1-5-32-544:(OI)(CI)F" in command
     current_user = os.environ.get("USERNAME")
     if current_user:
-        assert all(current_user not in value for value in command)
+        # Only the principal arguments are checked. The target path is excluded because a
+        # Windows temporary directory legitimately contains the account name
+        # (C:\Users\<user>\AppData\Local\Temp\...), which is not a grant to that account.
+        principals = [value for value in command[2:] if not value.startswith("/")]
+        assert all(current_user not in value for value in principals)
 
 
 @pytest.mark.security

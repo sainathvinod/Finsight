@@ -23,12 +23,14 @@ def test_windows_runtime_is_machine_scoped_and_uses_separate_registry():
 def test_macos_runtime_matches_approved_machine_scope():
     paths = machine_runtime_paths(os_name="posix", platform="darwin", environment={})
 
+    # Separators are normalised: an injected platform selects the location, but pathlib still
+    # renders it with the *host* separator, so a Windows build host writes backslashes here.
     assert (
-        paths.store_path
+        paths.store_path.replace("\\", "/")
         == "/Library/Application Support/FinSight/Stores/default/finsight.db"
     )
     assert (
-        paths.disposal_registry_root
+        paths.disposal_registry_root.replace("\\", "/")
         == "/Library/Application Support/FinSight/Security/DisposalRegistry"
     )
 
@@ -36,9 +38,12 @@ def test_macos_runtime_matches_approved_machine_scope():
 def test_linux_fallback_is_machine_scoped():
     paths = machine_runtime_paths(os_name="posix", platform="linux", environment={})
 
-    assert paths.store_path == "/var/lib/finsight/Stores/default/finsight.db"
     assert (
-        paths.disposal_registry_root
+        paths.store_path.replace("\\", "/")
+        == "/var/lib/finsight/Stores/default/finsight.db"
+    )
+    assert (
+        paths.disposal_registry_root.replace("\\", "/")
         == "/var/lib/finsight/Security/DisposalRegistry"
     )
 
@@ -53,7 +58,9 @@ def test_finsight_environment_override_cannot_redirect_authoritative_store():
         },
     )
 
-    assert paths.store_path.startswith("/Library/Application Support/FinSight/")
+    assert paths.store_path.replace("\\", "/").startswith(
+        "/Library/Application Support/FinSight/"
+    )
 
 
 def test_macos_single_user_scope_is_inside_the_reviewers_own_profile():
@@ -88,5 +95,7 @@ def test_single_user_scope_admits_no_finsight_environment_override():
         environment={"FINSIGHT_DB": "/tmp/untrusted.db"},
     )
 
-    assert paths.store_path.endswith("/FinSight/Stores/default/finsight.db")
+    assert paths.store_path.replace("\\", "/").endswith(
+        "/FinSight/Stores/default/finsight.db"
+    )
     assert "untrusted" not in paths.store_path
