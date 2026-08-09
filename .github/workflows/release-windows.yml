@@ -1,0 +1,195 @@
+# FinSight — Windows release pipeline.
+#
+# Produces the distributable Windows installer on a real Windows runner, because PyInstaller
+# freezes the host interpreter and host bootloader and therefore cannot cross-compile from macOS
+# or Linux.
+#
+# Trigger:
+#   * push a tag matching v*        -> builds and publishes a GitHub Release with the installer
+#   * "Run workflow" in the Actions tab -> builds and uploads the installer as an artifact
+#
+# The installer produced here is the artifact that goes to non-technical users: they download it,
+# run it, and launch FinSight. Nothing else is required of them.
+name: release-windows
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      publish_release:
+        description: "Publish a GitHub Release (tag builds do this automatically)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write     # required to create a Release on tag builds
+
+env:
+  PYTHON_VERSION: "3.12"
+  QT_QPA_PLATFORM: offscreen     # the runner has no interactive desktop session
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out the release candidate
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }} (x64)
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          architecture: x64
+
+      - name: Install pinned runtime, desktop, and build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+          python -m pip install "pyinstaller==6.21.0"
+
+      # A missing native wheel is far cheaper to diagnose here than inside a frozen executable.
+      - name: Verify runtime imports resolve on Windows
+        env:
+          PYTHONPATH: src
+        run: |
+          python -c "import sqlcipher3, cryptography, openpyxl, PySide6, qtawesome, finsight; print('runtime imports OK')"
+
+      # Quality gates run before packaging: an installer must never be cut from a red tree.
+      - name: Run the test suite
+        env:
+          PYTHONPATH: src
+        run: python -m pytest -q
+
+      - name: Check architecture contracts
+        env:
+          PYTHONPATH: src
+        run: lint-imports
+
+      - name: Generate the installer icon
+        env:
+          PYTHONPATH: src
+        run: python build/windows/make_icon.py
+
+      - name: Freeze the application with PyInstaller
+        run: python -m PyInstaller --clean --noconfirm build/windows/finsight.spec
+
+      - name: Verify the frozen bundle is complete
+        shell: pwsh
+        run: |
+          $exe = "dist/FinSight/FinSight.exe"
+          if (-not (Test-Path $exe)) { throw "FinSight.exe was not produced" }
+          # QtAwesome ships its icon fonts as package data and has no PyInstaller hook; if the
+          # collection in the spec ever regresses, every icon in the shell renders blank.
+          $fonts = Get-ChildItem -Recurse -Path dist/FinSight -Filter *.ttf |
+                   Where-Object { $_.FullName -match "qtawesome" }
+          if ($fonts.Count -lt 1) { throw "QtAwesome fonts missing from the bundle" }
+          Write-Host "bundle OK - $($fonts.Count) icon font files present"
+
+      # Proves the frozen executable composes its services, runs migrations, and opens its
+      # encrypted SQLCipher store under a real Windows account with per-user DPAPI.
+      - name: Packaged launch smoke test
+        shell: pwsh
+        env:
+          FINSIGHT_SMOKE: "1"
+        run: |
+          & "dist/FinSight/FinSight.exe"
+          if ($LASTEXITCODE -ne 0) { throw "packaged launch smoke failed with exit code $LASTEXITCODE" }
+          Write-Host "packaged launch smoke passed"
+
+      - name: Confirm the store was created under the user profile
+        shell: pwsh
+        run: |
+          $store = Join-Path $env:LOCALAPPDATA "FinSight\Stores\default\finsight.db"
+          if (-not (Test-Path $store)) { throw "the encrypted store was not created at $store" }
+          $header = [System.IO.File]::ReadAllBytes($store)[0..15]
+          $text = -join ($header | ForEach-Object { [char]$_ })
+          if ($text.StartsWith("SQLite format 3")) { throw "the store is plaintext SQLite - encryption is not active" }
+          Write-Host "encrypted store created at $store"
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build the installer
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" build\windows\finsight.iss
+        shell: pwsh
+
+      - name: Verify the installer exists and record its identity
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem dist -Filter "FinSight-*-Setup.exe" | Select-Object -First 1
+          if (-not $setup) { throw "no installer was produced" }
+          $hash = (Get-FileHash $setup.FullName -Algorithm SHA256).Hash
+          "installer : $($setup.Name)"           | Tee-Object -Append dist/RELEASE-EVIDENCE.txt
+          "size      : $([math]::Round($setup.Length/1MB,1)) MB" | Tee-Object -Append dist/RELEASE-EVIDENCE.txt
+          "sha256    : $hash"                    | Tee-Object -Append dist/RELEASE-EVIDENCE.txt
+          "commit    : $env:GITHUB_SHA"          | Tee-Object -Append dist/RELEASE-EVIDENCE.txt
+          Get-Content dist/RELEASE-EVIDENCE.txt
+
+      # Silent install / launch / uninstall on the runner itself: the lifecycle a user performs.
+      - name: Installer lifecycle test (install, launch, uninstall)
+        shell: pwsh
+        run: |
+          $setup = (Get-ChildItem dist -Filter "FinSight-*-Setup.exe" | Select-Object -First 1).FullName
+          $target = Join-Path $env:LOCALAPPDATA "Programs\FinSight"
+
+          Write-Host "installing silently..."
+          $p = Start-Process -FilePath $setup -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "silent install failed with exit code $($p.ExitCode)" }
+          $installed = Join-Path $target "FinSight.exe"
+          if (-not (Test-Path $installed)) { throw "installed executable not found at $installed" }
+          Write-Host "installed to $target"
+
+          Write-Host "launching the installed application..."
+          $env:FINSIGHT_SMOKE = "1"
+          & $installed
+          if ($LASTEXITCODE -ne 0) { throw "installed application failed to launch (exit $LASTEXITCODE)" }
+          Remove-Item Env:\FINSIGHT_SMOKE
+
+          Write-Host "uninstalling..."
+          $uninstaller = Get-ChildItem $target -Filter "unins*.exe" | Select-Object -First 1
+          if (-not $uninstaller) { throw "uninstaller not found" }
+          $u = Start-Process -FilePath $uninstaller.FullName -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART" -Wait -PassThru
+          if ($u.ExitCode -ne 0) { throw "uninstall failed with exit code $($u.ExitCode)" }
+          Start-Sleep -Seconds 5
+          if (Test-Path $installed) { throw "the executable survived uninstall" }
+
+          # Review data must survive uninstall: FinSight's retention model is non-destructive.
+          $store = Join-Path $env:LOCALAPPDATA "FinSight\Stores\default\finsight.db"
+          if (-not (Test-Path $store)) { throw "uninstall destroyed the review data store" }
+          Write-Host "uninstall clean; review data correctly retained"
+
+      - name: Upload the installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: FinSight-Windows-Installer
+          path: |
+            dist/FinSight-*-Setup.exe
+            dist/RELEASE-EVIDENCE.txt
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Publish the GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.publish_release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/FinSight-*-Setup.exe
+            dist/RELEASE-EVIDENCE.txt
+          generate_release_notes: true
+          body: |
+            ## FinSight — Windows installer
+
+            Download `FinSight-*-Setup.exe`, run it, and launch FinSight. Nothing else needs to
+            be installed: Python, Qt, SQLite/SQLCipher and every runtime library are contained in
+            the installer.
+
+            The installer runs per-user and needs no administrator rights.
+
+            **Ask Fin (optional).** The assistant needs a local AI runtime, which is not bundled
+            (see the release documentation for the licensing and size reasons). Tick *Set up Ask
+            Fin* during installation, or use the *Set up Ask Fin* Start Menu entry afterwards.
+            FinSight's financial review works completely without it.
