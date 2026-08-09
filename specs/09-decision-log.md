@@ -213,6 +213,53 @@ Review **abandonment** (explicit, audited, non-destructive, reversible `Active |
 **Traces to:** ADR-014 (policy); F-01-01 (feature home, scope-extended); F-08-01 (audit taxonomy); FR-108, FR-006, FR-081; DEC-022. Release 1.
 **Supersede note:** subordinates the directional "LangGraph/LangChain for the AI layer" mention in DEC-003 — no agent framework is adopted, and the concrete AI-library/provider selection is deferred to the AI-provider ADR (ADC-03). DEC-003's desktop/Python-core/SQLite direction is unaffected.
 
+### DEC-036 — Delivered rule scope for the current desktop packaging milestone ⚠️
+**Date:** 2026-08-07 · Recorded (as-built record for packaging; the Rules Catalog delta below remains an open scope decision)
+
+This decision records **what the packaged build actually detects**, so the release is described accurately. It does **not** approve a permanent reduction of the Rules Catalog (05) and mints no requirement.
+
+**Delivered:** one protected, versioned rule set — `FINSIGHT-CORE-2.0` — containing **five rules**, each with an allowlisted deterministic evaluator, executed under the governed proposal → confirmation → run-identity flow:
+
+| Rule | Name | Version | Severity | Evaluator | Nearest catalog entries |
+|------|------|---------|----------|-----------|-------------------------|
+| CORE-01 | Budget Overrun | 2.0.0 | High | `actual_not_over_budget` | R-BUD-02 (composing R-BUD-01 variance, R-FND-02 severity) |
+| CORE-02 | Valid Account Coding | 2.0.0 | High | `valid_mapping` | R-GED-05 |
+| CORE-03 | Duplicate Transactions | 2.0.0 | Medium | `exact_duplicates` | R-GED-02 |
+| CORE-04 | Complete and Correct Data | 2.0.0 | High | `required_fields` | R-RDY-02 (with quarantine in the intake validation gate) |
+| CORE-05 | Budget-to-GED Reconciliation | 2.0.0 | High | `atd_reconciliation` | R-REC-01 / R-REC-02 / R-REC-04, collapsed into one rule |
+
+**Namespace note:** the engine uses a `CORE-nn` identifier space, not the catalog's `R-<FAMILY>-nn`. The mapping above is the only bridge between them; catalog traceability is therefore manual until the namespaces are reconciled.
+
+**Not delivered in this milestone (catalog entries tagged R1 · Must, verified absent):** **R-BUD-03** (month-over-month change detection), **R-GED-03** (missing entry detection), **R-HST-02** (month-over-month delta computation), **R-RPT-03** ("what changed" delta section). No cross-period comparison capability exists in the build: a review analyses exactly one reporting period. Several R1 · Should catalog entries are likewise unimplemented; the catalog remains the authority on the full delta.
+
+**Bearing on FR-111 / F-02-05 (cold-start honesty):** the five delivered rules are single-period and declare no minimum-history requirement, so no rule can fire below a history threshold. FR-111 is therefore **vacuously satisfied** in this build rather than implemented; it becomes live work when the first history-dependent rule (R-BUD-03, R-HST-01/02, R-GED-06) is added.
+
+**Relationship to the approved plan:** the only approved plan, **PLAN-F-02-02**, scopes a deterministic walking skeleton around a **single** rule (R-BUD-02). The delivered five-rule set exceeds that plan; the remaining catalog rules have no plan, no decomposed tasks, and no baseline.
+
+**Rationale for recording rather than deciding:** the packaging milestone needs the release described honestly. Whether the catalog scope is reduced, staged, or delivered in full is a project-owner decision requiring a requirements pass, not an implementation choice.
+
+**Consequences:** *(+)* the package can be described accurately; the detection delta is explicit rather than implied. *(−)* the build must not be presented as the complete "Monthly Review in a Box" detection set (DEC-022); a future decision must either extend the engine to the catalog or formally re-scope it.
+
+**Traces to:** 05-rules-catalog (R-BUD/R-GED/R-REC/R-RDY/R-HST/R-RPT families); F-02-01, F-02-03, F-02-04, F-02-05; FR-111; PLAN-F-02-02; DEC-022 (Release 1 lens); DEC-019 (thresholds are configuration). Release 1.
+
+### DEC-037 — Version 2 Windows package topology and Ask Fin runtime provisioning ⚠️
+**Date:** 2026-08-07 · Decided for the Version 2 release candidate (project-owner directive; closes PKG-02's recording obligation, and departs from the **Proposed** ADR-V2-004 on two points recorded below)
+
+**Package.** The Version 2 Windows deliverable is a **per-user Inno Setup executable installer** (`FinSight-2.0.0-Setup.exe`) wrapping a PyInstaller **one-directory** bundle. It installs to `%LOCALAPPDATA%\Programs\FinSight`, requires **no administrator rights**, and carries the complete runtime — CPython, PySide6/Qt, SQLCipher, QtAwesome fonts, and every dependency. A recipient downloads one file, runs it, and launches FinSight; they install no Python, Qt, SQLite, SQLCipher, or environment variables.
+
+**Ask Fin runtime is provisioned, not bundled.** Ollama and `llama3.2:3b` are **not** redistributed inside the installer. Instead `build/windows/provision_ask_fin.ps1` — offered as an unticked installer task and as a *Set up Ask Fin* Start Menu entry — detects Ollama, installs it silently if absent, starts the loopback service, pulls the approved model, and verifies it. The user never opens a terminal. Grounds:
+- **Licensing.** Ollama is MIT and redistributable. `llama3.2:3b` carries the separate Meta Llama Community License with attribution, notice, and acceptable-use obligations; redistributing weights inside a commercial installer needs counsel sign-off that PKG-05 records as absent.
+- **Size.** Bundling would produce a ≈3 GB installer, against ADR-V2-004's qualification target of restricted 8–16 GB corporate laptops.
+- **Optionality.** FR-095 requires the deterministic review to be complete with no AI provider configured. Making an AI runtime an install precondition would invert that guarantee. Provisioning is therefore always optional, always explicit, and never blocks installation, launch, or any review step; a machine with no network installs and runs FinSight normally.
+
+**Departures from ADR-V2-004 (Status: Proposed, so not binding).** (1) Per-user Inno Setup executable rather than a **WiX v4 per-machine MSI** — the release objective is a file a non-technical recipient can run without administrator rights, which a per-machine MSI cannot satisfy. (2) The provisioning helper performs an **explicit, user-initiated download**, where the ADR states "no installer-time downloads … or implicit network dependency"; the download is neither implicit nor required, but it is a departure and is named as one. A per-machine MSI for governed enterprise deployment remains a legitimate second package and needs its own decision.
+
+**Not in this decision, and still open:** Authenticode signing and timestamping (PKG-06 — needs the organization certificate), SBOM and notice bundle (PKG-05), the protected-activation Task Scheduler helper described in ADR-V2-004, and the machine-scoped multi-actor deployment profile. Unsigned installers will show a Windows SmartScreen warning on first run.
+
+**Consequences:** *(+)* one downloadable file, no administrator, no terminal, no manual runtime installation; AI stays genuinely optional and the offline path is intact. *(−)* two departures from a Proposed ADR that must be ratified or reversed; unsigned artifacts until a certificate exists; enterprise machine-scoped deployment remains unaddressed.
+
+**Traces to:** PKG-02 (recording obligation), PKG-03, PKG-04, PKG-12; ADR-V2-004 (Proposed — departures recorded above); ADR-V2-005 (approved private provider profile); FR-095 (AI-off completeness), FR-096 (explicit consent before transmission); DEC-036 (delivered rule scope). Version 2.
+
 ---
 
 ## Open questions — resolved under the approved baseline

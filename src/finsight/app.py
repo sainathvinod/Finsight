@@ -108,6 +108,7 @@ def build_app(
     from finsight.infrastructure.secure_store import (
         ResolvedStoreKeyProvider,
         platform_key_provider,
+        provider_is_machine_shared,
     )
     from finsight.infrastructure.disposal_registry import FilesystemDisposalRegistry
 
@@ -119,7 +120,7 @@ def build_app(
         protection_key=key_material.registry_key,
         clock=clock,
         id_factory=lambda: uuid.uuid4().hex,
-        machine_shared=not key_material.provider.startswith("TEST"),
+        machine_shared=provider_is_machine_shared(key_material.provider),
     )
     if os.path.exists(registry_path):
         startup_admission = registry.admit_startup()
@@ -270,16 +271,49 @@ def qualified_machine_runtime_paths():
     return machine_runtime_paths()
 
 
+def authorization_is_configured() -> bool:
+    """Whether an administrator has provisioned a signed role manifest on this machine."""
+
+    from finsight.infrastructure.authorization_source import (
+        authorization_is_configured as _configured,
+    )
+
+    return _configured()
+
+
+def resolve_runtime_paths():
+    """Select the store locations that match the authorization profile in force.
+
+    A machine provisioned with a signed role manifest serves sequential authorized actors and
+    uses the machine-scoped locations. An unprovisioned machine runs the ADR-013 single-user
+    scope and keeps its store in the reviewer's own application-support directory, which needs
+    no administrator rights.
+    """
+
+    from finsight.infrastructure.runtime_paths import (
+        machine_runtime_paths,
+        user_runtime_paths,
+    )
+
+    return machine_runtime_paths() if authorization_is_configured() else user_runtime_paths()
+
+
 AuthorizationConfigurationError = AuthorizationSourceConfigurationError
 
 
 def authorization_configuration_preflight() -> None:
-    """Compatibility seam: validate production configuration without opening storage."""
+    """Validate an administrator-provisioned manifest without opening storage.
+
+    A wholly unconfigured machine is not an error — it runs the single-user bootstrap scope.
+    A partially provisioned one still fails closed.
+    """
 
     from finsight.infrastructure.authorization_source import (
         configuration_from_environment,
     )
 
+    if not authorization_is_configured():
+        return
     configuration_from_environment()
 
 
@@ -309,7 +343,7 @@ def build_ai_services(container: Container, new_id=None) -> AiServices:
         reviews=ReviewQueryService(container.cycle_repo, container.finding_repo),
         findings=FindingsQueryService(container.finding_repo),
         summary=SummaryQueryService(container.cycle_repo, container.finding_repo, container.run_repo, reporting),
-        audit=AuditQueryService(container.audit),
+        audit=AuditQueryService(container.audit_stream, container.audit),
         rule_runs=RuleRunQueryService(container.run_repo),
         provenance=ProvenanceQueryService(container.ingested_repo),
     )
@@ -852,24 +886,44 @@ def build_query_services(
     actor = resolved_identity.require_actor()  # fail closed before registry/store admission
     evaluated_at = _utc_datetime(effective_clock.now())
     prepared_authorization = None
+    bootstrap_assignments = None
+    effective_key_provider = key_provider
     if role_assignment_source is None:
         from finsight.infrastructure.authorization_source import (
             prepare_authorization_source,
         )
 
-        prepared_authorization = prepare_authorization_source(evaluated_at)
+        if authorization_is_configured():
+            prepared_authorization = prepare_authorization_source(evaluated_at)
+        else:
+            # ADR-013 single-user scope: no administrator manifest is provisioned, so grant the
+            # already-resolved local actor the bounded Reviewer bootstrap policy this module
+            # documents as the pre-provisioning composition. The snapshot records
+            # source_kind=LOCAL_BOOTSTRAP with signature_verified=False — it never claims to be
+            # a signed manifest — and the store stays owner-only under a per-user key.
+            from finsight.application.security import StaticRoleAssignmentSource
+            from finsight.infrastructure.authorization_manifest import (
+                build_local_reviewer_bootstrap_policy,
+            )
+            from finsight.infrastructure.secure_store import single_user_key_provider
+
+            bootstrap_assignments = StaticRoleAssignmentSource(
+                build_local_reviewer_bootstrap_policy(actor, evaluated_at)
+            )
+            if effective_key_provider is None:
+                effective_key_provider = single_user_key_provider()
     container = build_app(
         db_path,
         effective_clock,
-        key_provider=key_provider,
+        key_provider=effective_key_provider,
         registry_root=registry_root,
         startup_actor_id=actor.actor_id,
         prepared_authorization=prepared_authorization,
     )
-    assignments = role_assignment_source or _load_authorization_source(
-        container,
-        prepared_authorization,
-        actor,
+    assignments = (
+        role_assignment_source
+        or bootstrap_assignments
+        or _load_authorization_source(container, prepared_authorization, actor)
     )
     slv001 = Slv001Extractor()
     source_intake = SourceIntakeCoordinator(slv001)
@@ -913,7 +967,7 @@ def build_query_services(
     return AppServices(
         reviews=ReviewQueryService(container.cycle_repo, container.finding_repo),
         findings=FindingsQueryService(container.finding_repo),
-        audit=AuditQueryService(container.audit),
+        audit=AuditQueryService(container.audit_stream, container.audit),
         summary=SummaryQueryService(container.cycle_repo, container.finding_repo, container.run_repo, reporting),
         workflow=ReviewWorkflowService(container.orch.engine),
         recovery=ReviewReconstructionService(container.orch.engine, container.source_binding_repo,

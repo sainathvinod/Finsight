@@ -36,7 +36,7 @@ from finsight.app import (
     build_private_ask_fin_backend,
     build_query_services,
     prepare_local_identity,
-    qualified_machine_runtime_paths,
+    resolve_runtime_paths,
 )
 from finsight.delivery.desktop.main_window import MainWindow
 from finsight.delivery.desktop.theme import AppearanceManager
@@ -48,8 +48,12 @@ _log = get_logger("ui.app")
 
 
 def default_db_path() -> str:
-    """Machine-scoped authoritative store shared by sequential approved actors."""
-    return qualified_machine_runtime_paths().store_path
+    """Authoritative store for the authorization profile in force.
+
+    Machine-scoped (shared by sequential approved actors) when an administrator has provisioned
+    a signed role manifest; otherwise the ADR-013 single-user, per-user location.
+    """
+    return resolve_runtime_paths().store_path
 
 
 def resolve_db_path(db_path: Optional[str] = None) -> str:
@@ -84,7 +88,7 @@ def run(db_path: Optional[str] = None, argv: Optional[list] = None) -> int:
     registry_root = (
         None
         if db_path is not None
-        else qualified_machine_runtime_paths().disposal_registry_root
+        else resolve_runtime_paths().disposal_registry_root
     )
     identity = prepare_local_identity()
     if not identity.resolution.is_resolved:

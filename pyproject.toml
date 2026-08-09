@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "finsight"
-version = "1.0.0"
-description = "FinSight — deterministic monthly financial-review desktop application (Release 1)."
+version = "2.0.0"
+description = "FinSight — deterministic monthly financial-review desktop application (Version 2)."
 # Intentional floor: pytest 9.x / coverage 7.15.x require >=3.10, and 3.9 is EOL (2025-10).
 # Recommended build interpreter: 3.12. Single source of truth for pins: build/versions.json.
 requires-python = ">=3.10"

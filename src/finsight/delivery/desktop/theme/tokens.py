@@ -217,7 +217,13 @@ RADIUS_SM = 6
 RADIUS_MD = 10
 
 # --- Typography ------------------------------------------------------------
-FONT_FAMILY = '"Segoe UI Variable Text", "SF Pro Text", "Segoe UI", Arial, sans-serif'
+# macOS resolves ".AppleSystemUIFont" (the system UI face) and is listed first so the display
+# roles that pin font-family match the system font every other role inherits. "SF Pro Text" is
+# NOT installed by default on macOS, so without this entry the whole stack fell through to Arial
+# and rendered two typefaces on one screen. Windows skips the missing macOS entry and still
+# resolves "Segoe UI Variable Text".
+FONT_FAMILY = ('".AppleSystemUIFont", "Segoe UI Variable Text", "SF Pro Text", "Segoe UI", '
+               'Arial, sans-serif')
 FONT_DISPLAY = FONT_FAMILY
 FONT_MONO = '"SF Mono", "Cascadia Mono", "Menlo", "Consolas", monospace'
 FS_BASE = 14

@@ -1,4 +1,9 @@
-from finsight.infrastructure.runtime_paths import machine_runtime_paths
+from pathlib import Path
+
+from finsight.infrastructure.runtime_paths import (
+    machine_runtime_paths,
+    user_runtime_paths,
+)
 
 
 def test_windows_runtime_is_machine_scoped_and_uses_separate_registry():
@@ -49,3 +54,39 @@ def test_finsight_environment_override_cannot_redirect_authoritative_store():
     )
 
     assert paths.store_path.startswith("/Library/Application Support/FinSight/")
+
+
+def test_macos_single_user_scope_is_inside_the_reviewers_own_profile():
+    paths = user_runtime_paths(os_name="posix", platform="darwin", environment={})
+
+    expected = Path.home() / "Library" / "Application Support" / "FinSight"
+    assert paths.store_path == str(expected / "Stores" / "default" / "finsight.db")
+    assert paths.disposal_registry_root == str(
+        expected / "Security" / "DisposalRegistry"
+    )
+    # Must never resolve to the administrator-provisioned machine location.
+    assert not paths.store_path.startswith("/Library/Application Support/")
+
+
+def test_windows_single_user_scope_uses_local_app_data():
+    paths = user_runtime_paths(
+        os_name="nt",
+        platform="win32",
+        environment={"LOCALAPPDATA": r"D:\Users\reviewer\AppData\Local"},
+    )
+
+    normalized = paths.store_path.replace("\\", "/")
+    assert normalized == (
+        "D:/Users/reviewer/AppData/Local/FinSight/Stores/default/finsight.db"
+    )
+
+
+def test_single_user_scope_admits_no_finsight_environment_override():
+    paths = user_runtime_paths(
+        os_name="posix",
+        platform="darwin",
+        environment={"FINSIGHT_DB": "/tmp/untrusted.db"},
+    )
+
+    assert paths.store_path.endswith("/FinSight/Stores/default/finsight.db")
+    assert "untrusted" not in paths.store_path

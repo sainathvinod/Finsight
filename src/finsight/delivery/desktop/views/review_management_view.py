@@ -209,8 +209,15 @@ class ReviewManagementView(QWidget):
 
         self._shortcuts = []
         self._add_shortcut(QKeySequence(Qt.Key.Key_Escape), self.go_back)
-        self._add_shortcut(QKeySequence("Alt+N"), self.show_create)
-        self._add_shortcut(QKeySequence("Alt+P"), self.show_past)
+        # Platform-resolved accelerators. Literal "Alt+N"/"Alt+P" are macOS dead keys (˜ and π)
+        # that fired while the reviewer was typing — Alt+N re-entered Create and discarded the
+        # in-progress period entry. StandardKey maps to the native sequence on each platform.
+        self._add_shortcut(
+            QKeySequence(QKeySequence.StandardKey.New), self.show_create
+        )
+        self._add_shortcut(
+            QKeySequence(QKeySequence.StandardKey.Open), self.show_past
+        )
         self._c.reviewManagementChanged.connect(self._on_management_changed)
         QWidget.setTabOrder(self._month, self._year)
         QWidget.setTabOrder(self._year, self._create_back)
@@ -447,10 +454,9 @@ class ReviewManagementView(QWidget):
         self._welcome_description.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._welcome_description.setMaximumWidth(690)
         self._welcome_description.setAccessibleName(WELCOME_DESCRIPTION)
-        # QLabel's wrapped height-for-width can lag the final desktop width while
-        # the page is first laid out. Reserve the two-line copy block explicitly
-        # so the action cards can never occlude it at supported window sizes.
-        self._welcome_description.setMinimumHeight(56)
+        # The reserved height is applied in _reserve_welcome_copy_height() once the label has
+        # been polished — see that method for why it cannot be computed here.
+        self._reserve_welcome_copy_height()
         hero_layout.addWidget(
             self._welcome_description, 0, Qt.AlignmentFlag.AlignHCenter
         )
@@ -976,6 +982,24 @@ class ReviewManagementView(QWidget):
         self._resize_landing_geometry()
         self._reflow_review_summary(compact)
         self._reflow_review_actions(compact)
+
+    def _reserve_welcome_copy_height(self) -> None:
+        """Reserve the landing copy block from the label's own wrapped height.
+
+        The layout adds this label with an alignment flag, so it is sized from sizeHint()
+        rather than height-for-width and would otherwise be given a two-line box. The
+        reservation must be recomputed after polish: at construction the label still carries
+        the default application font, so its wrapped height is measured at the wrong point
+        size and under-counts the third line at every window width above the minimum.
+        """
+
+        label = self._welcome_description
+        label.ensurePolished()
+        label.setMinimumHeight(label.heightForWidth(label.maximumWidth()))
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self._reserve_welcome_copy_height()
 
     def show_welcome(self) -> None:
         self._refresh_current_review()

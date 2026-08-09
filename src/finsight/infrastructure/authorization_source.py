@@ -64,6 +64,28 @@ class _ObservedVersionStore:
         return None
 
 
+_MANIFEST_VARIABLES = (
+    "FINSIGHT_ROLE_MANIFEST",
+    "FINSIGHT_ROLE_MANIFEST_SIGNATURE",
+    "FINSIGHT_ROLE_MANIFEST_PUBLIC_KEY",
+    "FINSIGHT_ROLE_MANIFEST_KEY_ID",
+)
+
+
+def authorization_is_configured(
+    environ: Optional[Mapping[str, str]] = None,
+) -> bool:
+    """Whether an administrator has begun provisioning a signed role manifest.
+
+    True as soon as ANY manifest variable is present. A partially or incorrectly provisioned
+    manifest therefore stays an error rather than silently degrading to the single-user
+    bootstrap: only a wholly unconfigured machine takes the ADR-013 single-user path.
+    """
+
+    values = os.environ if environ is None else environ
+    return any(values.get(name) for name in _MANIFEST_VARIABLES)
+
+
 def configuration_from_environment(
     environ: Optional[Mapping[str, str]] = None,
 ) -> AuthorizationManifestConfiguration:

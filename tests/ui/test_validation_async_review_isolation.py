@@ -109,6 +109,10 @@ class _ViewController:
         self.done = None
         self.failed = None
 
+    def audit_timeline(self, _review_id):
+        # The results workspace hosts the audit trail tab; this stub has no recorded trail.
+        return []
+
     def validate_financial_async(
         self,
         _dataset,

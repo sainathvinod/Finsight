@@ -55,14 +55,83 @@ class FindingsQueryService:
 
 
 class AuditQueryService:
-    """Present the append-only audit trail for a review as an ordered timeline. Read-only."""
+    """Present the append-only audit trail for a review as one ordered timeline. Read-only.
 
-    def __init__(self, audit):
-        self._audit = audit
+    A review's trail is written to two append-only sinks: the chained review audit stream
+    (ADR-005), which records the managed review lifecycle, and the audit store, which records
+    source-divergence and reconstruction events. A timeline that showed only one of them would
+    omit real recorded history, so both are merged here.
+
+    Ordering is deterministic: by timestamp, then by sink, then by each sink's own append order.
+    Equal timestamps therefore never reorder between runs (NFR-021).
+    """
+
+    def __init__(self, audit_stream, audit_store=None):
+        self._stream = audit_stream
+        self._store = audit_store
 
     def timeline(self, cycle_id: str) -> List[AuditEventView]:
-        return [AuditEventView(e["action"], e["actor"], e["ts"], e["detail"])
-                for e in self._audit.events(cycle_id)]
+        if not cycle_id:
+            return []
+        ordered: List[tuple] = []
+        for index, event in enumerate(self._stream_events(cycle_id)):
+            ordered.append(
+                (
+                    event.occurred_at,
+                    0,
+                    index,
+                    AuditEventView(
+                        event.event_type,
+                        event.actor_display or event.actor_id,
+                        event.occurred_at,
+                        self._detail(event),
+                    ),
+                )
+            )
+        for index, event in enumerate(self._store_events(cycle_id)):
+            ordered.append(
+                (
+                    event["ts"],
+                    1,
+                    index,
+                    AuditEventView(
+                        event["action"], event["actor"], event["ts"], event["detail"]
+                    ),
+                )
+            )
+        ordered.sort(key=lambda row: (row[0], row[1], row[2]))
+        return [row[3] for row in ordered]
+
+    def _stream_events(self, cycle_id: str):
+        if self._stream is None:
+            return []
+        return self._stream.events(review_id=cycle_id)
+
+    def _store_events(self, cycle_id: str):
+        if self._store is None:
+            return []
+        return self._store.events(cycle_id)
+
+    @staticmethod
+    def _detail(event) -> dict:
+        """Flatten one chained event into displayable detail rows.
+
+        The recorded payload is presented as-is; outcome and resource scope are surfaced
+        alongside it because they carry the reviewer-visible meaning of the event.
+        """
+
+        detail = dict(event.payload or {})
+        if event.outcome:
+            detail.setdefault("outcome", event.outcome)
+        if event.scopes:
+            detail.setdefault(
+                "scope",
+                ", ".join(
+                    f"{scope.resource_type}:{scope.resource_id}"
+                    for scope in event.scopes
+                ),
+            )
+        return detail
 
 
 class RuleRunQueryService:

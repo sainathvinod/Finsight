@@ -437,8 +437,14 @@ class SourceIntakeView(QWidget):
 
         self._shortcuts = []
         self._add_shortcut(QKeySequence(Qt.Key.Key_Escape), self._back)
+        # Both delete keys remove the focused source. A MacBook keyboard has no forward-delete
+        # key — the key labelled "delete" reports Key_Backspace — so binding Key_Delete alone
+        # left the action unreachable without Fn on the primary macOS test hardware.
         self._add_shortcut(
             QKeySequence(Qt.Key.Key_Delete), self._remove_focused_source
+        )
+        self._add_shortcut(
+            QKeySequence(Qt.Key.Key_Backspace), self._remove_focused_source
         )
         self._set_upload_tab_order()
         self._budget_card.choose.installEventFilter(self)

@@ -21,7 +21,11 @@ import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Optional, Protocol
+
+from finsight.diagnostics import get_logger
+
+_log = get_logger("infrastructure.secure_store")
 
 
 class SecureStoreError(RuntimeError):
@@ -54,12 +58,27 @@ class StoreKeyProvider(Protocol):
     def load_or_create(self, database_path: str) -> StoreKeyMaterial: ...
 
 
+# Provider tags whose store belongs to exactly one operating-system account. These use owner-only
+# POSIX modes and need no deployment-managed access group. The per-user OS adapters are named
+# explicitly so adding one cannot silently opt a store into the machine-shared permission profile
+# it does not satisfy; any TEST* tag is single-user by definition.
+_SINGLE_USER_PROVIDERS = frozenset({"MACOS_LOGIN_KEYCHAIN", "WINDOWS_DPAPI_USER"})
+
+
+def provider_is_machine_shared(provider_tag: str) -> bool:
+    """Whether a resolved provider tag denotes a machine-shared (multi-actor) store."""
+
+    if provider_tag.startswith("TEST"):
+        return False
+    return provider_tag not in _SINGLE_USER_PROVIDERS
+
+
 class ResolvedStoreKeyProvider:
     """Adapter used after pre-store registry admission has already resolved platform key material."""
 
     def __init__(self, material: StoreKeyMaterial):
         self._material = material
-        self.machine_shared = not material.provider.startswith("TEST")
+        self.machine_shared = provider_is_machine_shared(material.provider)
 
     def load_or_create(self, database_path: str) -> StoreKeyMaterial:
         return self._material
@@ -130,18 +149,30 @@ def _fsync_directory(path: Path) -> None:
         os.close(descriptor)
 
 
-def enforce_store_permissions(path: str, *, machine_shared: bool = False) -> None:
+def enforce_store_permissions(
+    path: str, *, machine_shared: bool = False, os_name: Optional[str] = None
+) -> None:
     """Apply and verify restrictive local-store permissions.
 
-    Test stores use owner-only POSIX modes. Production stores use the
-    deployment-managed FinSight group so sequential authorized accounts can
-    open the same machine-local review store. Windows grants only that group,
-    SYSTEM, and Administrators. Failure is fatal.
+    Single-user stores use owner-only POSIX modes, or on Windows the account's own inherited
+    profile ACL plus an additive icacls grant. Machine-shared stores use the deployment-managed
+    FinSight group (POSIX) or the deployment group, SYSTEM and Administrators (Windows) so
+    sequential authorized accounts can open the same machine-local review store.
+
+    Failure is fatal wherever the applied permission *is* the access guarantee: every POSIX
+    profile, and the Windows machine-shared store, which lives outside any user profile. It is
+    not fatal for the Windows single-user grant, which only hardens a directory the operating
+    system already restricts — see the branch comment for why.
+
+    ``os_name`` selects the platform branch, following the same injection idiom as
+    ``runtime_paths``. It exists so the Windows branch can be verified from any build host;
+    production always resolves it from the running interpreter.
     """
 
+    effective_os = os.name if os_name is None else os_name
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    if os.name != "nt":
+    if effective_os != "nt":
         directory_mode = 0o770 if machine_shared else 0o700
         file_mode = 0o660 if machine_shared else 0o600
         if machine_shared:
@@ -173,12 +204,53 @@ def enforce_store_permissions(path: str, *, machine_shared: bool = False) -> Non
             )
         return
 
-    # The installer provisions this local group and enrolls approved sequential
-    # actors. Current-user grants would create a per-user store and are banned.
-    command = _windows_acl_command(target.parent)
-    completed = subprocess.run(command, capture_output=True, text=True, timeout=15, check=False)
+    if machine_shared:
+        # The machine-scoped store deliberately lives outside every user profile, so the explicit
+        # deployment ACL *is* its access guarantee. Failure stays fatal.
+        completed = _run_icacls(_windows_acl_command(target.parent), effective_os)
+        if completed is None or completed.returncode != 0:
+            raise SecureStoreError(
+                "FinSight could not apply the required Windows store ACL for the shared machine store."
+            )
+        return
+
+    # Single-user store. runtime_paths pins this location inside the reviewer's own profile and
+    # admits no environment override, so the directory already inherits an ACL restricting it to
+    # that account, SYSTEM and Administrators — the Windows counterpart of the owner-only POSIX
+    # modes above. The grant below is additive hardening, not the source of the guarantee, so a
+    # machine that refuses to rewrite the DACL (locked-down corporate images, endpoint-protection
+    # policy, hosted CI runners) must still be able to open its own store rather than be unable to
+    # start FinSight at all.
+    completed = _run_icacls(_windows_user_acl_command(target.parent), effective_os)
+    if completed is None:
+        _log.warning(
+            "could not run icacls for the per-user store directory; relying on the inherited "
+            "user-profile ACL"
+        )
+        return
     if completed.returncode != 0:
-        raise SecureStoreError("FinSight could not apply the required Windows store ACL.")
+        _log.warning(
+            "icacls declined to harden the per-user store directory (exit %s): %s; relying on "
+            "the inherited user-profile ACL",
+            completed.returncode,
+            (completed.stderr or completed.stdout or "").strip(),
+        )
+
+
+def _run_icacls(command: list[str], os_name: str):
+    """Run an icacls command, returning None when the tool cannot be executed at all."""
+
+    try:
+        return subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+            **_no_console_window(os_name),
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
 
 
 def _windows_acl_command(directory: Path) -> list[str]:
@@ -192,6 +264,44 @@ def _windows_acl_command(directory: Path) -> list[str]:
         "SYSTEM:(OI)(CI)F",
         "*S-1-5-32-544:(OI)(CI)F",
     ]
+
+
+def _current_windows_account() -> str:
+    """The account the store belongs to, as icacls will resolve it."""
+
+    import getpass
+
+    domain = os.environ.get("USERDOMAIN")
+    user = os.environ.get("USERNAME") or getpass.getuser()
+    return f"{domain}\\{user}" if domain else user
+
+
+def _windows_user_acl_command(directory: Path) -> list[str]:
+    """Grant the signed-in account full control of its own store directory.
+
+    Deliberately additive: inheritance is left intact. The directory already sits under the
+    user's profile, whose inherited ACL is the Windows equivalent of owner-only POSIX modes,
+    and stripping inheritance before a grant is applied risks locking the reviewer out of
+    their own review data if the grant fails midway. SYSTEM is named by well-known SID so the
+    command does not depend on the display language of the operating system.
+    """
+
+    return [
+        "icacls",
+        str(directory),
+        "/grant:r",
+        f"{_current_windows_account()}:(OI)(CI)F",
+        "*S-1-5-18:(OI)(CI)F",
+    ]
+
+
+def _no_console_window(os_name: Optional[str] = None) -> dict:
+    """Keep helper processes from flashing a console window in the windowed Windows build."""
+
+    effective_os = os.name if os_name is None else os_name
+    if effective_os != "nt":
+        return {}
+    return {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)}
 
 
 class TestEnvironmentStoreKeyProvider:
@@ -219,7 +329,13 @@ class TestEnvironmentStoreKeyProvider:
 class MacOSKeychainStoreKeyProvider:
     _SERVICE = "com.finsight.financial-review-store"
     _SYSTEM_KEYCHAIN = "/Library/Keychains/System.keychain"
+    _PROVIDER_TAG = "MACOS_SYSTEM_KEYCHAIN"
     machine_shared = True
+
+    def _keychain_args(self) -> list[str]:
+        """Keychain selector passed to `security`. Subclasses may target the user's default."""
+
+        return ["-k", self._SYSTEM_KEYCHAIN]
 
     def load_or_create(self, database_path: str) -> StoreKeyMaterial:
         if sys.platform != "darwin":
@@ -227,7 +343,7 @@ class MacOSKeychainStoreKeyProvider:
         meta_path = _metadata_path(database_path)
         if meta_path.exists():
             metadata = _read_metadata(meta_path)
-            if metadata.get("provider") != "MACOS_SYSTEM_KEYCHAIN":
+            if metadata.get("provider") != self._PROVIDER_TAG:
                 raise SecureStoreError("The FinSight key provider does not match this platform.")
             store_id = metadata["store_id"]
             root = self._find(store_id)
@@ -241,22 +357,21 @@ class MacOSKeychainStoreKeyProvider:
                     {
                         "schema": 1,
                         "store_id": store_id,
-                        "provider": "MACOS_SYSTEM_KEYCHAIN",
+                        "provider": self._PROVIDER_TAG,
                     },
                 )
             except Exception:
                 self._delete(store_id)
                 raise
-        enforce_store_permissions(str(meta_path), machine_shared=True)
-        return _material(store_id, root, "MACOS_SYSTEM_KEYCHAIN")
+        enforce_store_permissions(str(meta_path), machine_shared=self.machine_shared)
+        return _material(store_id, root, self._PROVIDER_TAG)
 
     def _find(self, store_id: str) -> bytes:
         result = subprocess.run(
             [
                 "security",
                 "find-generic-password",
-                "-k",
-                self._SYSTEM_KEYCHAIN,
+                *self._keychain_args(),
                 "-s",
                 self._SERVICE,
                 "-a",
@@ -285,8 +400,7 @@ class MacOSKeychainStoreKeyProvider:
                 "security",
                 "add-generic-password",
                 "-U",
-                "-k",
-                self._SYSTEM_KEYCHAIN,
+                *self._keychain_args(),
                 "-s",
                 self._SERVICE,
                 "-a",
@@ -309,8 +423,7 @@ class MacOSKeychainStoreKeyProvider:
             [
                 "security",
                 "delete-generic-password",
-                "-k",
-                self._SYSTEM_KEYCHAIN,
+                *self._keychain_args(),
                 "-s",
                 self._SERVICE,
                 "-a",
@@ -320,6 +433,21 @@ class MacOSKeychainStoreKeyProvider:
             timeout=15,
             check=False,
         )
+
+
+class MacOSLoginKeychainStoreKeyProvider(MacOSKeychainStoreKeyProvider):
+    """Per-user key protection in the reviewer's own login keychain (ADR-013 single-user scope).
+
+    Selected when no administrator-provisioned signed role manifest is configured. Omitting the
+    keychain selector makes `security` use the user's default (login) keychain, which needs no
+    administrator rights — unlike the System keychain the machine-shared provider writes to.
+    """
+
+    _PROVIDER_TAG = "MACOS_LOGIN_KEYCHAIN"
+    machine_shared = False
+
+    def _keychain_args(self) -> list[str]:
+        return []
 
 
 class _DataBlob(ctypes.Structure):
@@ -337,6 +465,7 @@ class WindowsDpapiStoreKeyProvider:
 
     _LOCAL_MACHINE = 0x4
     _UI_FORBIDDEN = 0x1
+    _PROVIDER_TAG = "WINDOWS_DPAPI_MACHINE"
     machine_shared = True
 
     def load_or_create(self, database_path: str) -> StoreKeyMaterial:
@@ -345,7 +474,7 @@ class WindowsDpapiStoreKeyProvider:
         meta_path = _metadata_path(database_path)
         if meta_path.exists():
             metadata = _read_metadata(meta_path)
-            if metadata.get("provider") != "WINDOWS_DPAPI_MACHINE":
+            if metadata.get("provider") != self._PROVIDER_TAG:
                 raise SecureStoreError("The FinSight key provider does not match this platform.")
             try:
                 protected = base64.b64decode(metadata["wrapped_key"], validate=True)
@@ -362,12 +491,12 @@ class WindowsDpapiStoreKeyProvider:
                 {
                     "schema": 1,
                     "store_id": store_id,
-                    "provider": "WINDOWS_DPAPI_MACHINE",
+                    "provider": self._PROVIDER_TAG,
                     "wrapped_key": base64.b64encode(protected).decode("ascii"),
                 },
             )
-        enforce_store_permissions(str(meta_path), machine_shared=True)
-        return _material(store_id, root, "WINDOWS_DPAPI_MACHINE")
+        enforce_store_permissions(str(meta_path), machine_shared=self.machine_shared)
+        return _material(store_id, root, self._PROVIDER_TAG)
 
     def _protect(self, value: bytes) -> bytes:
         return self._crypt(value, protect=True)
@@ -404,11 +533,44 @@ class WindowsDpapiStoreKeyProvider:
             kernel32.LocalFree(outgoing.pbData)
 
 
-def platform_key_provider() -> StoreKeyProvider:
-    if os.name == "nt":
+class WindowsDpapiUserStoreKeyProvider(WindowsDpapiStoreKeyProvider):
+    """Per-user DPAPI protection for the ADR-013 single-user store.
+
+    Selected when no administrator-provisioned signed role manifest is configured. Protecting at
+    current-user scope (rather than LOCAL_MACHINE) needs no local administrator group, so a
+    standard Windows account can open its own store.
+    """
+
+    _LOCAL_MACHINE = 0  # current-user protection scope
+    _PROVIDER_TAG = "WINDOWS_DPAPI_USER"
+    machine_shared = False
+
+
+def platform_key_provider(
+    os_name: Optional[str] = None, platform: Optional[str] = None
+) -> StoreKeyProvider:
+    if (os.name if os_name is None else os_name) == "nt":
         return WindowsDpapiStoreKeyProvider()
-    if sys.platform == "darwin":
+    if (sys.platform if platform is None else platform) == "darwin":
         return MacOSKeychainStoreKeyProvider()
+    raise SecureStoreError(
+        "No approved OS key-protection adapter is available on this platform; plaintext fallback is disabled."
+    )
+
+
+def single_user_key_provider(
+    os_name: Optional[str] = None, platform: Optional[str] = None
+) -> StoreKeyProvider:
+    """Key protection for a store owned by exactly one operating-system account.
+
+    Used only when no signed role manifest is configured; the machine-shared providers above
+    remain the production adapters whenever an administrator has provisioned one.
+    """
+
+    if (os.name if os_name is None else os_name) == "nt":
+        return WindowsDpapiUserStoreKeyProvider()
+    if (sys.platform if platform is None else platform) == "darwin":
+        return MacOSLoginKeychainStoreKeyProvider()
     raise SecureStoreError(
         "No approved OS key-protection adapter is available on this platform; plaintext fallback is disabled."
     )

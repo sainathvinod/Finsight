@@ -58,6 +58,7 @@ from finsight.delivery.desktop.components import (
     show_in_app_message,
 )
 from finsight.delivery.desktop.theme import tokens as t
+from finsight.delivery.desktop.views.audit_view import AuditView
 from finsight.domain.review_management import ReviewStatus
 from finsight.domain.source_intake import RowKind
 
@@ -1497,14 +1498,21 @@ class FinancialReviewView(QWidget):
         self._ged_results_tab = QWidget()
         self._findings_tab = QWidget()
         self._review_summary_tab = QWidget()
+        # The append-only audit trail for this review (F-08-02). It lives beside the results it
+        # explains, so it inherits the review header, Back action, and active-review context.
+        self._audit_tab = AuditView(self._c)
         for widget, title in (
             (self._overview_tab, "Overview"),
             (self._financial_analysis_tab, "Financial Analysis"),
             (self._ged_results_tab, "GED Detail"),
             (self._findings_tab, "Findings"),
             (self._review_summary_tab, "Review Summary"),
+            (self._audit_tab, "Audit Trail"),
         ):
             self._results_tabs.addTab(widget, title)
+        # The trail grows as the reviewer works, so re-read it whenever the tab is opened rather
+        # than relying on the snapshot taken when the workspace was first built.
+        self._results_tabs.currentChanged.connect(self._on_results_tab_changed)
 
         analysis_layout = QVBoxLayout(self._financial_analysis_tab)
         analysis_layout.setContentsMargins(0, 0, 0, 0)
@@ -1613,6 +1621,21 @@ class FinancialReviewView(QWidget):
         if on_activate is not None:
             button.clicked.connect(on_activate)
         return button
+
+    def _on_results_tab_changed(self, index: int) -> None:
+        """Re-read the audit trail when its tab is opened.
+
+        The trail is append-only and grows while the reviewer works, so a snapshot taken when
+        the workspace was built would understate it. Refresh is read-only and never fails the
+        surrounding page: an unavailable trail leaves the view's own empty state in place.
+        """
+
+        if self._results_tabs.widget(index) is not self._audit_tab:
+            return
+        try:
+            self._audit_tab.refresh()
+        except Exception:  # a read-only trail must never break the results workspace
+            pass
 
     def _open_results_tab(self, widget) -> None:
         if widget is self._budget_results_tab:

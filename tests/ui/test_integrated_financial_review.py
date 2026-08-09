@@ -115,7 +115,7 @@ def test_guided_mvp_runs_to_completion_and_reopens_read_only(
     assert projection["metrics"]["scope_failed"] == 5
     assert projection["metrics"]["scope_not_evaluated"] == 2
     assert len(projection["findings"]) == 5
-    assert financial._results_tabs.count() == 5
+    assert financial._results_tabs.count() == 6
     assert [
         financial._results_tabs.tabText(index)
         for index in range(financial._results_tabs.count())
@@ -125,6 +125,7 @@ def test_guided_mvp_runs_to_completion_and_reopens_read_only(
         "GED Detail",
         "Findings",
         "Review Summary",
+        "Audit Trail",
     ]
     assert [
         financial._analysis_tabs.tabText(index)

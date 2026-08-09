@@ -61,7 +61,20 @@ def test_identity_preflight_and_provider_cannot_be_supplied_together(tmp_path):
     assert not database.exists()
 
 
-def test_missing_signed_role_manifest_does_not_open_storage(monkeypatch, tmp_path):
+@pytest.mark.parametrize(
+    "provisioned",
+    [
+        "FINSIGHT_ROLE_MANIFEST",
+        "FINSIGHT_ROLE_MANIFEST_SIGNATURE",
+        "FINSIGHT_ROLE_MANIFEST_PUBLIC_KEY",
+        "FINSIGHT_ROLE_MANIFEST_KEY_ID",
+    ],
+)
+def test_partial_signed_role_manifest_does_not_open_storage(
+    monkeypatch, tmp_path, provisioned
+):
+    """A half-provisioned administrator manifest must never degrade to the local bootstrap."""
+
     monkeypatch.delenv("FINSIGHT_TEST_MODE", raising=False)
     for name in (
         "FINSIGHT_ROLE_MANIFEST",
@@ -70,6 +83,7 @@ def test_missing_signed_role_manifest_does_not_open_storage(monkeypatch, tmp_pat
         "FINSIGHT_ROLE_MANIFEST_KEY_ID",
     ):
         monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv(provisioned, str(tmp_path / "partial-value"))
     database = tmp_path / "missing-manifest.db"
     identity = IdentityResolution.resolved(Actor("actor-1", "Reviewer", "TEST"))
 
@@ -81,6 +95,45 @@ def test_missing_signed_role_manifest_does_not_open_storage(monkeypatch, tmp_pat
 
     assert not database.exists()
     assert not (tmp_path / "missing-manifest.db.registry").exists()
+
+
+def test_unprovisioned_machine_composes_the_local_reviewer_bootstrap(
+    monkeypatch, tmp_path
+):
+    """ADR-013 single-user scope: no manifest means a bounded local bootstrap, not a lockout.
+
+    The resulting snapshot must declare itself unsigned so no caller can mistake it for an
+    administrator-provisioned authorization source.
+    """
+
+    for name in (
+        "FINSIGHT_ROLE_MANIFEST",
+        "FINSIGHT_ROLE_MANIFEST_SIGNATURE",
+        "FINSIGHT_ROLE_MANIFEST_PUBLIC_KEY",
+        "FINSIGHT_ROLE_MANIFEST_KEY_ID",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    database = tmp_path / "bootstrap.db"
+    actor = Actor("actor-1", "Reviewer", "TEST")
+    identity = IdentityResolution.resolved(actor)
+
+    services = build_query_services(
+        str(database),
+        identity_provider=FixedIdentityProvider(identity),
+        key_provider=TestEnvironmentStoreKeyProvider(),
+    )
+
+    assert database.exists()
+    assert services.identity_resolution.actor == actor
+    snapshot = services.review_management._assignments.load_current(
+        datetime.now(timezone.utc), actor
+    )
+    assert snapshot.source_kind == "LOCAL_BOOTSTRAP"
+    assert snapshot.signature_verified is False
+    assert snapshot.key_id is None
+    assert {role for a in snapshot.assignments for role in a.allow_roles} == {
+        Role.REVIEWER
+    }
 
 
 def test_signed_manifest_is_composed_at_the_application_boundary(monkeypatch, tmp_path):

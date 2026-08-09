@@ -286,13 +286,21 @@ class MainWindow(QMainWindow):
             back.setAccessibleDescription(
                 "Return to the previous page while preserving your review state and filters."
             )
-            back.setToolTip("Back (Alt+Left)")
+            back.setToolTip(
+                "Back (%s)"
+                % QKeySequence(QKeySequence.StandardKey.Back).toString(
+                    QKeySequence.SequenceFormat.NativeText
+                )
+            )
             back.clicked.connect(self.go_back)
             header.layout().insertWidget(0, back)
             self._navigation_back_buttons[key] = back
 
+        # Platform-resolved Back. A literal "Alt+Left" is the macOS "move to previous word"
+        # text-editing gesture, so it navigated away mid-edit and abandoned the form.
+        # StandardKey.Back maps to the native sequence on each platform.
         self._global_back_shortcut = QShortcut(
-            QKeySequence("Alt+Left"), self
+            QKeySequence(QKeySequence.StandardKey.Back), self
         )
         self._global_back_shortcut.setContext(
             Qt.ShortcutContext.WindowShortcut

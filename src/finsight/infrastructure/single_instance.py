@@ -28,6 +28,12 @@ def _try_lock(fh) -> bool:
     except ImportError:                      # non-POSIX (Windows)
         try:
             import msvcrt
+            # msvcrt.locking locks bytes from the CURRENT file position. The handle is opened in
+            # append mode, so without this seek the locked byte would be wherever the previous
+            # holder's PID happened to end — and a second instance, seeking to a different end,
+            # would lock a different byte and wrongly believe it was alone. Byte 0 is fixed, so
+            # contention is detected the same way on every run (ADR-013 §3, single-writer store).
+            fh.seek(0)
             msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
             return True
         except OSError:
